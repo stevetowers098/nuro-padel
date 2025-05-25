@@ -1,0 +1,46 @@
+
+name: Deploy NuroPadel to VM
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to VM
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          # Stop main service
+          sudo systemctl stop padel-api || true
+          
+          # Update code
+          cd /opt/padel/app
+          rm -rf *
+          
+          # Clone repository
+          git clone https://github.com/stevetowers098/nuro-padel.git temp
+          cp -r temp/app/* .
+          cp temp/requirements.txt ../
+          rm -rf temp
+
+          # Install dependencies in shared environment
+          /opt/padel/shared/venv/bin/pip install -r ../requirements.txt
+
+          # Download YOLO models if missing
+          mkdir -p models
+          [ ! -f models/yolo11n-pose.pt ] && /opt/padel/yolo/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolo11n-pose.pt')" || true
+          [ ! -f models/yolo11n.pt ] && /opt/padel/yolo/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')" || true
+          [ ! -f models/yolov8n.pt ] && /opt/padel/yolo/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" || true
+
+          # Start main service
+          sudo systemctl start padel-api
+          sudo systemctl enable padel-api

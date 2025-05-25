@@ -1,0 +1,17 @@
+@"
+[Unit]
+Description=YOLO-NAS Pose Service
+After=network.target
+
+[Service]
+Type=simple
+User=Towers
+WorkingDirectory=/opt/padel/app
+Environment=PATH=/opt/padel/yolo-nas/venv/bin
+ExecStart=/opt/padel/yolo-nas/venv/bin/python models/yolo_nas_service.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+"@ | Out-File -FilePath "service_configs\yolo-nas.service" -Encoding UTF8

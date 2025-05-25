@@ -1,18 +1,20 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 import tempfile
 import os
 import cv2
 import numpy as np
 import supervision as sv
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 import io
 import sys
 import logging
 import random
+import base64
+import json
 
 # Add parent directory to path to import utils
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init.path_initializer import *
 from utils.video_utils import get_video_info, extract_frames
 
 # Configure logging
@@ -144,17 +146,19 @@ async def health_check():
     return {"status": "healthy", "model": "yolov8"}
 
 @app.post("/track")
-async def track_video(file: UploadFile = File(...), return_video: bool = False):
+async def track_video(file: UploadFile = File(...), return_video: bool = False, return_both: bool = False):
     """
     Track objects in a video using YOLOv8.
     
     Args:
         file: The input video file
         return_video: Whether to return the annotated video (default: False)
+        return_both: Whether to return both JSON data and annotated video (default: False)
         
     Returns:
-        If return_video is False, returns the tracked objects as JSON.
+        If return_both is True, returns both JSON data and video content.
         If return_video is True, returns the annotated video as a StreamingResponse.
+        If both are False, returns the tracked objects as JSON.
     """
     try:
         # Save the uploaded file to a temporary file
@@ -179,16 +183,55 @@ async def track_video(file: UploadFile = File(...), return_video: bool = False):
             objects = track_objects(frame)
             all_objects.append(objects)
             
-            # If return_video is True, annotate the frame
-            if return_video:
+            # If return_video or return_both is True, annotate the frame
+            if return_video or return_both:
                 annotated_frame = draw_objects_on_frame(frame, objects)
                 annotated_frames.append(annotated_frame)
         
         # Clean up the temporary file
         os.unlink(temp_path)
         
-        # Return the results
-        if return_video:
+        # Prepare the JSON response
+        json_response = {"objects": all_objects}
+        
+        # If return_both is True, create the video and return both
+        if return_both:
+            # Create a video from the annotated frames
+            output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+            
+            # Get the original video's properties
+            height, width = annotated_frames[0].shape[:2]
+            fps = video_info["fps"]
+            
+            # Create a VideoWriter object
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            
+            # Write the frames to the video
+            for frame in annotated_frames:
+                out.write(frame)
+            
+            # Release the VideoWriter
+            out.release()
+            
+            # Read the video file
+            with open(output_path, "rb") as f:
+                video_bytes = f.read()
+            
+            # Clean up the temporary output file
+            os.unlink(output_path)
+            
+            # Encode video as base64
+            video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+            
+            # Return combined response
+            return {
+                "data": json_response,
+                "video_base64": video_base64
+            }
+        
+        # If return_video is True, return the video as a StreamingResponse
+        elif return_video:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
             
@@ -220,7 +263,7 @@ async def track_video(file: UploadFile = File(...), return_video: bool = False):
             )
         else:
             # Return the objects as JSON
-            return {"objects": all_objects}
+            return json_response
     
     except Exception as e:
         logger.error(f"Error processing video: {str(e)}")

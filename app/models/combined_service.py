@@ -1,16 +1,19 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi.responses import StreamingResponse, JSONResponse
 import tempfile
 import os
 import cv2
 import numpy as np
 import supervision as sv
 import httpx
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union, Optional
 import io
 import sys
 import logging
 import asyncio
+import base64
+import json
+from pydantic import BaseModel, HttpUrl
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Combined AI Service", version="1.0.0")
 
+# Define request model
+class VideoRequest(BaseModel):
+    video_url: HttpUrl
+    return_video: bool = False
+    return_both: bool = False
+
 # Service URLs
 SERVICES = {
     "yolo11": "http://localhost:8001",
@@ -30,26 +39,39 @@ SERVICES = {
     "mmpose": "http://localhost:8003"
 }
 
-async def call_service(client, service_name, endpoint, file_data):
+async def call_service(client, service_name, endpoint, video_url, return_video=False, return_both=False):
     """
-    Call a service with the given file data.
+    Call a service with the given video URL.
     
     Args:
         client: The httpx client to use
         service_name: The name of the service to call
         endpoint: The endpoint to call
-        file_data: The file data to send
+        video_url: The URL of the video to process
+        return_video: Whether to return the annotated video
+        return_both: Whether to return both JSON data and annotated video
         
     Returns:
         The response from the service
     """
     try:
-        url = f"{SERVICES[service_name]}/{endpoint}?return_video=false"
-        response = await client.post(url, files={"file": file_data})
+        # Prepare the request payload
+        json_payload = {
+            "video_url": video_url,
+            "return_video": return_video,
+            "return_both": return_both
+        }
+        
+        # Call the service
+        response = await client.post(
+            f"{SERVICES[service_name]}/{endpoint}",
+            json=json_payload
+        )
+        
         return response.json()
     except Exception as e:
         logger.error(f"Error calling {service_name} service: {str(e)}")
-        return None
+        raise HTTPException(status_code=500, detail=f"Error calling {service_name} service: {str(e)}")
 
 def combine_annotations(frame: np.ndarray, results: Dict[str, Any]) -> np.ndarray:
     """
@@ -167,25 +189,61 @@ def combine_annotations(frame: np.ndarray, results: Dict[str, Any]) -> np.ndarra
 async def health_check():
     return {"status": "healthy", "model": "combined"}
 
+async def download_video(url: str) -> str:
+    """
+    Download a video from a URL and save it to a temporary file.
+    
+    Args:
+        url: The URL of the video to download
+        
+    Returns:
+        The path to the temporary file
+    """
+    try:
+        # Create a temporary file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        temp_path = temp_file.name
+        temp_file.close()
+        
+        # Download the video
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                
+                with open(temp_path, "wb") as f:
+                    async for chunk in response.aiter_bytes():
+                        f.write(chunk)
+        
+        return temp_path
+    except Exception as e:
+        logger.error(f"Error downloading video: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
+
 @app.post("/analyze")
-async def analyze_video(file: UploadFile = File(...), return_video: bool = False):
+async def analyze_video(
+    request: VideoRequest = Body(...),
+    file: Optional[UploadFile] = File(None)
+):
     """
     Analyze a video using a combination of all services.
     
     Args:
-        file: The input video file
-        return_video: Whether to return the annotated video (default: False)
+        request: The request body containing the video URL and parameters
+        file: Optional file upload (for backward compatibility)
         
     Returns:
-        If return_video is False, returns the combined analysis as JSON.
+        If return_both is True, returns both JSON data and video content.
         If return_video is True, returns the annotated video as a StreamingResponse.
+        If both are False, returns the combined analysis as JSON.
     """
     try:
-        # Save the uploaded file to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
-            file_content = await file.read()
-            temp_file.write(file_content)
-            temp_path = temp_file.name
+        # Get parameters from request
+        video_url = request.video_url
+        return_video = request.return_video
+        return_both = request.return_both
+        
+        # Download the video from the URL
+        temp_path = await download_video(str(video_url))
         
         # Get video info
         video_info = get_video_info(temp_path)
@@ -194,10 +252,10 @@ async def analyze_video(file: UploadFile = File(...), return_video: bool = False
         # Call all services
         async with httpx.AsyncClient(timeout=300.0) as client:
             tasks = [
-                call_service(client, "yolo11", "pose", ("video.mp4", file_content, "video/mp4")),
-                call_service(client, "yolov8", "track", ("video.mp4", file_content, "video/mp4")),
-                call_service(client, "yolo_nas", "pose", ("video.mp4", file_content, "video/mp4")),
-                call_service(client, "mmpose", "analyze", ("video.mp4", file_content, "video/mp4"))
+                call_service(client, "yolo11", "pose", str(video_url)),
+                call_service(client, "yolov8", "track", str(video_url)),
+                call_service(client, "yolo_nas", "pose", str(video_url)),
+                call_service(client, "mmpose", "analyze", str(video_url))
             ]
             
             results = await asyncio.gather(*tasks)
@@ -210,8 +268,11 @@ async def analyze_video(file: UploadFile = File(...), return_video: bool = False
             "biomechanics": results[3].get("biomechanics", []) if results[3] else []
         }
         
-        # If return_video is True, create an annotated video
-        if return_video:
+        # Prepare the JSON response
+        json_response = combined_results
+        
+        # If return_video or return_both is True, create an annotated video
+        if return_video or return_both:
             # Extract frames
             frames = extract_frames(temp_path)
             logger.info(f"Extracted {len(frames)} frames")
@@ -232,38 +293,76 @@ async def analyze_video(file: UploadFile = File(...), return_video: bool = False
                 annotated_frame = combine_annotations(frame, frame_results)
                 annotated_frames.append(annotated_frame)
             
-            # Create a video from the annotated frames
-            output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+            # If return_both is True, create the video and return both
+            if return_both:
+                # Create a video from the annotated frames
+                output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+                
+                # Get the original video's properties
+                height, width = annotated_frames[0].shape[:2]
+                fps = video_info["fps"]
+                
+                # Create a VideoWriter object
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+                
+                # Write the frames to the video
+                for frame in annotated_frames:
+                    out.write(frame)
+                
+                # Release the VideoWriter
+                out.release()
+                
+                # Read the video file
+                with open(output_path, "rb") as f:
+                    video_bytes = f.read()
+                
+                # Clean up the temporary output file
+                os.unlink(output_path)
+                
+                # Encode video as base64
+                video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+                
+                # Return combined response
+                return {
+                    "data": json_response,
+                    "video_base64": video_base64
+                }
             
-            # Get the original video's properties
-            height, width = annotated_frames[0].shape[:2]
-            fps = video_info["fps"]
-            
-            # Create a VideoWriter object
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            # Write the frames to the video
-            for frame in annotated_frames:
-                out.write(frame)
-            
-            # Release the VideoWriter
-            out.release()
-            
-            # Return the video as a StreamingResponse
-            with open(output_path, "rb") as f:
-                video_bytes = f.read()
-            
-            # Clean up the temporary output file
-            os.unlink(output_path)
-            
-            return StreamingResponse(
-                io.BytesIO(video_bytes),
-                media_type="video/mp4"
-            )
-        else:
-            # Return the combined results as JSON
-            return combined_results
+            # If return_video is True, return the video as a StreamingResponse
+            elif return_video:
+                # Create a video from the annotated frames
+                output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+                
+                # Get the original video's properties
+                height, width = annotated_frames[0].shape[:2]
+                fps = video_info["fps"]
+                
+                # Create a VideoWriter object
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+                
+                # Write the frames to the video
+                for frame in annotated_frames:
+                    out.write(frame)
+                
+                # Release the VideoWriter
+                out.release()
+                
+                # Return the video as a StreamingResponse
+                with open(output_path, "rb") as f:
+                    video_bytes = f.read()
+                
+                # Clean up the temporary output file
+                os.unlink(output_path)
+                
+                return StreamingResponse(
+                    io.BytesIO(video_bytes),
+                    media_type="video/mp4"
+                )
+            else:
+                # Return the combined results as JSON
+                return json_response
         
         # Clean up the temporary file
         os.unlink(temp_path)

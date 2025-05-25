@@ -1,14 +1,18 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi.responses import StreamingResponse, JSONResponse
 import tempfile
 import os
 import cv2
 import numpy as np
 import supervision as sv
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union, Optional
 import io
 import sys
 import logging
+import base64
+import json
+import httpx
+from pydantic import BaseModel, HttpUrl
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,6 +23,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="YOLO-NAS Pose Service", version="1.0.0")
+
+# Define request model
+class VideoRequest(BaseModel):
+    video_url: HttpUrl
+    return_video: bool = False
+    return_both: bool = False
 
 # Simulated YOLO-NAS pose detection function
 # In a real implementation, this would use the actual YOLO-NAS model
@@ -141,24 +151,61 @@ def draw_poses_on_frame(frame: np.ndarray, poses: List[Dict[str, Any]]) -> np.nd
 async def health_check():
     return {"status": "healthy", "model": "yolo_nas"}
 
+async def download_video(url: str) -> str:
+    """
+    Download a video from a URL and save it to a temporary file.
+    
+    Args:
+        url: The URL of the video to download
+        
+    Returns:
+        The path to the temporary file
+    """
+    try:
+        # Create a temporary file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        temp_path = temp_file.name
+        temp_file.close()
+        
+        # Download the video
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                
+                with open(temp_path, "wb") as f:
+                    async for chunk in response.aiter_bytes():
+                        f.write(chunk)
+        
+        return temp_path
+    except Exception as e:
+        logger.error(f"Error downloading video: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
+
 @app.post("/pose")
-async def detect_pose(file: UploadFile = File(...), return_video: bool = False):
+async def detect_pose(
+    request: VideoRequest = Body(...),
+    file: Optional[UploadFile] = File(None)
+):
     """
     Detect high-accuracy poses in a video using YOLO-NAS.
     
     Args:
-        file: The input video file
-        return_video: Whether to return the annotated video (default: False)
+        request: The request body containing the video URL and parameters
+        file: Optional file upload (for backward compatibility)
         
     Returns:
-        If return_video is False, returns the detected poses as JSON.
+        If return_both is True, returns both JSON data and video content.
         If return_video is True, returns the annotated video as a StreamingResponse.
+        If both are False, returns the detected poses as JSON.
     """
     try:
-        # Save the uploaded file to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
-            temp_file.write(await file.read())
-            temp_path = temp_file.name
+        # Get parameters from request
+        video_url = request.video_url
+        return_video = request.return_video
+        return_both = request.return_both
+        
+        # Download the video from the URL
+        temp_path = await download_video(str(video_url))
         
         # Get video info
         video_info = get_video_info(temp_path)
@@ -177,16 +224,55 @@ async def detect_pose(file: UploadFile = File(...), return_video: bool = False):
             poses = detect_high_accuracy_poses(frame)
             all_poses.append(poses)
             
-            # If return_video is True, annotate the frame
-            if return_video:
+            # If return_video or return_both is True, annotate the frame
+            if return_video or return_both:
                 annotated_frame = draw_poses_on_frame(frame, poses)
                 annotated_frames.append(annotated_frame)
         
         # Clean up the temporary file
         os.unlink(temp_path)
         
-        # Return the results
-        if return_video:
+        # Prepare the JSON response
+        json_response = {"poses": all_poses}
+        
+        # If return_both is True, create the video and return both
+        if return_both:
+            # Create a video from the annotated frames
+            output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+            
+            # Get the original video's properties
+            height, width = annotated_frames[0].shape[:2]
+            fps = video_info["fps"]
+            
+            # Create a VideoWriter object
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            
+            # Write the frames to the video
+            for frame in annotated_frames:
+                out.write(frame)
+            
+            # Release the VideoWriter
+            out.release()
+            
+            # Read the video file
+            with open(output_path, "rb") as f:
+                video_bytes = f.read()
+            
+            # Clean up the temporary output file
+            os.unlink(output_path)
+            
+            # Encode video as base64
+            video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+            
+            # Return combined response
+            return {
+                "data": json_response,
+                "video_base64": video_base64
+            }
+        
+        # If return_video is True, return the video as a StreamingResponse
+        elif return_video:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
             
@@ -218,7 +304,7 @@ async def detect_pose(file: UploadFile = File(...), return_video: bool = False):
             )
         else:
             # Return the poses as JSON
-            return {"poses": all_poses}
+            return json_response
     
     except Exception as e:
         logger.error(f"Error processing video: {str(e)}")

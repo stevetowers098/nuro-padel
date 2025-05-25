@@ -1,0 +1,17 @@
+@"
+[Unit]
+Description=MMPose Biomechanics Service  
+After=network.target
+
+[Service]
+Type=simple
+User=Towers
+WorkingDirectory=/opt/padel/app
+Environment=PATH=/opt/padel/mmpose/venv/bin
+ExecStart=/opt/padel/mmpose/venv/bin/python models/mmpose_service.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+"@ | Out-File -FilePath "service_configs\mmpose.service" -Encoding UTF8

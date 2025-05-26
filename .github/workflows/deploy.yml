@@ -50,14 +50,24 @@ jobs:
           pip install -r ../requirements/yolo.txt --quiet
           deactivate
           
-          # Update MMPose environment using requirements file only
+          # Update MMPose environment with FIXED installation
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
-          # Set CUDA environment for mmcv compilation
-          export CUDA_HOME=/usr/local/cuda-11.8
-          export PATH=$CUDA_HOME/bin:$PATH
-          pip install -r ../requirements/mmpose.txt --quiet
+          
+          # Remove any existing conflicting packages
+          pip uninstall mmcv mmcv-lite mmcv-full torch torchvision torchaudio -y --quiet || true
+          
+          # Install PyTorch first with correct CUDA 11.8 version
+          pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet
+          
+          # Install MMCV using mim (avoids compilation issues)
+          pip install openmim --quiet
+          mim install mmcv==2.0.1 --quiet
+          
+          # Install remaining packages
+          pip install mmpose mmdet opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          
           deactivate
           
           # Update YOLO-NAS environment using requirements file only

@@ -4,7 +4,6 @@ openmim
 mmcv>=2.0.0rc4
 mmpose
 mmdet
-mmcv-full
 opencv-python
 supervision
 fastapi

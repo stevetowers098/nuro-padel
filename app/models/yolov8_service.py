@@ -14,7 +14,7 @@ import base64
 import json
 
 # Add parent directory to path to import utils
-from init.path_initializer import *
+# from init.path_initializer import *
 from utils.video_utils import get_video_info, extract_frames
 
 # Configure logging

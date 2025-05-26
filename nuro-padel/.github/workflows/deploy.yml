@@ -61,7 +61,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m app.main
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m main
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -79,7 +79,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m app.models.yolo11_service
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m models.yolo11_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -97,7 +97,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m app.models.yolov8_service
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m models.yolov8_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -115,7 +115,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/legacy-torch/venv/bin/python -m app.models.mmpose_service
+          ExecStart=/opt/padel/envs/legacy-torch/venv/bin/python -m models.mmpose_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -133,7 +133,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/specialized/yolo-nas-venv/bin/python -m app.models.yolo_nas_service
+          ExecStart=/opt/padel/envs/specialized/yolo-nas-venv/bin/python -m models.yolo_nas_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"

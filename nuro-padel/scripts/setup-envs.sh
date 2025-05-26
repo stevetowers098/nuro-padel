@@ -19,7 +19,7 @@ create_modern_env() {
     # Install with version pinning for stability
     pip install --upgrade pip
     pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 -f https://download.pytorch.org/whl/torch_stable.html
-    pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn
+    pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn python-multipart pydantic httpx numpy
     
     # Download YOLO models to their default cache location
     python -c "from ultralytics import YOLO; YOLO('yolo11n-pose.pt')"
@@ -55,7 +55,7 @@ create_specialized_env() {
     
     pip install --upgrade pip
     pip install torch==1.13.1+cu117 torchvision==0.14.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
-    pip install super-gradients fastapi uvicorn
+    pip install super-gradients fastapi uvicorn python-multipart pydantic httpx numpy supervision
     
     # Add YOLO-NAS model setup here if needed
     # For example: python -c "from super_gradients.training import models; models.get('yolo_nas_l', pretrained_weights='coco')"

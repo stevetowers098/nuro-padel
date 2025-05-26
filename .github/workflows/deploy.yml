@@ -43,21 +43,21 @@ jobs:
           source shared/venv/bin/activate
           pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
           
-          # Update YOLO environment using requirements file
+          # Update YOLO environment using requirements file only
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           source venv/bin/activate
           pip install -r ../requirements/yolo.txt --quiet
           deactivate
           
-          # Update MMPose environment using requirements file
+          # Update MMPose environment using requirements file only
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
           pip install -r ../requirements/mmpose.txt --quiet
           deactivate
           
-          # Update YOLO-NAS environment using requirements file
+          # Update YOLO-NAS environment using requirements file only
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           source venv/bin/activate

@@ -58,9 +58,14 @@ jobs:
           cd /opt/padel/mmpose
           source venv/bin/activate
           
+          # Uninstall openxlab first if it exists, to prevent dependency conflicts
+          echo "Attempting to uninstall openxlab to prevent conflicts..."
+          pip uninstall openxlab -y --quiet || true
+          
           pip install --upgrade pip setuptools --quiet --no-cache-dir
           
-          # Remove any existing conflicting packages
+          # Remove any existing conflicting packages (torch, mmcv, etc.)
+          echo "Uninstalling previous ML/CV packages..."
           pip uninstall mmcv mmcv-lite mmcv-full torch torchvision torchaudio -y --quiet || true
           
           # Install PyTorch components one by one

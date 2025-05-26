@@ -16,11 +16,33 @@ jobs:
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
         script: |
+          # Function to check if environment exists and works
+          check_environment() {
+            local env_path=$1
+            local test_imports=$2
+            local env_name=$3
+            
+            if [ -d "$env_path" ] && [ -f "$env_path/bin/python" ]; then
+              # Test if environment actually works
+              if $env_path/bin/python -c "$test_imports" 2>/dev/null; then
+                echo "✅ $env_name environment already working"
+                return 0  # Environment exists and works
+              else
+                echo "⚠️ $env_name environment exists but broken, will recreate..."
+                rm -rf "$env_path"
+                return 1  # Need to recreate
+              fi
+            else
+              echo "📦 $env_name environment doesn't exist, will create..."
+              return 1  # Doesn't exist
+            fi
+          }
+          
           # Stop all services
           echo "Stopping services..."
           sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service || true
           
-          # Update code only (no model downloads)
+          # Update code only (fast operation)
           echo "Updating code..."
           cd /opt/padel
           
@@ -42,66 +64,60 @@ jobs:
           
           rm -rf temp
           
-          # Install dependencies in shared environment
-          echo "Installing dependencies..."
+          # Update shared environment dependencies (fast - only if needed)
+          echo "Updating shared environment..."
           source shared/venv/bin/activate
-          pip install -r requirements.txt
+          pip install -r requirements.txt --quiet
           
-          # Set up dependency-grouped virtual environments
-          echo "Setting up virtual environments..."
+          # Smart environment setup - only create if missing or broken
+          echo "Checking virtual environments..."
           
-          # Modern PyTorch Environment (YOLO11, YOLOv8, Combined)
-          if [ ! -d "/opt/padel/envs/modern-torch/venv" ]; then
+          # Check Modern PyTorch Environment (YOLO11, YOLOv8, Combined)
+          if ! check_environment "/opt/padel/envs/modern-torch/venv" "import torch, ultralytics, fastapi; assert torch.__version__.startswith('2.0')" "Modern PyTorch"; then
             echo "Creating modern PyTorch environment..."
             mkdir -p /opt/padel/envs/modern-torch
             cd /opt/padel/envs/modern-torch
             python3 -m venv venv
             source venv/bin/activate
-            pip install --upgrade pip
-            pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
-            pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn pydantic httpx numpy
-            echo "✅ Modern PyTorch environment created"
+            pip install --upgrade pip --quiet
+            pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 --quiet
+            pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn pydantic httpx numpy --quiet
+            echo "✅ Modern PyTorch environment created successfully"
             cd /opt/padel
-          else
-            echo "✅ Modern PyTorch environment already exists"
           fi
           
-          # Legacy PyTorch Environment (MMPose)
-          if [ ! -d "/opt/padel/envs/legacy-torch/venv" ]; then
+          # Check Legacy PyTorch Environment (MMPose)
+          if ! check_environment "/opt/padel/envs/legacy-torch/venv" "import torch, mmcv, fastapi; assert torch.__version__.startswith('1.12')" "Legacy PyTorch"; then
             echo "Creating legacy PyTorch environment..."
             mkdir -p /opt/padel/envs/legacy-torch
             cd /opt/padel/envs/legacy-torch
             python3 -m venv venv
             source venv/bin/activate
-            pip install --upgrade pip
-            pip install torch==1.12.1 torchvision==0.13.1 --index-url https://download.pytorch.org/whl/cu116
-            pip install openmim
-            mim install mmcv==1.7.2
-            pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy
-            echo "✅ Legacy PyTorch environment created"
+            pip install --upgrade pip --quiet
+            pip install torch==1.12.1 torchvision==0.13.1 --index-url https://download.pytorch.org/whl/cu116 --quiet
+            pip install openmim --quiet
+            mim install mmcv==1.7.2 --quiet
+            pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy --quiet
+            echo "✅ Legacy PyTorch environment created successfully"
             cd /opt/padel
-          else
-            echo "✅ Legacy PyTorch environment already exists"
           fi
           
-          # Specialized Environment (YOLO-NAS)
-          if [ ! -d "/opt/padel/envs/specialized/yolo-nas-venv" ]; then
+          # Check Specialized Environment (YOLO-NAS)
+          if ! check_environment "/opt/padel/envs/specialized/yolo-nas-venv" "import torch, super_gradients, fastapi; assert torch.__version__.startswith('1.13')" "YOLO-NAS"; then
             echo "Creating YOLO-NAS specialized environment..."
             mkdir -p /opt/padel/envs/specialized
             cd /opt/padel/envs/specialized
             python3 -m venv yolo-nas-venv
             source yolo-nas-venv/bin/activate
-            pip install --upgrade pip
-            pip install torch==1.13.1 torchvision==0.14.1 --index-url https://download.pytorch.org/whl/cu117
-            pip install super-gradients fastapi uvicorn pydantic httpx numpy
-            echo "✅ YOLO-NAS environment created"
+            pip install --upgrade pip --quiet
+            pip install torch==1.13.1 torchvision==0.14.1 --index-url https://download.pytorch.org/whl/cu117 --quiet
+            pip install super-gradients fastapi uvicorn pydantic httpx numpy --quiet
+            echo "✅ YOLO-NAS environment created successfully"
             cd /opt/padel
-          else
-            echo "✅ YOLO-NAS environment already exists"
           fi
           
-          # Create systemd service files with dependency-grouped environments
-          echo "Creating service files..."
+          # Create systemd service files (always update these for any config changes)
+          echo "Updating service configurations..."
           
           # Combined Service (Modern PyTorch)
           sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
@@ -201,33 +217,46 @@ jobs:
           # Reload systemd and start services
           echo "Starting services..."
           sudo systemctl daemon-reload
-          sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service
+          sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service 2>/dev/null || true
           sudo systemctl start padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service
           
           # Wait for services to start
+          echo "Waiting for services to initialize..."
           sleep 15
           
-          # Verify services
+          # Verify services with detailed status
           echo "Verifying services..."
+          all_services_ok=true
+          
           for service in padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service; do
             status=$(systemctl is-active $service)
-            echo "$service: $status"
-            if [ "$status" != "active" ]; then
-              echo "WARNING: $service failed to start properly"
-              echo "Last 10 log lines:"
-              sudo journalctl -u $service -n 10 --no-pager
+            if [ "$status" = "active" ]; then
+              echo "✅ $service: $status"
+            else
+              echo "❌ $service: $status"
+              all_services_ok=false
+              echo "Recent logs for $service:"
+              sudo journalctl -u $service -n 5 --no-pager
             fi
           done
           
           # Test health endpoints
           echo "Testing health endpoints..."
           sleep 5
+          
           for port in 8000 8001 8002 8003 8004; do
-            if curl -s -f http://localhost:$port/healthz > /dev/null; then
+            if timeout 5 curl -s -f http://localhost:$port/healthz > /dev/null 2>&1; then
               echo "✅ Port $port: healthy"
             else
               echo "❌ Port $port: not responding"
+              all_services_ok=false
             fi
           done
           
-          echo "Deployment completed"
+          # Final deployment status
+          if [ "$all_services_ok" = true ]; then
+            echo "🎉 Deployment completed successfully - All services operational!"
+          else
+            echo "⚠️ Deployment completed with some issues - Check service logs above"
+            exit 1
+          fi

@@ -15,6 +15,7 @@ import json
 import httpx
 import torch
 import uuid
+import uvicorn
 from datetime import datetime
 from google.cloud import storage
 from ultralytics import YOLO

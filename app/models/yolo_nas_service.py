@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Union, Optional
 import io
 import sys
 import logging
+import torch
 import base64
 import json
 import httpx
@@ -16,6 +17,7 @@ import uuid
 from datetime import datetime
 from google.cloud import storage
 from pydantic import HttpUrl
+from super_gradients.training import models
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,53 +33,81 @@ app = FastAPI(title="YOLO-NAS Pose Service", version="1.0.0")
 GCS_BUCKET_NAME = "padel-ai"
 GCS_FOLDER = "processed"
 
-# Simulated YOLO-NAS pose detection function
-# In a real implementation, this would use the actual YOLO-NAS model
-def detect_high_accuracy_poses(frame: np.ndarray) -> List[Dict[str, Any]]:
+# Load the YOLO-NAS model with optimizations
+model = models.get("yolo_nas_pose_m", pretrained_weights="coco")
+# GPU optimization if available
+if torch.cuda.is_available():
+    model.to('cuda')
+    model.half()  # Use half precision
+
+def detect_high_accuracy_poses(frames: List[np.ndarray]) -> List[List[Dict[str, Any]]]:
     """
-    Detect high-accuracy poses in a frame using YOLO-NAS.
+    Detect high-accuracy poses in a list of frames using YOLO-NAS.
     
     Args:
-        frame: The input frame as a numpy array
+        frames: A list of frames as numpy arrays
         
     Returns:
-        A list of detected poses, each with keypoints and confidence scores
+        A list of lists of detected poses, one list per frame
     """
-    # Simulate pose detection
-    # In a real implementation, this would use the actual YOLO-NAS model
-    height, width = frame.shape[:2]
+    all_poses = []
     
-    # Simulate a person detection with more keypoints and higher accuracy
-    poses = [{
-        "keypoints": {
-            "nose": {"x": width // 2, "y": height // 3, "confidence": 0.95},
-            "left_eye": {"x": width // 2 - width // 20, "y": height // 3 - height // 40, "confidence": 0.93},
-            "right_eye": {"x": width // 2 + width // 20, "y": height // 3 - height // 40, "confidence": 0.93},
-            "left_ear": {"x": width // 2 - width // 15, "y": height // 3, "confidence": 0.9},
-            "right_ear": {"x": width // 2 + width // 15, "y": height // 3, "confidence": 0.9},
-            "left_shoulder": {"x": width // 3, "y": height // 2, "confidence": 0.92},
-            "right_shoulder": {"x": 2 * width // 3, "y": height // 2, "confidence": 0.92},
-            "left_elbow": {"x": width // 4, "y": 2 * height // 3, "confidence": 0.9},
-            "right_elbow": {"x": 3 * width // 4, "y": 2 * height // 3, "confidence": 0.9},
-            "left_wrist": {"x": width // 5, "y": 3 * height // 4, "confidence": 0.88},
-            "right_wrist": {"x": 4 * width // 5, "y": 3 * height // 4, "confidence": 0.88},
-            "left_hip": {"x": 2 * width // 5, "y": 3 * height // 4, "confidence": 0.85},
-            "right_hip": {"x": 3 * width // 5, "y": 3 * height // 4, "confidence": 0.85},
-            "left_knee": {"x": width // 3, "y": 5 * height // 6, "confidence": 0.82},
-            "right_knee": {"x": 2 * width // 3, "y": 5 * height // 6, "confidence": 0.82},
-            "left_ankle": {"x": width // 4, "y": 11 * height // 12, "confidence": 0.8},
-            "right_ankle": {"x": 3 * width // 4, "y": 11 * height // 12, "confidence": 0.8},
-        },
-        "confidence": 0.92,
-        "bbox": {
-            "x1": width // 4,
-            "y1": height // 6,
-            "x2": 3 * width // 4,
-            "y2": 11 * height // 12
-        }
-    }]
+    # Use batch processing for better performance
+    batch_size = 8  # Adjust based on available memory
+    for i in range(0, len(frames), batch_size):
+        batch = frames[i:i+batch_size]
+        
+        # Process batch with half precision for speed
+        with torch.no_grad():
+            results = model.predict(batch, half=True)
+        
+        batch_poses = []
+        for result in results:
+            frame_poses = []
+            
+            # Extract keypoints for each person
+            for person_idx in range(len(result.prediction.poses)):
+                keypoints = {}
+                pose_data = result.prediction.poses[person_idx]
+                
+                keypoint_names = [
+                    "nose", "left_eye", "right_eye", "left_ear", "right_ear",
+                    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+                    "left_wrist", "right_wrist", "left_hip", "right_hip",
+                    "left_knee", "right_knee", "left_ankle", "right_ankle"
+                ]
+                
+                for kpt_idx, (x, y, conf) in enumerate(pose_data):
+                    if kpt_idx < len(keypoint_names) and conf > 0:
+                        keypoints[keypoint_names[kpt_idx]] = {
+                            "x": float(x),
+                            "y": float(y),
+                            "confidence": float(conf)
+                        }
+                
+                # Calculate bounding box from keypoints
+                valid_kpts = [(kp["x"], kp["y"]) for kp in keypoints.values()]
+                if valid_kpts:
+                    x_coords, y_coords = zip(*valid_kpts)
+                    x1, y1 = min(x_coords), min(y_coords)
+                    x2, y2 = max(x_coords), max(y_coords)
+                    
+                    frame_poses.append({
+                        "keypoints": keypoints,
+                        "confidence": float(np.mean([kp["confidence"] for kp in keypoints.values()])),
+                        "bbox": {
+                            "x1": float(x1),
+                            "y1": float(y1),
+                            "x2": float(x2),
+                            "y2": float(y2)
+                        }
+                    })
+            
+            batch_poses.append(frame_poses)
+        
+        all_poses.extend(batch_poses)
     
-    return poses
+    return all_poses
 
 def draw_poses_on_frame(frame: np.ndarray, poses: List[Dict[str, Any]]) -> np.ndarray:
     """
@@ -257,23 +287,26 @@ async def detect_pose(
         video_info = get_video_info(temp_path)
         logger.info(f"Processing video: {video_info}")
         
-        # Extract frames
-        frames = extract_frames(temp_path)
-        logger.info(f"Extracted {len(frames)} frames")
+        # Extract frames with smart sampling
+        if data and not video:
+            # For data-only requests, sample every 3rd frame to speed up processing
+            frames = extract_frames(temp_path, sample_every=3)
+            logger.info(f"Extracted {len(frames)} frames (sampled every 3rd frame)")
+        else:
+            # For video requests, extract all frames
+            frames = extract_frames(temp_path)
+            logger.info(f"Extracted {len(frames)} frames")
         
-        # Process each frame
-        all_poses = []
+        # Process frames in batches
+        all_poses = detect_high_accuracy_poses(frames)
+        
+        # Annotate frames if needed
         annotated_frames = []
-        
-        for i, frame in enumerate(frames):
-            # Detect poses in the frame
-            poses = detect_high_accuracy_poses(frame)
-            all_poses.append(poses)
-            
-            # If video or data is True, annotate the frame
-            if video or data:
-                annotated_frame = draw_poses_on_frame(frame, poses)
-                annotated_frames.append(annotated_frame)
+        if video or data:
+            for i, frame in enumerate(frames):
+                if i < len(all_poses):  # Safety check
+                    annotated_frame = draw_poses_on_frame(frame, all_poses[i])
+                    annotated_frames.append(annotated_frame)
         
         # Clean up the temporary file
         os.unlink(temp_path)

@@ -16,6 +16,7 @@ import httpx
 import uuid
 from datetime import datetime
 from google.cloud import storage
+from ultralytics import YOLO
 
 # Add parent directory to path to import utils
 # from init.path_initializer import *
@@ -72,8 +73,13 @@ async def upload_to_gcs(video_path: str) -> str:
         logger.error(f"Error uploading to GCS: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error uploading to GCS: {str(e)}")
 
-# Simulated YOLOv8 object detection function
-# In a real implementation, this would use the actual YOLOv8 model with yolov8n.pt
+# Load the YOLOv8 model with optimizations
+model = YOLO('yolov8m.pt')  # Load the medium model for better accuracy
+# GPU optimization if available
+if torch.cuda.is_available():
+    model.to('cuda')
+    model.fuse()  # Fuse layers for better performance
+
 def track_objects(frame: np.ndarray) -> List[Dict[str, Any]]:
     """
     Detect objects in a frame using YOLOv8.
@@ -85,67 +91,28 @@ def track_objects(frame: np.ndarray) -> List[Dict[str, Any]]:
     Returns:
         A list of tracked objects, each with a bounding box, class, and tracking ID
     """
-    # Simulate object tracking
-    # In a real implementation, this would use the actual YOLOv8 model
-    height, width = frame.shape[:2]
+    # Run inference with YOLOv8
+    results = model(frame, verbose=False)[0]
     
-    # Simulate some object detections (players, ball, racket)
+    # Filter for padel-relevant classes
     objects = []
-    
-    # Simulate player detections (COCO class 0: person)
-    player_classes = [PADEL_CLASSES[0], PADEL_CLASSES[0]]
-    player_positions = [
-        (width // 4, height // 2, width // 6, height // 3),  # Player 1
-        (3 * width // 4, height // 2, width // 6, height // 3)  # Player 2
-    ]
-    
-    for i, (player_class, (x, y, w, h)) in enumerate(zip(player_classes, player_positions)):
-        objects.append({
-            "class": player_class,
-            "confidence": 0.9,
-            "bbox": {
-                "x1": x - w // 2,
-                "y1": y - h // 2,
-                "x2": x + w // 2,
-                "y2": y + h // 2
-            },
-            "track_id": i + 1
-        })
-    
-    # Simulate ball detection (COCO class 32: sports ball)
-    ball_x = width // 2 + random.randint(-width // 8, width // 8)
-    ball_y = height // 2 + random.randint(-height // 8, height // 8)
-    ball_size = min(width, height) // 20
-    
-    objects.append({
-        "class": PADEL_CLASSES[32],
-        "confidence": 0.85,
-        "bbox": {
-            "x1": ball_x - ball_size // 2,
-            "y1": ball_y - ball_size // 2,
-            "x2": ball_x + ball_size // 2,
-            "y2": ball_y + ball_size // 2
-        },
-        "track_id": 3
-    })
-    
-    # Simulate racket detection (COCO class 43: tennis racket)
-    racket_x = width // 4 + random.randint(-width // 16, width // 16)
-    racket_y = height // 2 + random.randint(-height // 16, height // 16)
-    racket_w = width // 10
-    racket_h = height // 8
-    
-    objects.append({
-        "class": PADEL_CLASSES[43],
-        "confidence": 0.8,
-        "bbox": {
-            "x1": racket_x - racket_w // 2,
-            "y1": racket_y - racket_h // 2,
-            "x2": racket_x + racket_w // 2,
-            "y2": racket_y + racket_h // 2
-        },
-        "track_id": 4
-    })
+    for i, det in enumerate(results.boxes.data.tolist()):
+        x1, y1, x2, y2, conf, cls = det
+        cls = int(cls)
+        
+        # Only include padel-relevant classes
+        if cls in PADEL_CLASSES:
+            objects.append({
+                "class": PADEL_CLASSES[cls],
+                "confidence": float(conf),
+                "bbox": {
+                    "x1": float(x1),
+                    "y1": float(y1),
+                    "x2": float(x2),
+                    "y2": float(y2)
+                },
+                "track_id": i + 1  # Simple tracking ID
+            })
     
     return objects
 
@@ -245,23 +212,59 @@ async def detect_objects(
         video_info = get_video_info(temp_path)
         logger.info(f"Processing video: {video_info}")
         
-        # Extract frames
-        frames = extract_frames(temp_path)
-        logger.info(f"Extracted {len(frames)} frames")
+        # Extract frames with smart sampling
+        if data and not video:
+            # For data-only requests, sample every 3rd frame to speed up processing
+            frames = extract_frames(temp_path, sample_every=3)
+            logger.info(f"Extracted {len(frames)} frames (sampled every 3rd frame)")
+        else:
+            # For video requests, extract all frames
+            frames = extract_frames(temp_path)
+            logger.info(f"Extracted {len(frames)} frames")
         
-        # Process each frame
+        # Process frames in batches for better performance
         all_objects = []
         annotated_frames = []
         
-        for i, frame in enumerate(frames):
-            # Track objects in the frame
-            objects = track_objects(frame)
-            all_objects.append(objects)
+        # Use batch processing for better performance
+        batch_size = 8  # Adjust based on available memory
+        for i in range(0, len(frames), batch_size):
+            batch = frames[i:i+batch_size]
             
-            # If video or data is True, annotate the frame
-            if video or data:
-                annotated_frame = draw_objects_on_frame(frame, objects)
-                annotated_frames.append(annotated_frame)
+            # Process batch with half precision for speed
+            results = model(batch, verbose=False, half=True)
+            
+            for j, result in enumerate(results):
+                frame_idx = i + j
+                if frame_idx >= len(frames):
+                    break
+                    
+                # Extract objects from this frame's results
+                frame_objects = []
+                for k, det in enumerate(result.boxes.data.tolist()):
+                    x1, y1, x2, y2, conf, cls = det
+                    cls = int(cls)
+                    
+                    # Only include padel-relevant classes
+                    if cls in PADEL_CLASSES:
+                        frame_objects.append({
+                            "class": PADEL_CLASSES[cls],
+                            "confidence": float(conf),
+                            "bbox": {
+                                "x1": float(x1),
+                                "y1": float(y1),
+                                "x2": float(x2),
+                                "y2": float(y2)
+                            },
+                            "track_id": k + 1  # Simple tracking ID
+                        })
+                
+                all_objects.append(frame_objects)
+                
+                # If video or data is True, annotate the frame
+                if video or data:
+                    annotated_frame = draw_objects_on_frame(frames[frame_idx], frame_objects)
+                    annotated_frames.append(annotated_frame)
         
         # Clean up the temporary file
         os.unlink(temp_path)

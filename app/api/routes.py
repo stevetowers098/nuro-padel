@@ -7,8 +7,8 @@ router = APIRouter()
 async def get_models_status():
     services = {
         "yolo11": "http://localhost:8001",
-        "yolov8": "http://localhost:8005", 
-        "yolo_nas": "http://localhost:8002",
+        "yolov8": "http://localhost:8002", 
+        "yolo_nas": "http://localhost:8004",
         "mmpose": "http://localhost:8003"
     }
     

@@ -13,6 +13,7 @@ import random
 import base64
 import json
 import httpx
+import torch
 import uuid
 from datetime import datetime
 from google.cloud import storage

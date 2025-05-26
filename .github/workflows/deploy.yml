@@ -73,7 +73,7 @@ jobs:
           echo "Checking virtual environments..."
           
           # Check Modern PyTorch Environment (YOLO11, YOLOv8, Combined)
-          if ! check_environment "/opt/padel/envs/modern-torch/venv" "import torch, ultralytics, fastapi, supervision; assert torch.__version__.startswith('2.0')" "Modern PyTorch"; then
+          if ! check_environment "/opt/padel/envs/modern-torch/venv" "import torch, ultralytics, fastapi, supervision, httpx, google.cloud.storage; assert torch.__version__.startswith('2.0')" "Modern PyTorch"; then
             echo "Creating modern PyTorch environment..."
             mkdir -p /opt/padel/envs/modern-torch
             cd /opt/padel/envs/modern-torch
@@ -81,13 +81,13 @@ jobs:
             source venv/bin/activate
             pip install --upgrade pip --quiet
             pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 --quiet
-            pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn pydantic httpx numpy python-multipart --quiet
+            pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn pydantic httpx numpy python-multipart google-cloud-storage --quiet
             echo "✅ Modern PyTorch environment created successfully"
             cd /opt/padel
           fi
           
           # Check Legacy PyTorch Environment (MMPose)
-          if ! check_environment "/opt/padel/envs/legacy-torch/venv" "import torch, mmcv, fastapi, supervision; assert torch.__version__.startswith('1.12')" "Legacy PyTorch"; then
+          if ! check_environment "/opt/padel/envs/legacy-torch/venv" "import torch, mmcv, fastapi, supervision, httpx, google.cloud.storage; assert torch.__version__.startswith('1.12')" "Legacy PyTorch"; then
             echo "Creating legacy PyTorch environment..."
             mkdir -p /opt/padel/envs/legacy-torch
             cd /opt/padel/envs/legacy-torch
@@ -97,13 +97,13 @@ jobs:
             pip install torch==1.12.1 torchvision==0.13.1 --index-url https://download.pytorch.org/whl/cu116 --quiet
             pip install openmim --quiet
             mim install mmcv==1.7.2 --quiet
-            pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy supervision python-multipart --quiet
+            pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy supervision python-multipart google-cloud-storage pycocotools --quiet
             echo "✅ Legacy PyTorch environment created successfully"
             cd /opt/padel
           fi
           
           # Check Specialized Environment (YOLO-NAS)
-          if ! check_environment "/opt/padel/envs/specialized/yolo-nas-venv" "import torch, super_gradients, fastapi, supervision; assert torch.__version__.startswith('1.13')" "YOLO-NAS"; then
+          if ! check_environment "/opt/padel/envs/specialized/yolo-nas-venv" "import torch, super_gradients, fastapi, supervision, httpx, google.cloud.storage; assert torch.__version__.startswith('1.13')" "YOLO-NAS"; then
             echo "Creating YOLO-NAS specialized environment..."
             mkdir -p /opt/padel/envs/specialized
             cd /opt/padel/envs/specialized
@@ -111,7 +111,7 @@ jobs:
             source yolo-nas-venv/bin/activate
             pip install --upgrade pip --quiet
             pip install torch==1.13.1 torchvision==0.14.1 --index-url https://download.pytorch.org/whl/cu117 --quiet
-            pip install super-gradients fastapi uvicorn pydantic httpx numpy supervision python-multipart --quiet
+            pip install super-gradients fastapi uvicorn pydantic httpx numpy supervision python-multipart google-cloud-storage --quiet
             echo "✅ YOLO-NAS environment created successfully"
             cd /opt/padel
           fi
@@ -220,9 +220,9 @@ jobs:
           sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service 2>/dev/null || true
           sudo systemctl start padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service
           
-          # Wait for services to start
+          # Wait longer for services to start
           echo "Waiting for services to initialize..."
-          sleep 15
+          sleep 30
           
           # Verify services with detailed status
           echo "Verifying services..."
@@ -240,17 +240,27 @@ jobs:
             fi
           done
           
-          # Test health endpoints
+          # Test health endpoints with retry logic
           echo "Testing health endpoints..."
-          sleep 5
+          sleep 10
           
           for port in 8000 8001 8002 8003 8004; do
-            if timeout 5 curl -s -f http://localhost:$port/healthz > /dev/null 2>&1; then
-              echo "✅ Port $port: healthy"
-            else
-              echo "❌ Port $port: not responding"
-              all_services_ok=false
-            fi
+            port_healthy=false
+            for attempt in {1..3}; do
+              if timeout 10 curl -s -f http://localhost:$port/healthz > /dev/null 2>&1; then
+                echo "✅ Port $port: healthy"
+                port_healthy=true
+                break
+              else
+                if [ $attempt -eq 3 ]; then
+                  echo "❌ Port $port: not responding after 3 attempts"
+                  all_services_ok=false
+                else
+                  echo "⚠️ Port $port: attempt $attempt failed, retrying in 10s..."
+                  sleep 10
+                fi
+              fi
+            done
           done
           
           # Final deployment status

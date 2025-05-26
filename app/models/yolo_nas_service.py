@@ -34,7 +34,7 @@ GCS_BUCKET_NAME = "padel-ai"
 GCS_FOLDER = "processed"
 
 # Load the YOLO-NAS model with optimizations
-model = models.get("yolo_nas_pose_m", pretrained_weights="coco")
+model = models.get("yolo_nas_pose_m", pretrained_weights="_pose")
 # GPU optimization if available
 if torch.cuda.is_available():
     model.to('cuda')

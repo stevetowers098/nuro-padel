@@ -10,7 +10,7 @@ import io
 import sys
 import logging
 import math
-import random
+import torch
 import base64
 import json
 import httpx
@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime
 from google.cloud import storage
 from pydantic import HttpUrl
+from mmpose.apis import inference_top_down_pose_model, init_pose_model
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -67,100 +68,134 @@ async def upload_to_gcs(video_path: str) -> str:
         logger.error(f"Error uploading to GCS: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error uploading to GCS: {str(e)}")
 
-# Simulated MMPose biomechanical analysis function
-# In a real implementation, this would use the actual MMPose model
-def analyze_biomechanics(frame: np.ndarray) -> Dict[str, Any]:
+# Load the MMPose model with optimizations
+# Keep current RTMPose configs as specified by the user
+pose_config = 'configs/rtmpose/rtmpose-m_8xb256-420e_coco-256x192.py'
+pose_checkpoint = 'checkpoints/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
+model = init_pose_model(pose_config, pose_checkpoint)
+# GPU optimization if available
+if torch.cuda.is_available():
+    model.to('cuda')
+
+def analyze_biomechanics(frames: List[np.ndarray]) -> List[Dict[str, Any]]:
     """
-    Analyze biomechanics in a frame using MMPose.
+    Analyze biomechanics in a list of frames using MMPose.
     
     Args:
-        frame: The input frame as a numpy array
+        frames: A list of frames as numpy arrays
         
     Returns:
-        A dictionary with pose keypoints, joint angles, and biomechanical metrics
+        A list of biomechanical analyses, one for each frame
     """
-    # Simulate biomechanical analysis
-    # In a real implementation, this would use the actual MMPose model
-    height, width = frame.shape[:2]
+    all_analyses = []
     
-    # Simulate keypoints detection
-    keypoints = {
-        "nose": {"x": width // 2, "y": height // 3, "confidence": 0.95},
-        "left_eye": {"x": width // 2 - width // 20, "y": height // 3 - height // 40, "confidence": 0.93},
-        "right_eye": {"x": width // 2 + width // 20, "y": height // 3 - height // 40, "confidence": 0.93},
-        "left_ear": {"x": width // 2 - width // 15, "y": height // 3, "confidence": 0.9},
-        "right_ear": {"x": width // 2 + width // 15, "y": height // 3, "confidence": 0.9},
-        "left_shoulder": {"x": width // 3, "y": height // 2, "confidence": 0.92},
-        "right_shoulder": {"x": 2 * width // 3, "y": height // 2, "confidence": 0.92},
-        "left_elbow": {"x": width // 4, "y": 2 * height // 3, "confidence": 0.9},
-        "right_elbow": {"x": 3 * width // 4, "y": 2 * height // 3, "confidence": 0.9},
-        "left_wrist": {"x": width // 5, "y": 3 * height // 4, "confidence": 0.88},
-        "right_wrist": {"x": 4 * width // 5, "y": 3 * height // 4, "confidence": 0.88},
-        "left_hip": {"x": 2 * width // 5, "y": 3 * height // 4, "confidence": 0.85},
-        "right_hip": {"x": 3 * width // 5, "y": 3 * height // 4, "confidence": 0.85},
-        "left_knee": {"x": width // 3, "y": 5 * height // 6, "confidence": 0.82},
-        "right_knee": {"x": 2 * width // 3, "y": 5 * height // 6, "confidence": 0.82},
-        "left_ankle": {"x": width // 4, "y": 11 * height // 12, "confidence": 0.8},
-        "right_ankle": {"x": 3 * width // 4, "y": 11 * height // 12, "confidence": 0.8},
-    }
+    # Use batch processing for better performance
+    batch_size = 8  # Adjust based on available memory
+    for i in range(0, len(frames), batch_size):
+        batch = frames[i:i+batch_size]
+        
+        batch_analyses = []
+        for frame in batch:
+            # Process with half precision for speed
+            pose_results = inference_top_down_pose_model(model, frame, half=True)
+            
+            # Extract keypoints
+            keypoints = {}
+            if pose_results and len(pose_results) > 0:
+                person = pose_results[0]
+                keypoint_info = person['keypoints']
+                
+                keypoint_names = [
+                    "nose", "left_eye", "right_eye", "left_ear", "right_ear",
+                    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+                    "left_wrist", "right_wrist", "left_hip", "right_hip",
+                    "left_knee", "right_knee", "left_ankle", "right_ankle"
+                ]
+                
+                for idx, (x, y, conf) in enumerate(keypoint_info):
+                    if idx < len(keypoint_names):
+                        keypoints[keypoint_names[idx]] = {
+                            "x": float(x),
+                            "y": float(y),
+                            "confidence": float(conf)
+                        }
+            
+            # Calculate joint angles
+            joint_angles = {}
+            if len(keypoints) >= 3:  # Need at least 3 keypoints for angles
+                if all(k in keypoints for k in ["left_shoulder", "left_elbow", "left_wrist"]):
+                    joint_angles["left_elbow"] = calculate_angle(
+                        (keypoints["left_shoulder"]["x"], keypoints["left_shoulder"]["y"]),
+                        (keypoints["left_elbow"]["x"], keypoints["left_elbow"]["y"]),
+                        (keypoints["left_wrist"]["x"], keypoints["left_wrist"]["y"])
+                    )
+                
+                if all(k in keypoints for k in ["right_shoulder", "right_elbow", "right_wrist"]):
+                    joint_angles["right_elbow"] = calculate_angle(
+                        (keypoints["right_shoulder"]["x"], keypoints["right_shoulder"]["y"]),
+                        (keypoints["right_elbow"]["x"], keypoints["right_elbow"]["y"]),
+                        (keypoints["right_wrist"]["x"], keypoints["right_wrist"]["y"])
+                    )
+                
+                if all(k in keypoints for k in ["left_hip", "left_shoulder", "left_elbow"]):
+                    joint_angles["left_shoulder"] = calculate_angle(
+                        (keypoints["left_hip"]["x"], keypoints["left_hip"]["y"]),
+                        (keypoints["left_shoulder"]["x"], keypoints["left_shoulder"]["y"]),
+                        (keypoints["left_elbow"]["x"], keypoints["left_elbow"]["y"])
+                    )
+                
+                if all(k in keypoints for k in ["right_hip", "right_shoulder", "right_elbow"]):
+                    joint_angles["right_shoulder"] = calculate_angle(
+                        (keypoints["right_hip"]["x"], keypoints["right_hip"]["y"]),
+                        (keypoints["right_shoulder"]["x"], keypoints["right_shoulder"]["y"]),
+                        (keypoints["right_elbow"]["x"], keypoints["right_elbow"]["y"])
+                    )
+                
+                if all(k in keypoints for k in ["left_knee", "left_hip", "left_shoulder"]):
+                    joint_angles["left_hip"] = calculate_angle(
+                        (keypoints["left_knee"]["x"], keypoints["left_knee"]["y"]),
+                        (keypoints["left_hip"]["x"], keypoints["left_hip"]["y"]),
+                        (keypoints["left_shoulder"]["x"], keypoints["left_shoulder"]["y"])
+                    )
+                
+                if all(k in keypoints for k in ["right_knee", "right_hip", "right_shoulder"]):
+                    joint_angles["right_hip"] = calculate_angle(
+                        (keypoints["right_knee"]["x"], keypoints["right_knee"]["y"]),
+                        (keypoints["right_hip"]["x"], keypoints["right_hip"]["y"]),
+                        (keypoints["right_shoulder"]["x"], keypoints["right_shoulder"]["y"])
+                    )
+                
+                if all(k in keypoints for k in ["left_hip", "left_knee", "left_ankle"]):
+                    joint_angles["left_knee"] = calculate_angle(
+                        (keypoints["left_hip"]["x"], keypoints["left_hip"]["y"]),
+                        (keypoints["left_knee"]["x"], keypoints["left_knee"]["y"]),
+                        (keypoints["left_ankle"]["x"], keypoints["left_ankle"]["y"])
+                    )
+                
+                if all(k in keypoints for k in ["right_hip", "right_knee", "right_ankle"]):
+                    joint_angles["right_knee"] = calculate_angle(
+                        (keypoints["right_hip"]["x"], keypoints["right_hip"]["y"]),
+                        (keypoints["right_knee"]["x"], keypoints["right_knee"]["y"]),
+                        (keypoints["right_ankle"]["x"], keypoints["right_ankle"]["y"])
+                    )
+            
+            # Calculate biomechanical metrics
+            biomechanical_metrics = {
+                "posture_score": calculate_posture_score(keypoints),
+                "balance_score": calculate_balance_score(keypoints),
+                "movement_efficiency": calculate_movement_efficiency(joint_angles),
+                "power_potential": calculate_power_potential(joint_angles, keypoints),
+            }
+            
+            batch_analyses.append({
+                "keypoints": keypoints,
+                "joint_angles": joint_angles,
+                "biomechanical_metrics": biomechanical_metrics
+            })
+        
+        all_analyses.extend(batch_analyses)
     
-    # Calculate joint angles
-    joint_angles = {
-        "left_elbow": calculate_angle(
-            (keypoints["left_shoulder"]["x"], keypoints["left_shoulder"]["y"]),
-            (keypoints["left_elbow"]["x"], keypoints["left_elbow"]["y"]),
-            (keypoints["left_wrist"]["x"], keypoints["left_wrist"]["y"])
-        ),
-        "right_elbow": calculate_angle(
-            (keypoints["right_shoulder"]["x"], keypoints["right_shoulder"]["y"]),
-            (keypoints["right_elbow"]["x"], keypoints["right_elbow"]["y"]),
-            (keypoints["right_wrist"]["x"], keypoints["right_wrist"]["y"])
-        ),
-        "left_shoulder": calculate_angle(
-            (keypoints["left_hip"]["x"], keypoints["left_hip"]["y"]),
-            (keypoints["left_shoulder"]["x"], keypoints["left_shoulder"]["y"]),
-            (keypoints["left_elbow"]["x"], keypoints["left_elbow"]["y"])
-        ),
-        "right_shoulder": calculate_angle(
-            (keypoints["right_hip"]["x"], keypoints["right_hip"]["y"]),
-            (keypoints["right_shoulder"]["x"], keypoints["right_shoulder"]["y"]),
-            (keypoints["right_elbow"]["x"], keypoints["right_elbow"]["y"])
-        ),
-        "left_hip": calculate_angle(
-            (keypoints["left_knee"]["x"], keypoints["left_knee"]["y"]),
-            (keypoints["left_hip"]["x"], keypoints["left_hip"]["y"]),
-            (keypoints["left_shoulder"]["x"], keypoints["left_shoulder"]["y"])
-        ),
-        "right_hip": calculate_angle(
-            (keypoints["right_knee"]["x"], keypoints["right_knee"]["y"]),
-            (keypoints["right_hip"]["x"], keypoints["right_hip"]["y"]),
-            (keypoints["right_shoulder"]["x"], keypoints["right_shoulder"]["y"])
-        ),
-        "left_knee": calculate_angle(
-            (keypoints["left_hip"]["x"], keypoints["left_hip"]["y"]),
-            (keypoints["left_knee"]["x"], keypoints["left_knee"]["y"]),
-            (keypoints["left_ankle"]["x"], keypoints["left_ankle"]["y"])
-        ),
-        "right_knee": calculate_angle(
-            (keypoints["right_hip"]["x"], keypoints["right_hip"]["y"]),
-            (keypoints["right_knee"]["x"], keypoints["right_knee"]["y"]),
-            (keypoints["right_ankle"]["x"], keypoints["right_ankle"]["y"])
-        ),
-    }
-    
-    # Calculate biomechanical metrics
-    biomechanical_metrics = {
-        "posture_score": calculate_posture_score(keypoints),
-        "balance_score": calculate_balance_score(keypoints),
-        "movement_efficiency": calculate_movement_efficiency(joint_angles),
-        "power_potential": calculate_power_potential(joint_angles, keypoints),
-    }
-    
-    return {
-        "keypoints": keypoints,
-        "joint_angles": joint_angles,
-        "biomechanical_metrics": biomechanical_metrics
-    }
+    return all_analyses
 
 def calculate_angle(a, b, c):
     """Calculate the angle between three points."""
@@ -339,23 +374,26 @@ async def analyze_video(
         video_info = get_video_info(temp_path)
         logger.info(f"Processing video: {video_info}")
         
-        # Extract frames
-        frames = extract_frames(temp_path)
-        logger.info(f"Extracted {len(frames)} frames")
+        # Extract frames with smart sampling
+        if data and not video:
+            # For data-only requests, sample every 3rd frame to speed up processing
+            frames = extract_frames(temp_path, sample_every=3)
+            logger.info(f"Extracted {len(frames)} frames (sampled every 3rd frame)")
+        else:
+            # For video requests, extract all frames
+            frames = extract_frames(temp_path)
+            logger.info(f"Extracted {len(frames)} frames")
         
-        # Process each frame
-        all_analyses = []
+        # Process frames in batches
+        all_analyses = analyze_biomechanics(frames)
+        
+        # Annotate frames if needed
         annotated_frames = []
-        
-        for i, frame in enumerate(frames):
-            # Analyze biomechanics in the frame
-            analysis = analyze_biomechanics(frame)
-            all_analyses.append(analysis)
-            
-            # If video or data is True, annotate the frame
-            if video or data:
-                annotated_frame = draw_biomechanics_on_frame(frame, analysis)
-                annotated_frames.append(annotated_frame)
+        if video or data:
+            for i, frame in enumerate(frames):
+                if i < len(all_analyses):  # Safety check
+                    annotated_frame = draw_biomechanics_on_frame(frame, all_analyses[i])
+                    annotated_frames.append(annotated_frame)
         
         # Clean up the temporary file
         os.unlink(temp_path)

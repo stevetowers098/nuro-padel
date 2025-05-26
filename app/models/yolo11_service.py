@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Union, Optional
 import io
 import sys
 import logging
+import torch
 import base64
 import json
 import httpx
@@ -16,6 +17,7 @@ import uuid
 from datetime import datetime
 from google.cloud import storage
 from pydantic import HttpUrl
+from ultralytics import YOLO
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,44 +67,86 @@ async def upload_to_gcs(video_path: str) -> str:
         logger.error(f"Error uploading to GCS: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error uploading to GCS: {str(e)}")
 
-# Simulated YOLO11 pose detection function
-# In a real implementation, this would use the actual YOLO11 model with yolo11n-pose.pt
-def detect_poses(frame: np.ndarray) -> List[Dict[str, Any]]:
+# Load the YOLO11 pose model with optimizations
+model = YOLO('yolo11m-pose.pt')  # Load the medium model for better accuracy
+# GPU optimization if available
+if torch.cuda.is_available():
+    model.to('cuda')
+    model.fuse()  # Fuse layers for better performance
+
+def detect_poses(frames: List[np.ndarray]) -> List[List[Dict[str, Any]]]:
     """
-    Detect poses in a frame using YOLO11.
+    Detect human poses in a list of frames using YOLO11 pose model.
     Specialized for human pose estimation with 17 keypoints from the COCO keypoints dataset.
     
     Args:
-        frame: The input frame as a numpy array
+        frames: A list of frames as numpy arrays
         
     Returns:
-        A list of detected poses, each with keypoints and confidence scores
+        A list of lists of poses, where each pose has keypoints and a bounding box
     """
-    # Simulate pose detection
-    # In a real implementation, this would use the actual YOLO11 model
-    height, width = frame.shape[:2]
+    all_poses = []
     
-    # Simulate a person detection
-    poses = [{
-        "keypoints": {
-            "nose": {"x": width // 2, "y": height // 3, "confidence": 0.9},
-            "left_shoulder": {"x": width // 3, "y": height // 2, "confidence": 0.85},
-            "right_shoulder": {"x": 2 * width // 3, "y": height // 2, "confidence": 0.85},
-            "left_elbow": {"x": width // 4, "y": 2 * height // 3, "confidence": 0.8},
-            "right_elbow": {"x": 3 * width // 4, "y": 2 * height // 3, "confidence": 0.8},
-            "left_wrist": {"x": width // 5, "y": 3 * height // 4, "confidence": 0.75},
-            "right_wrist": {"x": 4 * width // 5, "y": 3 * height // 4, "confidence": 0.75},
-            "left_hip": {"x": 2 * width // 5, "y": 3 * height // 4, "confidence": 0.7},
-            "right_hip": {"x": 3 * width // 5, "y": 3 * height // 4, "confidence": 0.7},
-            "left_knee": {"x": width // 3, "y": 5 * height // 6, "confidence": 0.65},
-            "right_knee": {"x": 2 * width // 3, "y": 5 * height // 6, "confidence": 0.65},
-            "left_ankle": {"x": width // 4, "y": 11 * height // 12, "confidence": 0.6},
-            "right_ankle": {"x": 3 * width // 4, "y": 11 * height // 12, "confidence": 0.6},
-        },
-        "confidence": 0.85
-    }]
+    # Use batch processing for better performance
+    batch_size = 8  # Adjust based on available memory
+    for i in range(0, len(frames), batch_size):
+        batch = frames[i:i+batch_size]
+        
+        # Process batch with half precision for speed
+        results = model(batch, verbose=False, half=True)
+        
+        for j, result in enumerate(results):
+            frame_idx = i + j
+            if frame_idx >= len(frames):
+                break
+                
+            # Extract poses from this frame's results
+            frame_poses = []
+            
+            # Process keypoints for each person
+            if hasattr(result, 'keypoints') and result.keypoints is not None:
+                for k, keypoints in enumerate(result.keypoints.data):
+                    # Get bounding box from keypoints
+                    kpts = keypoints.cpu().numpy()
+                    valid_kpts = kpts[kpts[:, 2] > 0]
+                    if len(valid_kpts) == 0:
+                        continue
+                        
+                    x1, y1 = valid_kpts[:, 0].min(), valid_kpts[:, 1].min()
+                    x2, y2 = valid_kpts[:, 0].max(), valid_kpts[:, 1].max()
+                    
+                    # Format keypoints
+                    keypoint_list = {}
+                    keypoint_names = [
+                        "nose", "left_eye", "right_eye", "left_ear", "right_ear",
+                        "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+                        "left_wrist", "right_wrist", "left_hip", "right_hip",
+                        "left_knee", "right_knee", "left_ankle", "right_ankle"
+                    ]
+                    
+                    for kpt_idx, kpt in enumerate(kpts):
+                        x, y, conf = kpt
+                        if conf > 0 and kpt_idx < len(keypoint_names):  # Only include valid keypoints
+                            keypoint_list[keypoint_names[kpt_idx]] = {
+                                "x": float(x),
+                                "y": float(y),
+                                "confidence": float(conf)
+                            }
+                    
+                    frame_poses.append({
+                        "keypoints": keypoint_list,
+                        "confidence": float(valid_kpts[:, 2].mean()),
+                        "bbox": {
+                            "x1": float(x1),
+                            "y1": float(y1),
+                            "x2": float(x2),
+                            "y2": float(y2)
+                        }
+                    })
+            
+            all_poses.append(frame_poses)
     
-    return poses
+    return all_poses
 
 def draw_poses_on_frame(frame: np.ndarray, poses: List[Dict[str, Any]]) -> np.ndarray:
     """
@@ -236,23 +280,26 @@ async def detect_pose(
         video_info = get_video_info(temp_path)
         logger.info(f"Processing video: {video_info}")
         
-        # Extract frames
-        frames = extract_frames(temp_path)
-        logger.info(f"Extracted {len(frames)} frames")
+        # Extract frames with smart sampling
+        if data and not video:
+            # For data-only requests, sample every 3rd frame to speed up processing
+            frames = extract_frames(temp_path, sample_every=3)
+            logger.info(f"Extracted {len(frames)} frames (sampled every 3rd frame)")
+        else:
+            # For video requests, extract all frames
+            frames = extract_frames(temp_path)
+            logger.info(f"Extracted {len(frames)} frames")
         
-        # Process each frame
-        all_poses = []
+        # Process frames in batches
+        all_poses = detect_poses(frames)
+        
+        # Annotate frames if needed
         annotated_frames = []
-        
-        for i, frame in enumerate(frames):
-            # Detect poses in the frame
-            poses = detect_poses(frame)
-            all_poses.append(poses)
-            
-            # If video or data is True, annotate the frame
-            if video or data:
-                annotated_frame = draw_poses_on_frame(frame, poses)
-                annotated_frames.append(annotated_frame)
+        if video or data:
+            for i, frame in enumerate(frames):
+                if i < len(all_poses):  # Safety check
+                    annotated_frame = draw_poses_on_frame(frame, all_poses[i])
+                    annotated_frames.append(annotated_frame)
         
         # Clean up the temporary file
         os.unlink(temp_path)

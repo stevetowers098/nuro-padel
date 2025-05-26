@@ -1,3 +1,5 @@
+import torch  # Add this line
+import random  # Add this line
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.responses import StreamingResponse, JSONResponse
 import tempfile

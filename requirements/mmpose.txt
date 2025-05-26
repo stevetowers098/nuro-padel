@@ -1,7 +1,8 @@
 torch
 torchvision
 openmim
-mmcv>=2.0.0rc4,<=3.0.0
+# Use pre-compiled wheels to avoid CUDA compilation issues
+mmcv==2.0.1 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.0/index.html
 mmpose
 mmdet
 opencv-python

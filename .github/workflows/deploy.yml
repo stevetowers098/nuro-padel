@@ -31,8 +31,9 @@ jobs:
           git clone https://github.com/stevetowers098/nuro-padel.git temp
           mkdir -p app
           
-          # FIXED: Copy only app contents, not the whole repo
+          # FIXED: Copy app contents AND requirements folder
           cp -r temp/app/* app/
+          cp -r temp/requirements .
           cp temp/requirements.txt .
           
           rm -rf temp
@@ -46,28 +47,28 @@ jobs:
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           source venv/bin/activate
-          pip install -r ../app/requirements/yolo.txt --quiet
+          pip install -r ../requirements/yolo.txt --quiet
           deactivate
           
           # Update MMPose environment using requirements file
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
-          pip install -r ../app/requirements/mmpose.txt --quiet
+          pip install -r ../requirements/mmpose.txt --quiet
           deactivate
           
           # Update YOLO-NAS environment using requirements file
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           source venv/bin/activate
-          pip install -r ../app/requirements/yolo-nas.txt --quiet
+          pip install -r ../requirements/yolo-nas.txt --quiet
           deactivate
           
           # Update Combined environment using YOLO requirements
           echo "Updating Combined environment..."
           cd /opt/padel/combined
           source venv/bin/activate
-          pip install -r ../app/requirements/yolo.txt --quiet
+          pip install -r ../requirements/yolo.txt --quiet
           deactivate
           
           cd /opt/padel
@@ -211,4 +212,11 @@ jobs:
           
           echo "Health Check:"
           for port in 8000 8001 8002 8003 8004 8005; do
-            if curl -s -
+            if curl -s -f http://localhost:$port/healthz > /dev/null; then
+              echo "✅ Port $port: healthy"
+            else
+              echo "❌ Port $port: not responding"
+            fi
+          done
+          
+          echo "🎉 Deployment complete! Models will download on first use."

@@ -12,7 +12,10 @@ import logging
 import base64
 import json
 import httpx
-from pydantic import BaseModel, HttpUrl
+import uuid
+from datetime import datetime
+from google.cloud import storage
+from pydantic import HttpUrl
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,17 +27,50 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="YOLO11 Pose Service", version="1.0.0")
 
-# Define request model
-class VideoRequest(BaseModel):
-    video_url: HttpUrl
-    video: bool = False
-    data: bool = False
+# Google Cloud Storage configuration
+GCS_BUCKET_NAME = "padel-ai"
+GCS_FOLDER = "processed"
+
+async def upload_to_gcs(video_path: str) -> str:
+    """
+    Upload a video to Google Cloud Storage.
+    
+    Args:
+        video_path: Path to the video file to upload
+        
+    Returns:
+        The public URL of the uploaded video
+    """
+    try:
+        # Generate a unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"{GCS_FOLDER}/video_{timestamp}_{unique_id}.mp4"
+        
+        # Upload the file to GCS
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        blob = bucket.blob(filename)
+        
+        # Upload the file
+        blob.upload_from_filename(video_path)
+        
+        # Make the blob publicly accessible
+        blob.make_public()
+        
+        # Return the public URL
+        return blob.public_url
+    
+    except Exception as e:
+        logger.error(f"Error uploading to GCS: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error uploading to GCS: {str(e)}")
 
 # Simulated YOLO11 pose detection function
-# In a real implementation, this would use the actual YOLO11 model
+# In a real implementation, this would use the actual YOLO11 model with yolo11n-pose.pt
 def detect_poses(frame: np.ndarray) -> List[Dict[str, Any]]:
     """
     Detect poses in a frame using YOLO11.
+    Specialized for human pose estimation with 17 keypoints from the COCO keypoints dataset.
     
     Args:
         frame: The input frame as a numpy array
@@ -155,42 +191,46 @@ async def download_video(url: str) -> str:
 
 @app.post("/yolo11")
 async def detect_pose(
-    request: VideoRequest = Body(None),
-    file: Optional[UploadFile] = File(None)
+    file: Optional[UploadFile] = File(None),
+    video_url: Optional[str] = None,
+    video: bool = False,
+    data: bool = False
 ):
     """
     Detect poses in a video using YOLO11.
+    Specialized for human pose estimation with 17 keypoints from the COCO keypoints dataset.
     
     Args:
-        request: The request body containing the video URL and parameters
-        file: Optional file upload (for backward compatibility)
+        file: Optional file upload
+        video_url: Optional URL of the video to analyze
+        video: Whether to return the annotated video (default: False)
+        data: Whether to return JSON data (default: False)
         
     Returns:
-        If return_both is True, returns both JSON data and video content.
-        If return_video is True, returns the annotated video as a StreamingResponse.
-        If both are False, returns the detected poses as JSON.
+        - If data=True only: Returns JSON analysis data
+        - If video=True only: Returns processed video URL
+        - If both=True: Returns both JSON data AND video URL
+        - If both=False: Returns error (must specify at least one)
     """
     try:
-        # Get parameters and video data
-        if request:
-            # Get parameters from request
-            video_url = request.video_url
-            return_video = request.video
-            return_both = request.data
+        # Validate that at least one output format is requested
+        if not video and not data:
+            raise HTTPException(status_code=400, detail="Must specify at least one of 'video' or 'data'")
             
-            # Download the video from the URL
-            temp_path = await download_video(str(video_url))
+        # Handle video URL input
+        if video_url:
+            try:
+                # Download the video from the URL
+                temp_path = await download_video(video_url)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to download video: {str(e)}")
         elif file:
-            # Use file upload (backward compatibility)
-            return_video = False
-            return_both = False
-            
             # Save the uploaded file to a temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
                 temp_file.write(await file.read())
                 temp_path = temp_file.name
         else:
-            raise HTTPException(status_code=400, detail="Either request body or file upload is required")
+            raise HTTPException(status_code=400, detail="Either file or video_url is required")
         
         # Get video info
         video_info = get_video_info(temp_path)
@@ -209,8 +249,8 @@ async def detect_pose(
             poses = detect_poses(frame)
             all_poses.append(poses)
             
-            # If return_video or return_both is True, annotate the frame
-            if return_video or return_both:
+            # If video or data is True, annotate the frame
+            if video or data:
                 annotated_frame = draw_poses_on_frame(frame, poses)
                 annotated_frames.append(annotated_frame)
         
@@ -220,8 +260,8 @@ async def detect_pose(
         # Prepare the JSON response
         json_response = {"poses": all_poses}
         
-        # If return_both is True, create the video and return both
-        if return_both:
+        # If video or data is True, create the video and upload to GCS
+        if video or data:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
             
@@ -240,53 +280,24 @@ async def detect_pose(
             # Release the VideoWriter
             out.release()
             
-            # Read the video file
-            with open(output_path, "rb") as f:
-                video_bytes = f.read()
+            # Upload the video to GCS
+            video_url = await upload_to_gcs(output_path)
             
             # Clean up the temporary output file
             os.unlink(output_path)
             
-            # Encode video as base64
-            video_base64 = base64.b64encode(video_bytes).decode('utf-8')
-            
-            # Return combined response
-            return {
-                "data": json_response,
-                "video_base64": video_base64
-            }
-        
-        # If return_video is True, return the video as a StreamingResponse
-        elif return_video:
-            # Create a video from the annotated frames
-            output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
-            
-            # Get the original video's properties
-            height, width = annotated_frames[0].shape[:2]
-            fps = video_info["fps"]
-            
-            # Create a VideoWriter object
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            # Write the frames to the video
-            for frame in annotated_frames:
-                out.write(frame)
-            
-            # Release the VideoWriter
-            out.release()
-            
-            # Return the video as a StreamingResponse
-            with open(output_path, "rb") as f:
-                video_bytes = f.read()
-            
-            # Clean up the temporary output file
-            os.unlink(output_path)
-            
-            return StreamingResponse(
-                io.BytesIO(video_bytes),
-                media_type="video/mp4"
-            )
+            # Return response with video URL
+            if data and video:
+                # Return both data and video URL
+                return {
+                    "data": json_response,
+                    "video_url": video_url
+                }
+            elif video:
+                # Return just the video URL
+                return {
+                    "video_url": video_url
+                }
         else:
             # Return the poses as JSON
             return json_response

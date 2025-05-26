@@ -19,7 +19,7 @@ create_modern_env() {
     # Install with version pinning for stability
     pip install --upgrade pip
     pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 -f https://download.pytorch.org/whl/torch_stable.html
-    pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn python-multipart pydantic httpx numpy
+    pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn python-multipart pydantic httpx numpy google-cloud-storage
     
     # Download YOLO models to their default cache location
     python -c "from ultralytics import YOLO; YOLO('yolo11n-pose.pt')"
@@ -39,7 +39,7 @@ create_legacy_env() {
     pip install --upgrade pip
     pip install torch==1.12.1+cu116 torchvision==0.13.1+cu116 -f https://download.pytorch.org/whl/torch_stable.html
     pip install mmcv-full==1.7.2 -f https://download.openmmlab.com/mmcv/dist/cu116/torch1.12.0/index.html
-    pip install mmpose fastapi uvicorn opencv-python
+    pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy supervision python-multipart google-cloud-storage
     
     # Add MMPose model setup here if needed
     # For example: python -c "import mmpose; mmpose.download_model('hrnet_w48')"
@@ -55,7 +55,7 @@ create_specialized_env() {
     
     pip install --upgrade pip
     pip install torch==1.13.1+cu117 torchvision==0.14.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
-    pip install super-gradients fastapi uvicorn python-multipart pydantic httpx numpy supervision
+    pip install super-gradients fastapi uvicorn python-multipart pydantic httpx numpy supervision google-cloud-storage
     
     # Add YOLO-NAS model setup here if needed
     # For example: python -c "from super_gradients.training import models; models.get('yolo_nas_l', pretrained_weights='coco')"

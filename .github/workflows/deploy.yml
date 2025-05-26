@@ -32,7 +32,7 @@ jobs:
           mkdir -p app
           
           cp -r temp/app/* app/
-          cp -r temp/requirements .
+          cp -r temp/requirements . # Ensure this copies your updated mmpose.txt
           cp temp/requirements.txt .
           
           rm -rf temp
@@ -50,44 +50,33 @@ jobs:
           cd /opt/padel/yolo
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir
+          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir # Assuming yolo.txt exists and is correct
           deactivate
           
-          # Update MMPose environment with memory optimizations
+          # Update MMPose environment
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
           
-          # Uninstall openxlab first if it exists, to prevent dependency conflicts
           echo "Attempting to uninstall openxlab to prevent conflicts..."
           pip uninstall openxlab -y --quiet || true
           
           pip install --upgrade pip setuptools --quiet --no-cache-dir
           
-          # Remove any existing conflicting packages (torch, mmcv, etc.)
-          echo "Uninstalling previous ML/CV packages..."
-          pip uninstall mmcv mmcv-lite mmcv-full torch torchvision torchaudio -y --quiet || true
+          echo "Uninstalling previous ML/CV packages that might conflict..."
+          pip uninstall mmdet mmpose mmcv mmcv-lite mmcv-full torch torchvision torchaudio -y --quiet || true
           
-          # Install PyTorch components one by one
           echo "Installing PyTorch..."
-          pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
-          echo "Installing TorchVision..."
-          pip install torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
-          echo "Installing TorchAudio..."
-          pip install torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
-          
+          pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cu118 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
+
           echo "Installing OpenMIM..."
           pip install openmim --quiet --no-cache-dir
           
           echo "Installing MMCV via MIM..."
-          mim install mmcv==2.0.1 --quiet
+          mim install mmcv==2.0.1 --quiet 
           
-          echo "Installing mmpose and mmdet..."
-          pip install mmpose mmdet --quiet --no-cache-dir
-          echo "Installing CV and supervision libraries..."
-          pip install opencv-python supervision --quiet --no-cache-dir
-          echo "Installing API and GCS libraries..."
-          pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet --no-cache-dir
+          echo "Installing other MMPose dependencies from requirements file..."
+          pip install -r ../requirements/mmpose.txt --quiet --no-cache-dir # Uses the mmpose.txt file
           
           deactivate
           
@@ -96,7 +85,7 @@ jobs:
           cd /opt/padel/yolo-nas
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r ../requirements/yolo-nas.txt --quiet --no-cache-dir
+          pip install -r ../requirements/yolo-nas.txt --quiet --no-cache-dir # Assuming yolo-nas.txt exists
           deactivate
           
           # Update Combined environment
@@ -104,7 +93,7 @@ jobs:
           cd /opt/padel/combined
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir
+          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir # Assuming this reuses yolo.txt
           deactivate
           
           cd /opt/padel

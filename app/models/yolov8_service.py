@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, HttpUrl 
+from pydantic import BaseModel, HttpUrl
 import tempfile
 import os
 import cv2
@@ -12,17 +12,18 @@ import logging
 import httpx
 import torch
 import uuid
-import uvicorn
+import uvicorn # Ensured import
 from datetime import datetime
 from google.cloud import storage
 from ultralytics import YOLO
-import subprocess # <--- ADD THIS IMPORT FOR FFMPEG
+import subprocess # For FFMPEG
 
 # Setup for utils.video_utils
 try:
     from utils.video_utils import get_video_info, extract_frames
 except ImportError:
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..')) 
+    # Fallback if the above doesn't work, assuming utils is one level up from app/models
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
     from utils.video_utils import get_video_info, extract_frames
 
 # Configure logging
@@ -33,9 +34,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-logger.info("--- YOLOv8 SERVICE SCRIPT STARTED (URL-Only, FFMPEG, Detailed Logging) ---")
+logger.info("--- YOLOv8 SERVICE SCRIPT STARTED (URL-Only, FFMPEG, Detailed Logging, ValueError Fix) ---")
 
-app = FastAPI(title="YOLOv8 Object Detection Service (URL Input Only)", version="1.2.0") # Incremented version
+app = FastAPI(title="YOLOv8 Object Detection Service (URL Input Only)", version="1.2.1") # Incremented version
 logger.info("FastAPI app object created for YOLOv8 service.")
 
 PADEL_CLASSES = {0: "person", 32: "sports ball", 39: "tennis racket"}
@@ -110,7 +111,7 @@ async def health_check():
 @app.post("/yolov8")
 async def detect_objects_in_video(
     payload: VideoAnalysisURLRequest,
-    http_request: Request 
+    http_request: Request
 ):
     logger.info(f"--- Enter /yolov8 endpoint (URL-only, FFMPEG) ---")
     logger.info(f"Request Headers: {http_request.headers}")
@@ -135,14 +136,17 @@ async def detect_objects_in_video(
         video_info = get_video_info(temp_downloaded_path)
         logger.info(f"Video Info: {video_info}")
 
-        frames_to_extract_log_info = "all"
-        if payload.data and not payload.video:
-            frames = extract_frames(temp_downloaded_path, max_frames=30) # Reduced for timeout testing
-            frames_to_extract_log_info = f"{len(frames)} (max_frames=30 for data-only/timeout test)"
-        else: # Video output requested, or both
-            frames = extract_frames(temp_downloaded_path, max_frames=30) # Reduced for timeout testing
-            frames_to_extract_log_info = f"{len(frames)} (max_frames=30 for video/timeout test)"
-        logger.info(f"Extracted {frames_to_extract_log_info} frames.")
+        # Determine number of frames to process
+        # For timeout testing, keep this low. For production, adjust or remove max_frames.
+        num_frames_to_process = 30 # Default for testing
+        if payload.video: # If video output is true, maybe process more, but still keep it reasonable for now
+            num_frames_to_process = 30 # Still 30 for testing to ensure timeout is not the issue
+        # elif payload.data: # If only data, could be slightly more
+            # num_frames_to_process = 150
+        
+        frames = extract_frames(temp_downloaded_path, max_frames=num_frames_to_process)
+        logger.info(f"Extracted {len(frames)} (max_frames={num_frames_to_process} for timeout testing) frames.")
+
 
         if not frames:
             logger.error(f"No frames extracted from {temp_downloaded_path}.")
@@ -165,7 +169,7 @@ async def detect_objects_in_video(
                 logger.error(f"Inference error on batch {i//batch_size + 1}: {e_infer}", exc_info=True)
                 for _ in batch_frames: all_objects_per_frame.append([])
                 if payload.video: annotated_frames_list.extend(batch_frames)
-                continue 
+                continue
 
             for frame_idx_in_batch, result_obj in enumerate(results_list):
                 original_frame_index = i + frame_idx_in_batch
@@ -176,14 +180,14 @@ async def detect_objects_in_video(
                     for k_det, det_tensor_list in enumerate(raw_boxes_data):
                         x1, y1, x2, y2, conf, cls_raw = det_tensor_list; cls = int(cls_raw)
                         logger.debug(f"  Frame {original_frame_index}, Detection {k_det}: ClassID={cls}, Conf={conf:.2f}")
-                        if cls in PADEL_CLASSES and conf > 0.3: # Example confidence threshold
+                        if cls in PADEL_CLASSES and conf > 0.3:
                             current_frame_objects.append({
                                 "class": PADEL_CLASSES[cls], "confidence": float(conf),
                                 "bbox": {"x1": float(x1), "y1": float(y1), "x2": float(x2), "y2": float(y2)}
                             })
                 else: logger.debug(f"Frame {original_frame_index}: No detections or invalid result object.")
                 all_objects_per_frame.append(current_frame_objects)
-                if payload.video: 
+                if payload.video:
                     annotated_frames_list.append(draw_objects_on_frame(batch_frames[frame_idx_in_batch], current_frame_objects))
         
         logger.info(f"Finished processing. Object lists: {len(all_objects_per_frame)}. Annotated frames: {len(annotated_frames_list)}.")
@@ -201,7 +205,6 @@ async def detect_objects_in_video(
                 output_video_path: Optional[str] = None
                 gcs_url_result: str = ""
                 try:
-                    # Create a temporary file path for ffmpeg to write to
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_out_vid_file:
                         output_video_path = temp_out_vid_file.name
                     
@@ -216,40 +219,63 @@ async def detect_objects_in_video(
                         '-f', 'rawvideo', '-vcodec', 'rawvideo',
                         '-s', f'{width}x{height}', '-pix_fmt', 'bgr24',
                         '-r', str(fps_float), '-i', '-',
-                        '-vcodec', 'libx264', '-preset', 'fast', 
+                        '-vcodec', 'libx264', '-preset', 'fast',
                         '-crf', '23', '-pix_fmt', 'yuv420p',
                         output_video_path
                     ]
                     
+                    # Use Popen with explicit stdin, stdout, stderr pipes
                     process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     
+                    # Write frames to FFmpeg's stdin
                     for frame_to_write in annotated_frames_list:
+                        if process.stdin.closed: # Check if stdin is already closed
+                            logger.warning("FFMPEG stdin pipe closed prematurely. Stopping frame write.")
+                            break
                         try:
                             process.stdin.write(frame_to_write.tobytes())
-                        except (IOError, BrokenPipeError) as e_pipe: # Catch BrokenPipeError too
+                        except (IOError, BrokenPipeError) as e_pipe:
                             logger.warning(f"FFMPEG stdin pipe broken while writing frame: {e_pipe}")
-                            break 
+                            break
                     
-                    logger.info("Finished writing frames to FFMPEG stdin. Closing pipe.")
-                    process.stdin.close() 
-                    # Wait for FFmpeg to finish, with a timeout (e.g., 120 seconds)
-                    # Consider making timeout dynamic based on number of frames
-                    stdout, stderr = process.communicate(timeout=120) 
+                    # Close stdin only if it's not already closed
+                    if not process.stdin.closed:
+                        logger.info("Finished writing frames to FFMPEG stdin. Closing pipe.")
+                        process.stdin.close()
                     
+                    # Now communicate, this will wait for the process to terminate
+                    stdout_bytes, stderr_bytes = b'', b'' # Initialize
+                    try:
+                        stdout_bytes, stderr_bytes = process.communicate(timeout=120)
+                    except subprocess.TimeoutExpired:
+                        logger.error("FFMPEG process timed out during communicate(). Killing process.")
+                        process.kill()
+                        # Try to get any final output after kill
+                        stdout_bytes, stderr_bytes = process.communicate()
+                        raise HTTPException(status_code=500, detail="FFMPEG processing timed out")
+                    except ValueError as ve: # Catch specific "flush of closed file"
+                        if "flush of closed file" in str(ve).lower():
+                            logger.warning(f"Caught '{ve}' during communicate, likely due to already closed stdin. Checking return code.")
+                            # stdout/stderr might be None or incomplete here, rely on process.poll() or wait() if needed
+                            # For now, assume we proceed to check return code.
+                            pass # Proceed to check returncode
+                        else:
+                            logger.error(f"Unexpected ValueError during communicate: {ve}", exc_info=True)
+                            raise # Re-raise if it's a different ValueError
+
                     if process.returncode != 0:
                         logger.error(f"FFMPEG processing failed (return code {process.returncode}):")
-                        if stdout: logger.error(f"FFMPEG stdout: {stdout.decode(errors='ignore')}")
-                        if stderr: logger.error(f"FFMPEG stderr: {stderr.decode(errors='ignore')}")
-                        gcs_url_result = "" # Indicate failure
+                        if stdout_bytes: logger.error(f"FFMPEG stdout: {stdout_bytes.decode(errors='ignore')}")
+                        if stderr_bytes: logger.error(f"FFMPEG stderr: {stderr_bytes.decode(errors='ignore')}")
+                        gcs_url_result = "" 
                         response_content["message"] = f"FFMPEG processing failed. RC: {process.returncode}"
                     else:
                         logger.info(f"Video created successfully via FFMPEG: {output_video_path}")
                         gcs_url_result = await upload_to_gcs(output_video_path)
                     
                     response_content["video_url"] = gcs_url_result if gcs_url_result else None
-                    if not gcs_url_result and "message" not in response_content : # If ffmpeg was ok but upload failed
+                    if not gcs_url_result and "message" not in response_content : 
                          response_content["message"] = "Failed to upload annotated video to GCS."
-
                 finally:
                      if output_video_path and os.path.exists(output_video_path):
                         logger.debug(f"Deleting temporary FFMPEG output video file: {output_video_path}")
@@ -279,3 +305,4 @@ if __name__ == "__main__":
     if model is None:
         logger.critical("YOLOv8 model could not be loaded at startup. Service will be unhealthy.")
     uvicorn.run(app, host="0.0.0.0", port=8002, log_config=None)
+

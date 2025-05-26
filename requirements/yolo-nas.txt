@@ -1,0 +1,9 @@
+torch==1.13.1
+torchvision
+super-gradients
+fastapi
+uvicorn
+pydantic
+httpx
+python-multipart
+google-cloud-storage

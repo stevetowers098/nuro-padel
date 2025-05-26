@@ -3,9 +3,12 @@ torchvision
 openmim
 mmcv>=2.0.0rc4
 mmpose
+mmdet
+mmcv-full
+opencv-python
+supervision
 fastapi
 uvicorn
-opencv-python
 pydantic
 httpx
 python-multipart

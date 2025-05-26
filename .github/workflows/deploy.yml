@@ -16,11 +16,33 @@ jobs:
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
         script: |
+          # Function to check if environment exists and works
+          check_environment() {
+            local env_path=$1
+            local test_imports=$2
+            local env_name=$3
+            
+            if [ -d "$env_path" ] && [ -f "$env_path/bin/python" ]; then
+              # Test if environment actually works
+              if $env_path/bin/python -c "$test_imports" 2>/dev/null; then
+                echo "✅ $env_name environment already working"
+                return 0  # Environment exists and works
+              else
+                echo "⚠️ $env_name environment exists but broken, will recreate..."
+                rm -rf "$env_path"
+                return 1  # Need to recreate
+              fi
+            else
+              echo "📦 $env_name environment doesn't exist, will create..."
+              return 1  # Doesn't exist
+            fi
+          }
+          
           # Stop all services
           echo "Stopping services..."
           sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service || true
           
-          # Update code only (no model downloads)
+          # Update code only (fast operation)
           echo "Updating code..."
           cd /opt/padel
           
@@ -34,27 +56,80 @@ jobs:
           mkdir -p app
           cp -r temp/app/* app/
           cp temp/requirements.txt .
+          
+          # Copy scripts if they exist
+          if [ -d "temp/scripts" ]; then
+            cp -r temp/scripts .
+          fi
+          
           rm -rf temp
           
-          # Install dependencies
-          echo "Installing dependencies..."
+          # Update shared environment dependencies (fast - only if needed)
+          echo "Updating shared environment..."
           source shared/venv/bin/activate
-          pip install -r requirements.txt
+          pip install -r requirements.txt --quiet
           
-          # Create systemd service files
-          echo "Creating service files..."
+          # Smart environment setup - only create if missing or broken
+          echo "Checking virtual environments..."
           
-          # Create service files with proper paths and configurations
+          # Check Modern PyTorch Environment (YOLO11, YOLOv8, Combined)
+          if ! check_environment "/opt/padel/envs/modern-torch/venv" "import torch, ultralytics, fastapi, supervision; assert torch.__version__.startswith('2.0')" "Modern PyTorch"; then
+            echo "Creating modern PyTorch environment..."
+            mkdir -p /opt/padel/envs/modern-torch
+            cd /opt/padel/envs/modern-torch
+            python3 -m venv venv
+            source venv/bin/activate
+            pip install --upgrade pip --quiet
+            pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 --quiet
+            pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn pydantic httpx numpy python-multipart --quiet
+            echo "✅ Modern PyTorch environment created successfully"
+            cd /opt/padel
+          fi
+          
+          # Check Legacy PyTorch Environment (MMPose)
+          if ! check_environment "/opt/padel/envs/legacy-torch/venv" "import torch, mmcv, fastapi, supervision; assert torch.__version__.startswith('1.12')" "Legacy PyTorch"; then
+            echo "Creating legacy PyTorch environment..."
+            mkdir -p /opt/padel/envs/legacy-torch
+            cd /opt/padel/envs/legacy-torch
+            python3 -m venv venv
+            source venv/bin/activate
+            pip install --upgrade pip --quiet
+            pip install torch==1.12.1 torchvision==0.13.1 --index-url https://download.pytorch.org/whl/cu116 --quiet
+            pip install openmim --quiet
+            mim install mmcv==1.7.2 --quiet
+            pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy supervision python-multipart --quiet
+            echo "✅ Legacy PyTorch environment created successfully"
+            cd /opt/padel
+          fi
+          
+          # Check Specialized Environment (YOLO-NAS)
+          if ! check_environment "/opt/padel/envs/specialized/yolo-nas-venv" "import torch, super_gradients, fastapi, supervision; assert torch.__version__.startswith('1.13')" "YOLO-NAS"; then
+            echo "Creating YOLO-NAS specialized environment..."
+            mkdir -p /opt/padel/envs/specialized
+            cd /opt/padel/envs/specialized
+            python3 -m venv yolo-nas-venv
+            source yolo-nas-venv/bin/activate
+            pip install --upgrade pip --quiet
+            pip install torch==1.13.1 torchvision==0.14.1 --index-url https://download.pytorch.org/whl/cu117 --quiet
+            pip install super-gradients fastapi uvicorn pydantic httpx numpy supervision python-multipart --quiet
+            echo "✅ YOLO-NAS environment created successfully"
+            cd /opt/padel
+          fi
+          
+          # Create systemd service files (always update these for any config changes)
+          echo "Updating service configurations..."
+          
+          # Combined Service (Modern PyTorch)
           sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
           [Unit]
-          Description=NuroPadel API
+          Description=NuroPadel Combined API
           After=network.target
           
           [Service]
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/yolo/venv/bin/python -m app.main
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m main
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -63,6 +138,7 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
+          # YOLO11 Service (Modern PyTorch)
           sudo tee /etc/systemd/system/yolo11-service.service > /dev/null << 'EOL'
           [Unit]
           Description=YOLO11 Pose Service
@@ -72,7 +148,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/yolo/venv/bin/python -m app.models.yolo11_service
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m models.yolo11_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -81,6 +157,7 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
+          # YOLOv8 Service (Modern PyTorch)
           sudo tee /etc/systemd/system/yolov8-service.service > /dev/null << 'EOL'
           [Unit]
           Description=YOLOv8 Tracking Service
@@ -90,7 +167,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/yolo/venv/bin/python -m app.models.yolov8_service
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m models.yolov8_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -99,6 +176,7 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
+          # MMPose Service (Legacy PyTorch)
           sudo tee /etc/systemd/system/mmpose-service.service > /dev/null << 'EOL'
           [Unit]
           Description=MMPose Biomechanics Service
@@ -108,7 +186,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/mmpose/venv/bin/python -m app.models.mmpose_service
+          ExecStart=/opt/padel/envs/legacy-torch/venv/bin/python -m models.mmpose_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -117,6 +195,7 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
+          # YOLO-NAS Service (Specialized)
           sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
           [Unit]
           Description=YOLO-NAS Pose Service
@@ -126,7 +205,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/yolo-nas/venv/bin/python -m app.models.yolo_nas_service
+          ExecStart=/opt/padel/envs/specialized/yolo-nas-venv/bin/python -m models.yolo_nas_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -138,19 +217,46 @@ jobs:
           # Reload systemd and start services
           echo "Starting services..."
           sudo systemctl daemon-reload
-          sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service
+          sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service 2>/dev/null || true
           sudo systemctl start padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service
           
-          # Verify services
+          # Wait for services to start
+          echo "Waiting for services to initialize..."
+          sleep 15
+          
+          # Verify services with detailed status
           echo "Verifying services..."
+          all_services_ok=true
+          
           for service in padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service; do
             status=$(systemctl is-active $service)
-            echo "$service: $status"
-            if [ "$status" != "active" ]; then
-              echo "WARNING: $service failed to start properly"
-              echo "Last 10 log lines:"
-              sudo journalctl -u $service -n 10 --no-pager
+            if [ "$status" = "active" ]; then
+              echo "✅ $service: $status"
+            else
+              echo "❌ $service: $status"
+              all_services_ok=false
+              echo "Recent logs for $service:"
+              sudo journalctl -u $service -n 5 --no-pager
             fi
           done
           
-          echo "Deployment completed"
+          # Test health endpoints
+          echo "Testing health endpoints..."
+          sleep 5
+          
+          for port in 8000 8001 8002 8003 8005; do
+            if timeout 5 curl -s -f http://localhost:$port/healthz > /dev/null 2>&1; then
+              echo "✅ Port $port: healthy"
+            else
+              echo "❌ Port $port: not responding"
+              all_services_ok=false
+            fi
+          done
+          
+          # Final deployment status
+          if [ "$all_services_ok" = true ]; then
+            echo "🎉 Deployment completed successfully - All services operational!"
+          else
+            echo "⚠️ Deployment completed with some issues - Check service logs above"
+            exit 1
+          fi

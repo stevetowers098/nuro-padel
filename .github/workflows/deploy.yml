@@ -16,49 +16,141 @@ jobs:
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
         script: |
-          # Stop main service
-          sudo systemctl stop padel-api || true
+          # Stop all services
+          echo "Stopping services..."
+          sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service || true
           
-          # Update code
-          cd /opt/padel/app
-          rm -rf *
+          # Update code only (no model downloads)
+          echo "Updating code..."
+          cd /opt/padel
           
-          # Clone repository
-          git clone https://github.com/stevetowers098/nuro-padel.git temp
-          cp -r temp/app/* .
-          cp temp/requirements.txt ../
-          rm -rf temp
-          
-          # Install dependencies in shared environment
-          /opt/padel/shared/venv/bin/pip install -r ../requirements.txt
-          
-          # Download YOLO models
-          mkdir -p models
-          cd /opt/padel/yolo && source venv/bin/activate
-          python -c "from ultralytics import YOLO; YOLO('yolo11n-pose.pt').save('/opt/padel/app/models/yolo11n-pose.pt')"
-          python -c "from ultralytics import YOLO; YOLO('yolo11n.pt').save('/opt/padel/app/models/yolo11n.pt')"
-          python -c "from ultralytics import YOLO; YOLO('yolov8n.pt').save('/opt/padel/app/models/yolov8n.pt')"
-          
-          # Create systemd service if missing
-          if [ ! -f /etc/systemd/system/padel-api.service ]; then
-            sudo tee /etc/systemd/system/padel-api.service << 'EOF'
-          [Unit]
-          Description=Padel AI API
-          After=network.target
-
-          [Service]
-          Type=simple
-          User=Towers
-          WorkingDirectory=/opt/padel/app
-          Environment=PATH=/opt/padel/shared/venv/bin
-          ExecStart=/opt/padel/shared/venv/bin/python main.py
-          Restart=always
-
-          [Install]
-          WantedBy=multi-user.target
-          EOF
+          # Backup current code (just in case)
+          if [ -d "app" ]; then
+            mv app app_backup_$(date +%Y%m%d_%H%M%S)
           fi
           
+          # Clone repository and set up code
+          git clone https://github.com/stevetowers098/nuro-padel.git temp
+          mkdir -p app
+          cp -r temp/app/* app/
+          cp temp/requirements.txt .
+          rm -rf temp
+          
+          # Install dependencies
+          echo "Installing dependencies..."
+          source shared/venv/bin/activate
+          pip install -r requirements.txt
+          
+          # Create systemd service files
+          echo "Creating service files..."
+          
+          # Create service files with proper paths and configurations
+          sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
+          [Unit]
+          Description=NuroPadel API
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/yolo/venv/bin/python -m app.main
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          sudo tee /etc/systemd/system/yolo11-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=YOLO11 Pose Service
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/yolo/venv/bin/python -m app.models.yolo11_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          sudo tee /etc/systemd/system/yolov8-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=YOLOv8 Tracking Service
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/yolo/venv/bin/python -m app.models.yolov8_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          sudo tee /etc/systemd/system/mmpose-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=MMPose Biomechanics Service
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/mmpose/venv/bin/python -m app.models.mmpose_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=YOLO-NAS Pose Service
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/yolo-nas/venv/bin/python -m app.models.yolo_nas_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          # Reload systemd and start services
+          echo "Starting services..."
           sudo systemctl daemon-reload
-          sudo systemctl enable padel-api
-          sudo systemctl start padel-api
+          sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service
+          sudo systemctl start padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service
+          
+          # Verify services
+          echo "Verifying services..."
+          for service in padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service; do
+            status=$(systemctl is-active $service)
+            echo "$service: $status"
+            if [ "$status" != "active" ]; then
+              echo "WARNING: $service failed to start properly"
+              echo "Last 10 log lines:"
+              sudo journalctl -u $service -n 10 --no-pager
+            fi
+          done
+          
+          echo "Deployment completed"

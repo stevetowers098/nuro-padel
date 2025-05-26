@@ -9,12 +9,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    # These steps for downloading configs/weights should ideally be placed
-    # BEFORE the main deployment script logic that starts services,
-    # or integrated into the application logic to download if not exist.
-    # For simplicity in this deploy script, they are here.
-    # Ensure the target directories exist or are created by these commands if needed.
-
     - name: Ensure Base App Directories Exist
       uses: appleboy/ssh-action@v0.1.7
       with:
@@ -34,7 +28,7 @@ jobs:
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
         script: |
-          wget -O /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py || echo "RTMPose config download failed, but continuing."
+          wget -nv -O /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py || echo "WARNING: RTMPose config download failed, but continuing."
           echo "RTMPose config download attempted."
 
     - name: Download HRNet Config
@@ -44,7 +38,7 @@ jobs:
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
         script: |
-          wget -O /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py || echo "HRNet config download failed, but continuing."
+          wget -nv -O /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py || echo "WARNING: HRNet config download failed, but continuing."
           echo "HRNet config download attempted."
 
     - name: Download RTMPose Weights
@@ -54,7 +48,7 @@ jobs:
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
         script: |
-          wget -O /opt/padel/app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth https://download.openmmlab.com/mmpose/v1/projects/rtmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth || echo "RTMPose weights download failed, but continuing."
+          wget -nv -O /opt/padel/app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth https://download.openmmlab.com/mmpose/v1/projects/rtmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth || echo "WARNING: RTMPose weights download failed, but continuing."
           echo "RTMPose weights download attempted."
 
     - name: Download HRNet Weights
@@ -64,7 +58,7 @@ jobs:
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
         script: |
-          wget -O /opt/padel/app/weights/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth || echo "HRNet weights download failed, but continuing."
+          wget -nv -O /opt/padel/app/weights/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth || echo "WARNING: HRNet weights download failed, but continuing."
           echo "HRNet weights download attempted."
 
     - name: Deploy Application Code and Setup Environments
@@ -82,26 +76,18 @@ jobs:
           echo "Updating code..."
           cd /opt/padel
           
-          if [ -d "app_old_backup" ]; then # Simple cleanup of one older backup
-            rm -rf app_old_backup 
-          fi
-          if [ -d "app_backup_$(date +%Y%m%d)" ]; then # Keep daily backups, remove if multiple from same day for space
-             # This is a simplistic backup, better strategies exist
-             mv app_backup_$(date +%Y%m%d) app_old_backup || true
-          fi
-          if [ -d "app" ]; then
-            mv app app_backup_$(date +%Y%m%d_%H%M%S)
-          fi
+          # Simple backup strategy
+          if [ -d "app_old_backup" ]; then rm -rf app_old_backup; fi
+          if [ -d "app_current_backup" ]; then mv app_current_backup app_old_backup || true; fi
+          if [ -d "app" ]; then mv app app_current_backup || true; fi
           
-          git clone https://github.com/stevetowers098/nuro-padel.git temp_clone
-          mkdir -p app
+          git clone https://github.com/stevetowers098/nuro-padel.git app_new_clone
+          mv app_new_clone app # Move new code into app directory
           
-          # Copy app contents, requirements folder, and main requirements.txt
-          cp -r temp_clone/app/* app/
-          cp -r temp_clone/requirements . 
-          cp temp_clone/requirements.txt .
-          
-          rm -rf temp_clone
+          # Ensure requirements directory and root requirements.txt are copied from the clone
+          # This assumes 'requirements' folder and 'requirements.txt' are at the root of your Git repo
+          cp -r app/requirements . 
+          cp app/requirements.txt .
           
           # Update shared environment
           echo "Updating shared environment (/opt/padel/shared/venv)..."
@@ -109,7 +95,6 @@ jobs:
           if [ ! -d "venv" ]; then python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          # Assuming requirements.txt in root is for shared or main app
           pip install -r /opt/padel/requirements.txt --quiet --no-cache-dir 
           deactivate
           
@@ -119,6 +104,7 @@ jobs:
           if [ ! -d "venv" ]; then python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
+          # Ensure requirements/yolo.txt has pydantic<2.0.0 and compatible fastapi
           pip install -r ../requirements/yolo.txt --quiet --no-cache-dir 
           deactivate
           
@@ -133,20 +119,24 @@ jobs:
           
           pip install --upgrade pip setuptools --quiet --no-cache-dir
           
-          echo "Uninstalling previous ML/CV packages that might conflict before targeted install..."
-          pip uninstall mmdet mmpose mmcv mmcv-lite mmcv-full torch torchvision torchaudio -y --quiet || true
+          echo "Aggressively uninstalling torch, torchvision, torchaudio, triton before reinstall for MMPose..."
+          pip uninstall torch torchvision torchaudio triton -y --quiet || true 
           
-          echo "Installing PyTorch for MMPose (CUDA 11.8)..."
-          pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cu118 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
+          echo "Installing PyTorch for MMPose (CUDA 11.8) with --no-cache-dir..."
+          pip install --no-cache-dir torch==2.0.1 --index-url https://download.pytorch.org/whl/cu118 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet
 
           echo "Installing OpenMIM for MMPose..."
-          pip install openmim --quiet --no-cache-dir
+          pip install --no-cache-dir openmim --quiet
+          
+          echo "Verifying PyTorch installation before MIM..."
+          python -c "import torch; print(f'PyTorch version for MIM in MMPose env: {torch.__version__}')" || echo "PyTorch check failed in MMPose env!"
           
           echo "Installing MMCV via MIM for MMPose..."
           mim install mmcv==2.0.1 --quiet 
           
           echo "Installing other MMPose dependencies from requirements/mmpose.txt..."
-          pip install -r ../requirements/mmpose.txt --quiet --no-cache-dir 
+          # Ensure mmpose.txt has mmpose==1.3.2, mmdet==3.2.0, etc. and NOT torch/mmcv
+          pip install --no-cache-dir -r ../requirements/mmpose.txt --quiet 
           
           deactivate
           
@@ -156,22 +146,21 @@ jobs:
           if [ ! -d "venv" ]; then python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
+          # Ensure requirements/yolo-nas.txt has super-gradients and specific torch if needed (e.g. torch==1.13)
           pip install -r ../requirements/yolo-nas.txt --quiet --no-cache-dir 
           deactivate
           
-          # Update Combined environment (/opt/padel/combined/venv) - if still used
-          # Consider removing this if combined-service is no longer active
-          echo "Updating Combined environment..."
-          cd /opt/padel/combined
-          if [ ! -d "venv" ]; then python3 -m venv venv; fi
-          source venv/bin/activate
-          pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir # Assuming it reuses yolo.txt
-          deactivate
+          # Combined environment - disable if not used
+          echo "Skipping Combined environment update as combined-service will be disabled."
+          # cd /opt/padel/combined
+          # if [ ! -d "venv" ]; then python3 -m venv venv; fi
+          # source venv/bin/activate
+          # pip install --upgrade pip setuptools --quiet --no-cache-dir
+          # pip install -r ../requirements/yolo.txt --quiet --no-cache-dir 
+          # deactivate
           
           cd /opt/padel # Return to base project directory
           
-          # Create/Update service files
           echo "Creating/Updating systemd service files..."
           # Main API Service (padel-api)
           sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
@@ -259,10 +248,10 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # Combined Service (Consider disabling if not used)
+          # Combined Service (Definition remains for completeness, but will be disabled)
           sudo tee /etc/systemd/system/combined-service.service > /dev/null << 'EOL'
           [Unit]
-          Description=Combined Analysis Service (Currently Inactive/Unused)
+          Description=Combined Analysis Service (Targeted for Disabling)
           After=network.target
           [Service]
           User=Towers
@@ -276,52 +265,58 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # Reload systemd, enable and start services
-          echo "Reloading systemd and starting services..."
+          echo "Reloading systemd and managing services..."
           sudo systemctl daemon-reload
-          # Enable all services you intend to run
-          sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service # Omitting combined-service for now
-          # Start services
-          sudo systemctl start padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service # Omitting combined-service
           
-          # If you want to explicitly disable and stop combined-service:
+          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
+          for service_to_manage in $ACTIVE_SERVICES; do
+            echo "Enabling and starting $service_to_manage..."
+            sudo systemctl enable $service_to_manage
+            sudo systemctl start $service_to_manage
+          done
+          
           echo "Ensuring combined-service is stopped and disabled..."
           sudo systemctl stop combined-service || true
           sudo systemctl disable combined-service || true
           
-          # Wait for services to initialize and verify
           echo "Waiting for services to initialize (30 seconds)..."
           sleep 30
           
           echo "Final Service Status Check:"
-          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
           for service_name in $ACTIVE_SERVICES; do
             status=$(systemctl is-active $service_name)
             echo "$service_name: $status"
             if [ "$status" != "active" ]; then
               echo "Error logs for $service_name (last 10 lines):"
-              sudo journalctl -u $service_name -n 10 --no-pager
+              sudo journalctl -u $service_name -n 10 --no-pager --since "3 minutes ago"
             fi
           done
           
           echo "Final Health Check:"
-          # Define ports for active services
           HEALTH_CHECK_PORTS="8000 8001 8002 8003 8004" 
           for port in $HEALTH_CHECK_PORTS; do
-            if curl -s -f http://localhost:$port/healthz > /dev/null; then
-              echo "✅ Port $port: healthy"
+            SERVICE_FOR_PORT_MSG="" # For logging which service we expect on this port
+            if [ "$port" == "8000" ]; then SERVICE_FOR_PORT_MSG="(padel-api)"; fi
+            if [ "$port" == "8001" ]; then SERVICE_FOR_PORT_MSG="(yolo11-service)"; fi
+            if [ "$port" == "8002" ]; then SERVICE_FOR_PORT_MSG="(yolov8-service)"; fi
+            if [ "$port" == "8003" ]; then SERVICE_FOR_PORT_MSG="(mmpose-service)"; fi
+            if [ "$port" == "8004" ]; then SERVICE_FOR_PORT_MSG="(yolo-nas-service)"; fi
+
+            if curl -s -f --max-time 10 http://localhost:$port/healthz > /dev/null; then
+              echo "✅ Port $port $SERVICE_FOR_PORT_MSG: healthy"
             else
-              echo "❌ Port $port: not responding. Service on this port might have an issue."
-              # Attempt to get logs for the service expected on this port
-              SERVICE_FOR_PORT=""
-              if [ "$port" == "8000" ]; then SERVICE_FOR_PORT="padel-api"; fi
-              if [ "$port" == "8001" ]; then SERVICE_FOR_PORT="yolo11-service"; fi
-              if [ "$port" == "8002" ]; then SERVICE_FOR_PORT="yolov8-service"; fi
-              if [ "$port" == "8003" ]; then SERVICE_FOR_PORT="mmpose-service"; fi
-              if [ "$port" == "8004" ]; then SERVICE_FOR_PORT="yolo-nas-service"; fi
-              if [ ! -z "$SERVICE_FOR_PORT" ]; then
-                echo "Recent logs for $SERVICE_FOR_PORT that might be on port $port:"
-                sudo journalctl -u $SERVICE_FOR_PORT -n 10 --no-pager --since "2 minutes ago"
+              echo "❌ Port $port $SERVICE_FOR_PORT_MSG: not responding. Service on this port might have an issue."
+              SERVICE_NAME_FOR_LOG_CHECK=""
+              case "$port" in
+                "8000") SERVICE_NAME_FOR_LOG_CHECK="padel-api";;
+                "8001") SERVICE_NAME_FOR_LOG_CHECK="yolo11-service";;
+                "8002") SERVICE_NAME_FOR_LOG_CHECK="yolov8-service";;
+                "8003") SERVICE_NAME_FOR_LOG_CHECK="mmpose-service";;
+                "8004") SERVICE_NAME_FOR_LOG_CHECK="yolo-nas-service";;
+              esac
+              if [ ! -z "$SERVICE_NAME_FOR_LOG_CHECK" ]; then
+                echo "Recent logs for $SERVICE_NAME_FOR_LOG_CHECK that might be on port $port:"
+                sudo journalctl -u $SERVICE_NAME_FOR_LOG_CHECK -n 10 --no-pager --since "3 minutes ago"
               fi
             fi
           done

@@ -46,31 +46,31 @@ jobs:
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           source venv/bin/activate
-          pip install ultralytics==8.3.139 opencv-python supervision torch torchvision --quiet
-          echo "Downloading YOLO models..."
-          python -c "from ultralytics import YOLO; YOLO('yolo11m-pose.pt'); YOLO('yolov8m.pt')" || true
+          pip install ultralytics==8.3.139 torch torchvision opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          deactivate
           
           # Update MMPose environment
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
           pip install openmim --quiet
-          mim install mmcv==1.7.2 --quiet
-          pip install mmpose opencv-python supervision --quiet
+          mim install "mmcv>=2.0.0rc4" --quiet
+          pip install mmpose opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          deactivate
           
           # Update YOLO-NAS environment
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           source venv/bin/activate
-          pip install super-gradients torch==1.13.1 supervision --quiet
-          echo "Downloading YOLO-NAS models..."
-          python -c "from super_gradients.training import models; models.get('yolo_nas_pose_m', pretrained_weights='coco_pose')" || true
+          pip install super-gradients torch==1.13.1 supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          deactivate
           
           # Update Combined environment
           echo "Updating Combined environment..."
           cd /opt/padel/combined
           source venv/bin/activate
-          pip install ultralytics supervision opencv-python torch --quiet
+          pip install ultralytics supervision opencv-python torch fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          deactivate
           
           cd /opt/padel
           
@@ -90,7 +90,7 @@ jobs:
           ExecStart=/opt/padel/shared/venv/bin/python main.py
           Restart=always
           RestartSec=10
-          Environment="PYTHONPATH=/opt/padel"
+          Environment="PYTHONPATH=/opt/padel/app"
           
           [Install]
           WantedBy=multi-user.target
@@ -109,7 +109,7 @@ jobs:
           ExecStart=/opt/padel/yolo/venv/bin/python -m models.yolo11_service
           Restart=always
           RestartSec=10
-          Environment="PYTHONPATH=/opt/padel"
+          Environment="PYTHONPATH=/opt/padel/app"
           
           [Install]
           WantedBy=multi-user.target
@@ -128,7 +128,7 @@ jobs:
           ExecStart=/opt/padel/yolo/venv/bin/python -m models.yolov8_service
           Restart=always
           RestartSec=10
-          Environment="PYTHONPATH=/opt/padel"
+          Environment="PYTHONPATH=/opt/padel/app"
           
           [Install]
           WantedBy=multi-user.target
@@ -147,7 +147,7 @@ jobs:
           ExecStart=/opt/padel/mmpose/venv/bin/python -m models.mmpose_service
           Restart=always
           RestartSec=10
-          Environment="PYTHONPATH=/opt/padel"
+          Environment="PYTHONPATH=/opt/padel/app"
           
           [Install]
           WantedBy=multi-user.target
@@ -166,7 +166,7 @@ jobs:
           ExecStart=/opt/padel/yolo-nas/venv/bin/python -m models.yolo_nas_service
           Restart=always
           RestartSec=10
-          Environment="PYTHONPATH=/opt/padel"
+          Environment="PYTHONPATH=/opt/padel/app"
           
           [Install]
           WantedBy=multi-user.target
@@ -185,7 +185,7 @@ jobs:
           ExecStart=/opt/padel/combined/venv/bin/python -m models.combined_service
           Restart=always
           RestartSec=10
-          Environment="PYTHONPATH=/opt/padel"
+          Environment="PYTHONPATH=/opt/padel/app"
           
           [Install]
           WantedBy=multi-user.target
@@ -220,4 +220,4 @@ jobs:
             fi
           done
           
-          echo "🎉 Deployment complete!"
+          echo "🎉 Deployment complete! Models will download on first use."

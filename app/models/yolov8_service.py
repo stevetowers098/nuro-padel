@@ -138,7 +138,7 @@ async def detect_objects_in_video(
 
         # For timeout testing, keep this low. For production, adjust or remove max_frames.
         num_frames_to_process = -1 
-        frames = extract_frames(temp_downloaded_path, max_frames=num_frames_to_process)
+        frames = extract_frames(temp_downloaded_path, num_frames_to_extract=num_frames_to_process)
         logger.info(f"Extracted {len(frames)} (max_frames={num_frames_to_process} for timeout testing) frames.")
 
         if not frames:

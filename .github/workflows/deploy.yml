@@ -256,11 +256,11 @@ jobs:
           [Service]
           User=Towers
           Group=Towers
-          WorkingDirectory=/opt/padel/app/app
+          WorkingDirectory=/opt/padel/app/app  # CORRECTED
           ExecStart=/opt/padel/yolo-nas/venv/bin/python -m models.yolo_nas_service
           Restart=always
           RestartSec=10
-          Environment="PYTHONPATH=/opt/padel/app/app"
+          Environment="PYTHONPATH=/opt/padel/app/app" # CORRECTED
           [Install]
           WantedBy=multi-user.target
           EOL

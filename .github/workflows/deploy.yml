@@ -1,3 +1,72 @@
+name: Deploy NuroPadel to VM
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Ensure Base App Directories Exist on VM
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          echo "Ensuring base directories for configs and weights exist..."
+          mkdir -p /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco
+          mkdir -p /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco
+          mkdir -p /opt/padel/app/weights
+          echo "Base directories ensured."
+
+    - name: Download RTMPose Config
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          echo "Attempting to download RTMPose config..."
+          wget -nv -O /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py || echo "WARNING: RTMPose config download failed, but continuing."
+          echo "RTMPose config download attempt finished."
+
+    - name: Download HRNet Config
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          echo "Attempting to download HRNet config..."
+          wget -nv -O /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py || echo "WARNING: HRNet config download failed, but continuing."
+          echo "HRNet config download attempt finished."
+
+    - name: Download RTMPose Weights
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          echo "Attempting to download RTMPose weights..."
+          wget -nv -O /opt/padel/app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth https://download.openmmlab.com/mmpose/v1/projects/rtmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth || echo "WARNING: RTMPose weights download failed, but continuing."
+          echo "RTMPose weights download attempt finished."
+
+    - name: Download HRNet Weights
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          echo "Attempting to download HRNet weights..."
+          wget -nv -O /opt/padel/app/weights/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth || echo "WARNING: HRNet weights download failed, but continuing."
+          echo "HRNet weights download attempt finished."
+
     - name: Deploy Application Code and Setup Environments
       uses: appleboy/ssh-action@v0.1.7
       with:
@@ -9,47 +78,66 @@
           echo "Stopping services..."
           sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service || true
           
-          # Update code (This part creates /opt/padel/app/app/... structure)
-          echo "Updating code..."
+          # Update code
+          echo "Updating code in /opt/padel/app ..."
           cd /opt/padel
           
+          # Backup strategy
           if [ -d "app_old_backup" ]; then rm -rf app_old_backup; fi
           if [ -d "app_current_backup" ]; then mv app_current_backup app_old_backup || true; fi
-          if [ -d "app" ]; then mv app app_current_backup || true; fi
+          if [ -d "app" ]; then mv app app_current_backup || true; fi # Backup existing /opt/padel/app
           
-          git clone https://github.com/stevetowers098/nuro-padel.git app_new_clone
-          mv app_new_clone app # This makes /opt/padel/app the repo root.
-                               # So, repo's app/ folder is at /opt/padel/app/app/
+          echo "Cloning repository into /opt/padel/app ..."
+          git clone https://github.com/stevetowers098/nuro-padel.git app # Clone directly into /opt/padel/app
+                                                                         # This means /opt/padel/app is now your repo root.
+                                                                         # And your repo's 'app' folder is at /opt/padel/app/app/
           
-          # Copy requirements from the cloned repo root to /opt/padel/
-          echo "Copying requirements files..."
-          cp -r /opt/padel/app/requirements /opt/padel/
-          cp /opt/padel/app/requirements.txt /opt/padel/
+          # Copy requirements from the cloned repo root to /opt/padel/ for venv setup
+          echo "Copying requirements files from /opt/padel/app/requirements to /opt/padel/requirements ..."
+          if [ -d "/opt/padel/app/requirements" ]; then
+            cp -r /opt/padel/app/requirements /opt/padel/
+          else
+            echo "WARNING: /opt/padel/app/requirements directory not found after clone."
+          fi
+          if [ -f "/opt/padel/app/requirements.txt" ]; then
+            cp /opt/padel/app/requirements.txt /opt/padel/
+          else
+            echo "WARNING: /opt/padel/app/requirements.txt file not found after clone."
+          fi
           
           # --- VIRTUAL ENVIRONMENT UPDATES ---
           
           # Update shared environment
           echo "Updating shared environment (/opt/padel/shared/venv)..."
           cd /opt/padel/shared
-          if [ ! -d "venv" ]; then python3 -m venv venv; fi
+          if [ ! -d "venv" ]; then echo "Creating venv for shared"; python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r /opt/padel/requirements.txt --quiet --no-cache-dir 
+          if [ -f "/opt/padel/requirements.txt" ]; then
+            pip install -r /opt/padel/requirements.txt --quiet --no-cache-dir
+          else
+            echo "WARNING: /opt/padel/requirements.txt not found for shared venv."
+            pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage # Fallback
+          fi
           deactivate
           
           # Update YOLO environment (/opt/padel/yolo/venv)
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
-          if [ ! -d "venv" ]; then python3 -m venv venv; fi
+          if [ ! -d "venv" ]; then echo "Creating venv for yolo"; python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r /opt/padel/requirements/yolo.txt --quiet --no-cache-dir 
+          if [ -f "/opt/padel/requirements/yolo.txt" ]; then
+            pip install -r /opt/padel/requirements/yolo.txt --quiet --no-cache-dir 
+          else
+            echo "WARNING: /opt/padel/requirements/yolo.txt not found!"
+          fi
           deactivate
           
           # Update MMPose environment (/opt/padel/mmpose/venv)
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
-          if [ ! -d "venv" ]; then python3 -m venv venv; fi
+          if [ ! -d "venv" ]; then echo "Creating venv for mmpose"; python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
           echo "Aggressively uninstalling torch, torchvision, torchaudio, triton, openxlab before reinstall for MMPose..."
@@ -65,21 +153,30 @@
           echo "Verifying MMCV installation for MMPose..."
           python -c "import mmcv; print(f'MMCV version for MMPose env: {mmcv.__version__}'); from mmcv.ops import MultiScaleDeformableAttention; print('MultiScaleDeformableAttention imported successfully from mmcv.ops')" || echo "ERROR: MMCV (full) verification failed in MMPose env!"
           echo "Installing other MMPose dependencies from requirements/mmpose.txt..."
-          pip install --no-cache-dir -r /opt/padel/requirements/mmpose.txt --quiet 
+          if [ -f "/opt/padel/requirements/mmpose.txt" ]; then
+            pip install --no-cache-dir -r /opt/padel/requirements/mmpose.txt --quiet 
+          else
+            echo "WARNING: /opt/padel/requirements/mmpose.txt not found!"
+          fi
           deactivate
           
           # Update YOLO-NAS environment (/opt/padel/yolo-nas/venv)
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
-          if [ ! -d "venv" ]; then python3 -m venv venv; fi
+          if [ ! -d "venv" ]; then echo "Creating venv for yolo-nas"; python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r /opt/padel/requirements/yolo-nas.txt --quiet --no-cache-dir 
+          if [ -f "/opt/padel/requirements/yolo-nas.txt" ]; then
+            pip install -r /opt/padel/requirements/yolo-nas.txt --quiet --no-cache-dir 
+          else
+            echo "WARNING: /opt/padel/requirements/yolo-nas.txt not found!"
+          fi
           deactivate
           
           echo "Skipping Combined environment update as combined-service will be disabled."
           
-          # --- SYSTEMD SERVICE FILE CREATION (Corrected Paths) ---
+          # --- SYSTEMD SERVICE FILE CREATION (Paths assume repo root is /opt/padel/app) ---
+          # --- And your actual runnable code is in /opt/padel/app/app/ ---
           echo "Creating/Updating systemd service files with corrected paths..."
 
           # Main API Service (padel-api)
@@ -159,11 +256,11 @@
           [Service]
           User=Towers
           Group=Towers
-          WorkingDirectory=/opt/padel/app/app
+          WorkingDirectory=/opt/padel/app/app  # CORRECTED
           ExecStart=/opt/padel/yolo-nas/venv/bin/python -m models.yolo_nas_service
           Restart=always
           RestartSec=10
-          Environment="PYTHONPATH=/opt/padel/app/app"
+          Environment="PYTHONPATH=/opt/padel/app/app" # CORRECTED
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -176,7 +273,7 @@
           [Service]
           User=Towers
           Group=Towers
-          WorkingDirectory=/opt/padel/app/app
+          WorkingDirectory=/opt/padel/app/app 
           ExecStart=/opt/padel/combined/venv/bin/python -m models.combined_service
           Restart=always
           RestartSec=10
@@ -208,7 +305,7 @@
             status=$(systemctl is-active $service_name)
             echo "$service_name: $status"
             if [ "$status" != "active" ]; then
-              echo "Error logs for $service_name (last 10 lines):"
+              echo "Error logs for $service_name (last 10 lines, last 3 mins):"
               sudo journalctl -u $service_name -n 10 --no-pager --since "3 minutes ago"
             fi
           done
@@ -236,7 +333,7 @@
                 "8004") SERVICE_NAME_FOR_LOG_CHECK="yolo-nas-service";;
               esac
               if [ ! -z "$SERVICE_NAME_FOR_LOG_CHECK" ]; then
-                echo "Recent logs for $SERVICE_NAME_FOR_LOG_CHECK that might be on port $port:"
+                echo "Recent logs for $SERVICE_NAME_FOR_LOG_CHECK that might be on port $port (last 10 lines, last 3 mins):"
                 sudo journalctl -u $SERVICE_NAME_FOR_LOG_CHECK -n 10 --no-pager --since "3 minutes ago"
               fi
             fi

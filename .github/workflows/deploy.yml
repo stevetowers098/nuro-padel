@@ -8,8 +8,66 @@ jobs:
     
     steps:
     - uses: actions/checkout@v3
-    
-    - name: Deploy to VM
+
+    # These steps for downloading configs/weights should ideally be placed
+    # BEFORE the main deployment script logic that starts services,
+    # or integrated into the application logic to download if not exist.
+    # For simplicity in this deploy script, they are here.
+    # Ensure the target directories exist or are created by these commands if needed.
+
+    - name: Ensure Base App Directories Exist
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          mkdir -p /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco
+          mkdir -p /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco
+          mkdir -p /opt/padel/app/weights
+          echo "Base directories for configs and weights ensured."
+
+    - name: Download RTMPose Config
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          wget -O /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py || echo "RTMPose config download failed, but continuing."
+          echo "RTMPose config download attempted."
+
+    - name: Download HRNet Config
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          wget -O /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py || echo "HRNet config download failed, but continuing."
+          echo "HRNet config download attempted."
+
+    - name: Download RTMPose Weights
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          wget -O /opt/padel/app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth https://download.openmmlab.com/mmpose/v1/projects/rtmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth || echo "RTMPose weights download failed, but continuing."
+          echo "RTMPose weights download attempted."
+
+    - name: Download HRNet Weights
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          wget -O /opt/padel/app/weights/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth || echo "HRNet weights download failed, but continuing."
+          echo "HRNet weights download attempted."
+
+    - name: Deploy Application Code and Setup Environments
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
@@ -24,38 +82,50 @@ jobs:
           echo "Updating code..."
           cd /opt/padel
           
+          if [ -d "app_old_backup" ]; then # Simple cleanup of one older backup
+            rm -rf app_old_backup 
+          fi
+          if [ -d "app_backup_$(date +%Y%m%d)" ]; then # Keep daily backups, remove if multiple from same day for space
+             # This is a simplistic backup, better strategies exist
+             mv app_backup_$(date +%Y%m%d) app_old_backup || true
+          fi
           if [ -d "app" ]; then
             mv app app_backup_$(date +%Y%m%d_%H%M%S)
           fi
           
-          git clone https://github.com/stevetowers098/nuro-padel.git temp
+          git clone https://github.com/stevetowers098/nuro-padel.git temp_clone
           mkdir -p app
           
-          cp -r temp/app/* app/
-          cp -r temp/requirements . # Ensure this copies your updated mmpose.txt
-          cp temp/requirements.txt .
+          # Copy app contents, requirements folder, and main requirements.txt
+          cp -r temp_clone/app/* app/
+          cp -r temp_clone/requirements . 
+          cp temp_clone/requirements.txt .
           
-          rm -rf temp
+          rm -rf temp_clone
           
           # Update shared environment
-          echo "Updating shared environment..."
+          echo "Updating shared environment (/opt/padel/shared/venv)..."
           cd /opt/padel/shared
+          if [ ! -d "venv" ]; then python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet --no-cache-dir
+          # Assuming requirements.txt in root is for shared or main app
+          pip install -r /opt/padel/requirements.txt --quiet --no-cache-dir 
           deactivate
           
-          # Update YOLO environment
+          # Update YOLO environment (/opt/padel/yolo/venv)
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
+          if [ ! -d "venv" ]; then python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir # Assuming yolo.txt exists and is correct
+          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir 
           deactivate
           
-          # Update MMPose environment
+          # Update MMPose environment (/opt/padel/mmpose/venv)
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
+          if [ ! -d "venv" ]; then python3 -m venv venv; fi
           source venv/bin/activate
           
           echo "Attempting to uninstall openxlab to prevent conflicts..."
@@ -63,47 +133,50 @@ jobs:
           
           pip install --upgrade pip setuptools --quiet --no-cache-dir
           
-          echo "Uninstalling previous ML/CV packages that might conflict..."
+          echo "Uninstalling previous ML/CV packages that might conflict before targeted install..."
           pip uninstall mmdet mmpose mmcv mmcv-lite mmcv-full torch torchvision torchaudio -y --quiet || true
           
-          echo "Installing PyTorch..."
+          echo "Installing PyTorch for MMPose (CUDA 11.8)..."
           pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cu118 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
 
-          echo "Installing OpenMIM..."
+          echo "Installing OpenMIM for MMPose..."
           pip install openmim --quiet --no-cache-dir
           
-          echo "Installing MMCV via MIM..."
+          echo "Installing MMCV via MIM for MMPose..."
           mim install mmcv==2.0.1 --quiet 
           
-          echo "Installing other MMPose dependencies from requirements file..."
-          pip install -r ../requirements/mmpose.txt --quiet --no-cache-dir # Uses the mmpose.txt file
+          echo "Installing other MMPose dependencies from requirements/mmpose.txt..."
+          pip install -r ../requirements/mmpose.txt --quiet --no-cache-dir 
           
           deactivate
           
-          # Update YOLO-NAS environment
+          # Update YOLO-NAS environment (/opt/padel/yolo-nas/venv)
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
+          if [ ! -d "venv" ]; then python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r ../requirements/yolo-nas.txt --quiet --no-cache-dir # Assuming yolo-nas.txt exists
+          pip install -r ../requirements/yolo-nas.txt --quiet --no-cache-dir 
           deactivate
           
-          # Update Combined environment
+          # Update Combined environment (/opt/padel/combined/venv) - if still used
+          # Consider removing this if combined-service is no longer active
           echo "Updating Combined environment..."
           cd /opt/padel/combined
+          if [ ! -d "venv" ]; then python3 -m venv venv; fi
           source venv/bin/activate
           pip install --upgrade pip setuptools --quiet --no-cache-dir
-          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir # Assuming this reuses yolo.txt
+          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir # Assuming it reuses yolo.txt
           deactivate
           
-          cd /opt/padel
+          cd /opt/padel # Return to base project directory
           
-          # Create service files
-          echo "Creating service files..."
-          # Main API Service
+          # Create/Update service files
+          echo "Creating/Updating systemd service files..."
+          # Main API Service (padel-api)
           sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
           [Unit]
-          Description=NuroPadel Main API
+          Description=NuroPadel Main API Gateway
           After=network.target
           [Service]
           User=Towers
@@ -120,7 +193,7 @@ jobs:
           # YOLO11 Service
           sudo tee /etc/systemd/system/yolo11-service.service > /dev/null << 'EOL'
           [Unit]
-          Description=YOLO11 Pose Service
+          Description=YOLOv11 Pose and Object Detection Service
           After=network.target
           [Service]
           User=Towers
@@ -137,7 +210,7 @@ jobs:
           # YOLOv8 Service
           sudo tee /etc/systemd/system/yolov8-service.service > /dev/null << 'EOL'
           [Unit]
-          Description=YOLOv8 Detection Service
+          Description=YOLOv8 Object Detection Service
           After=network.target
           [Service]
           User=Towers
@@ -154,7 +227,7 @@ jobs:
           # MMPose Service
           sudo tee /etc/systemd/system/mmpose-service.service > /dev/null << 'EOL'
           [Unit]
-          Description=MMPose Service
+          Description=MMPose Pose Estimation Service
           After=network.target
           [Service]
           User=Towers
@@ -164,7 +237,7 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          Environment="CUDA_HOME=/usr/local/cuda-11.8"
+          Environment="CUDA_HOME=/usr/local/cuda-11.8" 
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -172,7 +245,7 @@ jobs:
           # YOLO-NAS Service
           sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
           [Unit]
-          Description=YOLO-NAS Pose Service
+          Description=YOLO-NAS Pose Estimation Service
           After=network.target
           [Service]
           User=Towers
@@ -186,10 +259,10 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # Combined Service
+          # Combined Service (Consider disabling if not used)
           sudo tee /etc/systemd/system/combined-service.service > /dev/null << 'EOL'
           [Unit]
-          Description=Combined Analysis Service
+          Description=Combined Analysis Service (Currently Inactive/Unused)
           After=network.target
           [Service]
           User=Towers
@@ -203,33 +276,54 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # Start services
-          echo "Starting services..."
+          # Reload systemd, enable and start services
+          echo "Reloading systemd and starting services..."
           sudo systemctl daemon-reload
-          sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service
-          sudo systemctl start padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service
+          # Enable all services you intend to run
+          sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service # Omitting combined-service for now
+          # Start services
+          sudo systemctl start padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service # Omitting combined-service
           
-          # Wait and verify
-          echo "Waiting for services..."
+          # If you want to explicitly disable and stop combined-service:
+          echo "Ensuring combined-service is stopped and disabled..."
+          sudo systemctl stop combined-service || true
+          sudo systemctl disable combined-service || true
+          
+          # Wait for services to initialize and verify
+          echo "Waiting for services to initialize (30 seconds)..."
           sleep 30
           
-          echo "Service Status:"
-          for service in padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service; do
-            status=$(systemctl is-active $service)
-            echo "$service: $status"
+          echo "Final Service Status Check:"
+          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
+          for service_name in $ACTIVE_SERVICES; do
+            status=$(systemctl is-active $service_name)
+            echo "$service_name: $status"
             if [ "$status" != "active" ]; then
-              echo "Logs for $service:"
-              sudo journalctl -u $service -n 5 --no-pager
+              echo "Error logs for $service_name (last 10 lines):"
+              sudo journalctl -u $service_name -n 10 --no-pager
             fi
           done
           
-          echo "Health Check:"
-          for port in 8000 8001 8002 8003 8004 8005; do
+          echo "Final Health Check:"
+          # Define ports for active services
+          HEALTH_CHECK_PORTS="8000 8001 8002 8003 8004" 
+          for port in $HEALTH_CHECK_PORTS; do
             if curl -s -f http://localhost:$port/healthz > /dev/null; then
               echo "✅ Port $port: healthy"
             else
-              echo "❌ Port $port: not responding"
+              echo "❌ Port $port: not responding. Service on this port might have an issue."
+              # Attempt to get logs for the service expected on this port
+              SERVICE_FOR_PORT=""
+              if [ "$port" == "8000" ]; then SERVICE_FOR_PORT="padel-api"; fi
+              if [ "$port" == "8001" ]; then SERVICE_FOR_PORT="yolo11-service"; fi
+              if [ "$port" == "8002" ]; then SERVICE_FOR_PORT="yolov8-service"; fi
+              if [ "$port" == "8003" ]; then SERVICE_FOR_PORT="mmpose-service"; fi
+              if [ "$port" == "8004" ]; then SERVICE_FOR_PORT="yolo-nas-service"; fi
+              if [ ! -z "$SERVICE_FOR_PORT" ]; then
+                echo "Recent logs for $SERVICE_FOR_PORT that might be on port $port:"
+                sudo journalctl -u $SERVICE_FOR_PORT -n 10 --no-pager --since "2 minutes ago"
+              fi
             fi
           done
           
-          echo "🎉 Deployment complete! Models will download on first use."
+          echo "🎉 Deployment to VM complete!"

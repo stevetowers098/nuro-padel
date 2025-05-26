@@ -244,7 +244,7 @@ jobs:
           echo "Testing health endpoints..."
           sleep 5
           
-          for port in 8000 8001 8002 8003 8005; do
+          for port in 8000 8001 8002 8003 8004; do
             if timeout 5 curl -s -f http://localhost:$port/healthz > /dev/null 2>&1; then
               echo "✅ Port $port: healthy"
             else

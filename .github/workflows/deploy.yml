@@ -31,8 +31,9 @@ jobs:
           git clone https://github.com/stevetowers098/nuro-padel.git temp
           mkdir -p app
           
-          # FIXED: Copy only app contents, not the whole repo
+          # FIXED: Copy app contents AND requirements folder
           cp -r temp/app/* app/
+          cp -r temp/requirements .
           cp temp/requirements.txt .
           
           rm -rf temp

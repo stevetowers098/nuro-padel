@@ -42,38 +42,32 @@ jobs:
           source shared/venv/bin/activate
           pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
           
-          # Update YOLO environment (YOLO11 + YOLOv8) - FIXED: Added torch
+          # Update YOLO environment using requirements file
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           source venv/bin/activate
-          pip install torch torchvision --quiet
-          pip install ultralytics==8.3.139 opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          pip install -r ../app/requirements/yolo.txt --quiet
           deactivate
           
-          # Update MMPose environment - FIXED: Added torch
+          # Update MMPose environment using requirements file
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
-          pip install torch torchvision --quiet
-          pip install openmim --quiet
-          mim install "mmcv>=2.0.0rc4" --quiet
-          pip install mmpose opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          pip install -r ../app/requirements/mmpose.txt --quiet
           deactivate
           
-          # Update YOLO-NAS environment - FIXED: Added torch and torchvision
+          # Update YOLO-NAS environment using requirements file
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           source venv/bin/activate
-          pip install torch==1.13.1 torchvision --quiet
-          pip install super-gradients supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          pip install -r ../app/requirements/yolo-nas.txt --quiet
           deactivate
           
-          # Update Combined environment - FIXED: Added torch
+          # Update Combined environment using YOLO requirements
           echo "Updating Combined environment..."
           cd /opt/padel/combined
           source venv/bin/activate
-          pip install torch torchvision --quiet
-          pip install ultralytics supervision opencv-python fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          pip install -r ../app/requirements/yolo.txt --quiet
           deactivate
           
           cd /opt/padel
@@ -217,11 +211,4 @@ jobs:
           
           echo "Health Check:"
           for port in 8000 8001 8002 8003 8004 8005; do
-            if curl -s -f http://localhost:$port/healthz > /dev/null; then
-              echo "✅ Port $port: healthy"
-            else
-              echo "❌ Port $port: not responding"
-            fi
-          done
-          
-          echo "🎉 Deployment complete! Models will download on first use."
+            if curl -s -

@@ -36,10 +36,17 @@ jobs:
           cp temp/requirements.txt .
           rm -rf temp
           
-          # Install dependencies
-          echo "Installing dependencies..."
-          source shared/venv/bin/activate
-          pip install -r requirements.txt
+          # Ensure setup-envs.sh script exists and is executable
+          echo "Setting up dependency-grouped environments..."
+          mkdir -p scripts
+          
+          # Copy the setup-envs.sh script from the repository
+          cp temp/scripts/setup-envs.sh scripts/ || echo "Warning: setup-envs.sh not found in repository"
+          chmod +x scripts/setup-envs.sh
+          
+          # Note: We don't run the setup script during deployment
+          # It should be run separately during VM initialization
+          # or when environment updates are needed
           
           # Create systemd service files
           echo "Creating service files..."
@@ -51,10 +58,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.main
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m app.main
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -69,10 +76,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.models.yolo11_service
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m app.models.yolo11_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -87,10 +94,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.models.yolov8_service
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m app.models.yolov8_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -105,10 +112,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.models.mmpose_service
+          ExecStart=/opt/padel/envs/legacy-torch/venv/bin/python -m app.models.mmpose_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -123,10 +130,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.models.yolo_nas_service
+          ExecStart=/opt/padel/envs/specialized/yolo-nas-venv/bin/python -m app.models.yolo_nas_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"

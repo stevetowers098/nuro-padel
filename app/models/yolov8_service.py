@@ -5,13 +5,17 @@ import os
 import cv2
 import numpy as np
 import supervision as sv
-from typing import Dict, Any, List, Union
+from typing import Dict, Any, List, Union, Optional
 import io
 import sys
 import logging
 import random
 import base64
 import json
+import httpx
+import uuid
+from datetime import datetime
+from google.cloud import storage
 
 # Add parent directory to path to import utils
 # from init.path_initializer import *
@@ -21,13 +25,59 @@ from utils.video_utils import get_video_info, extract_frames
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="YOLOv8 Tracking Service", version="1.0.0")
+app = FastAPI(title="YOLOv8 Object Detection Service", version="1.0.0")
 
-# Simulated YOLOv8 object tracking function
-# In a real implementation, this would use the actual YOLOv8 model
+# YOLOv8 should focus on these COCO classes for padel
+PADEL_CLASSES = {
+    0: "person",        # Players
+    32: "sports ball",  # Padel ball  
+    43: "tennis racket" # Padel racket (close enough)
+}
+
+# Google Cloud Storage configuration
+GCS_BUCKET_NAME = "padel-ai"
+GCS_FOLDER = "processed"
+
+async def upload_to_gcs(video_path: str) -> str:
+    """
+    Upload a video to Google Cloud Storage.
+    
+    Args:
+        video_path: Path to the video file to upload
+        
+    Returns:
+        The public URL of the uploaded video
+    """
+    try:
+        # Generate a unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"{GCS_FOLDER}/video_{timestamp}_{unique_id}.mp4"
+        
+        # Upload the file to GCS
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        blob = bucket.blob(filename)
+        
+        # Upload the file
+        blob.upload_from_filename(video_path)
+        
+        # Make the blob publicly accessible
+        blob.make_public()
+        
+        # Return the public URL
+        return blob.public_url
+    
+    except Exception as e:
+        logger.error(f"Error uploading to GCS: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error uploading to GCS: {str(e)}")
+
+# Simulated YOLOv8 object detection function
+# In a real implementation, this would use the actual YOLOv8 model with yolov8n.pt
 def track_objects(frame: np.ndarray) -> List[Dict[str, Any]]:
     """
-    Track objects in a frame using YOLOv8.
+    Detect objects in a frame using YOLOv8.
+    Specialized for padel-relevant objects: person (0), sports ball (32), tennis racket (43)
     
     Args:
         frame: The input frame as a numpy array
@@ -42,8 +92,8 @@ def track_objects(frame: np.ndarray) -> List[Dict[str, Any]]:
     # Simulate some object detections (players, ball, racket)
     objects = []
     
-    # Simulate player detections
-    player_classes = ["player", "player"]
+    # Simulate player detections (COCO class 0: person)
+    player_classes = [PADEL_CLASSES[0], PADEL_CLASSES[0]]
     player_positions = [
         (width // 4, height // 2, width // 6, height // 3),  # Player 1
         (3 * width // 4, height // 2, width // 6, height // 3)  # Player 2
@@ -62,13 +112,13 @@ def track_objects(frame: np.ndarray) -> List[Dict[str, Any]]:
             "track_id": i + 1
         })
     
-    # Simulate ball detection
+    # Simulate ball detection (COCO class 32: sports ball)
     ball_x = width // 2 + random.randint(-width // 8, width // 8)
     ball_y = height // 2 + random.randint(-height // 8, height // 8)
     ball_size = min(width, height) // 20
     
     objects.append({
-        "class": "ball",
+        "class": PADEL_CLASSES[32],
         "confidence": 0.85,
         "bbox": {
             "x1": ball_x - ball_size // 2,
@@ -79,14 +129,14 @@ def track_objects(frame: np.ndarray) -> List[Dict[str, Any]]:
         "track_id": 3
     })
     
-    # Simulate racket detection
+    # Simulate racket detection (COCO class 43: tennis racket)
     racket_x = width // 4 + random.randint(-width // 16, width // 16)
     racket_y = height // 2 + random.randint(-height // 16, height // 16)
     racket_w = width // 10
     racket_h = height // 8
     
     objects.append({
-        "class": "racket",
+        "class": PADEL_CLASSES[43],
         "confidence": 0.8,
         "bbox": {
             "x1": racket_x - racket_w // 2,
@@ -114,9 +164,9 @@ def draw_objects_on_frame(frame: np.ndarray, objects: List[Dict[str, Any]]) -> n
     
     # Define colors for different classes
     colors = {
-        "player": (0, 255, 0),  # Green
-        "ball": (0, 0, 255),    # Red
-        "racket": (255, 0, 0)   # Blue
+        PADEL_CLASSES[0]: (0, 255, 0),   # Green for person
+        PADEL_CLASSES[32]: (0, 0, 255),  # Red for sports ball
+        PADEL_CLASSES[43]: (255, 0, 0)   # Blue for tennis racket
     }
     
     for obj in objects:
@@ -146,25 +196,50 @@ async def health_check():
     return {"status": "healthy", "model": "yolov8"}
 
 @app.post("/yolov8")
-async def track_video(file: UploadFile = File(...), video: bool = False, data: bool = False):
+async def detect_objects(
+    file: Optional[UploadFile] = File(None), 
+    video_url: Optional[str] = None,
+    video: bool = False, 
+    data: bool = False
+):
     """
-    Track objects in a video using YOLOv8.
+    Detect objects in a video using YOLOv8.
+    Specialized for padel-relevant objects: person (0), sports ball (32), tennis racket (43)
     
     Args:
-        file: The input video file
-        return_video: Whether to return the annotated video (default: False)
-        return_both: Whether to return both JSON data and annotated video (default: False)
+        file: Optional file upload
+        video_url: Optional URL of the video to analyze
+        video: Whether to return the annotated video (default: False)
+        data: Whether to return JSON data (default: False)
         
     Returns:
-        If return_both is True, returns both JSON data and video content.
-        If return_video is True, returns the annotated video as a StreamingResponse.
-        If both are False, returns the tracked objects as JSON.
+        - If data=True only: Returns JSON analysis data
+        - If video=True only: Returns processed video URL
+        - If both=True: Returns both JSON data AND video URL
+        - If both=False: Returns error (must specify at least one)
     """
     try:
-        # Save the uploaded file to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
-            temp_file.write(await file.read())
-            temp_path = temp_file.name
+        # Handle video URL input
+        if video_url:
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(video_url)
+                    response.raise_for_status()
+                    
+                # Save downloaded content to temp file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+                    temp_file.write(response.content)
+                    temp_path = temp_file.name
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to download video: {str(e)}")
+        
+        elif file:
+            # Existing file upload logic
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+                temp_file.write(await file.read())
+                temp_path = temp_file.name
+        else:
+            raise HTTPException(status_code=400, detail="Either file or video_url is required")
         
         # Get video info
         video_info = get_video_info(temp_path)
@@ -183,8 +258,8 @@ async def track_video(file: UploadFile = File(...), video: bool = False, data: b
             objects = track_objects(frame)
             all_objects.append(objects)
             
-        # If video or data is True, annotate the frame
-        if video or data:
+            # If video or data is True, annotate the frame
+            if video or data:
                 annotated_frame = draw_objects_on_frame(frame, objects)
                 annotated_frames.append(annotated_frame)
         
@@ -194,8 +269,8 @@ async def track_video(file: UploadFile = File(...), video: bool = False, data: b
         # Prepare the JSON response
         json_response = {"objects": all_objects}
         
-        # If data is True, create the video and return both
-        if data:
+        # If video or data is True, create the video
+        if video or data:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
             
@@ -214,53 +289,24 @@ async def track_video(file: UploadFile = File(...), video: bool = False, data: b
             # Release the VideoWriter
             out.release()
             
-            # Read the video file
-            with open(output_path, "rb") as f:
-                video_bytes = f.read()
+            # Upload the video to GCS
+            video_url = await upload_to_gcs(output_path)
             
             # Clean up the temporary output file
             os.unlink(output_path)
             
-            # Encode video as base64
-            video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+            # If data is True, return both JSON data and video URL
+            if data:
+                return {
+                    "data": json_response,
+                    "video_url": video_url
+                }
             
-            # Return combined response
-            return {
-                "data": json_response,
-                "video_base64": video_base64
-            }
-        
-        # If video is True, return the video as a StreamingResponse
-        elif video:
-            # Create a video from the annotated frames
-            output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
-            
-            # Get the original video's properties
-            height, width = annotated_frames[0].shape[:2]
-            fps = video_info["fps"]
-            
-            # Create a VideoWriter object
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            # Write the frames to the video
-            for frame in annotated_frames:
-                out.write(frame)
-            
-            # Release the VideoWriter
-            out.release()
-            
-            # Return the video as a StreamingResponse
-            with open(output_path, "rb") as f:
-                video_bytes = f.read()
-            
-            # Clean up the temporary output file
-            os.unlink(output_path)
-            
-            return StreamingResponse(
-                io.BytesIO(video_bytes),
-                media_type="video/mp4"
-            )
+            # If only video is True, return just the video URL
+            elif video:
+                return {
+                    "video_url": video_url
+                }
         else:
             # Return the objects as JSON
             return json_response

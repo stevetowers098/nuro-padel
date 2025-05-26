@@ -1,7 +1,7 @@
 torch
 torchvision
-openmim
-mmcv>=2.0.0rc4
+# Remove conflicting mmcv packages, use only one:
+mmcv>=2.0.0rc4,<=3.0.0  # Specific version range
 mmpose
 mmdet
 opencv-python

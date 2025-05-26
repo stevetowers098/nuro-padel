@@ -73,7 +73,7 @@ jobs:
           echo "Checking virtual environments..."
           
           # Check Modern PyTorch Environment (YOLO11, YOLOv8, Combined)
-          if ! check_environment "/opt/padel/envs/modern-torch/venv" "import torch, ultralytics, fastapi; assert torch.__version__.startswith('2.0')" "Modern PyTorch"; then
+          if ! check_environment "/opt/padel/envs/modern-torch/venv" "import torch, ultralytics, fastapi, supervision; assert torch.__version__.startswith('2.0')" "Modern PyTorch"; then
             echo "Creating modern PyTorch environment..."
             mkdir -p /opt/padel/envs/modern-torch
             cd /opt/padel/envs/modern-torch
@@ -81,13 +81,13 @@ jobs:
             source venv/bin/activate
             pip install --upgrade pip --quiet
             pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 --quiet
-            pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn pydantic httpx numpy --quiet
+            pip install ultralytics==8.0.196 opencv-python supervision fastapi uvicorn pydantic httpx numpy python-multipart --quiet
             echo "✅ Modern PyTorch environment created successfully"
             cd /opt/padel
           fi
           
           # Check Legacy PyTorch Environment (MMPose)
-          if ! check_environment "/opt/padel/envs/legacy-torch/venv" "import torch, mmcv, fastapi; assert torch.__version__.startswith('1.12')" "Legacy PyTorch"; then
+          if ! check_environment "/opt/padel/envs/legacy-torch/venv" "import torch, mmcv, fastapi, supervision; assert torch.__version__.startswith('1.12')" "Legacy PyTorch"; then
             echo "Creating legacy PyTorch environment..."
             mkdir -p /opt/padel/envs/legacy-torch
             cd /opt/padel/envs/legacy-torch
@@ -97,13 +97,13 @@ jobs:
             pip install torch==1.12.1 torchvision==0.13.1 --index-url https://download.pytorch.org/whl/cu116 --quiet
             pip install openmim --quiet
             mim install mmcv==1.7.2 --quiet
-            pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy --quiet
+            pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy supervision --quiet
             echo "✅ Legacy PyTorch environment created successfully"
             cd /opt/padel
           fi
           
           # Check Specialized Environment (YOLO-NAS)
-          if ! check_environment "/opt/padel/envs/specialized/yolo-nas-venv" "import torch, super_gradients, fastapi; assert torch.__version__.startswith('1.13')" "YOLO-NAS"; then
+          if ! check_environment "/opt/padel/envs/specialized/yolo-nas-venv" "import torch, super_gradients, fastapi, supervision; assert torch.__version__.startswith('1.13')" "YOLO-NAS"; then
             echo "Creating YOLO-NAS specialized environment..."
             mkdir -p /opt/padel/envs/specialized
             cd /opt/padel/envs/specialized
@@ -111,7 +111,7 @@ jobs:
             source yolo-nas-venv/bin/activate
             pip install --upgrade pip --quiet
             pip install torch==1.13.1 torchvision==0.14.1 --index-url https://download.pytorch.org/whl/cu117 --quiet
-            pip install super-gradients fastapi uvicorn pydantic httpx numpy --quiet
+            pip install super-gradients fastapi uvicorn pydantic httpx numpy supervision --quiet
             echo "✅ YOLO-NAS environment created successfully"
             cd /opt/padel
           fi

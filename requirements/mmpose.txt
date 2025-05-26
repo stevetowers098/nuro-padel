@@ -1,0 +1,12 @@
+torch
+torchvision
+openmim
+mmcv>=2.0.0rc4
+mmpose
+fastapi
+uvicorn
+opencv-python
+pydantic
+httpx
+python-multipart
+google-cloud-storage

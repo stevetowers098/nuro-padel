@@ -153,7 +153,7 @@ async def download_video(url: str) -> str:
         logger.error(f"Error downloading video: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
 
-@app.post("/pose")
+@app.post("/yolo11")
 async def detect_pose(
     request: VideoRequest = Body(None),
     file: Optional[UploadFile] = File(None)

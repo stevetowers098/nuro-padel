@@ -263,7 +263,7 @@ async def download_video(url: str) -> str:
         logger.error(f"Error downloading video: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
 
-@app.post("/analyze")
+@app.post("/mmpose")
 async def analyze_video(
     request: VideoRequest = Body(...),
     file: Optional[UploadFile] = File(None)

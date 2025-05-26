@@ -34,9 +34,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-logger.info("--- YOLOv8 SERVICE SCRIPT STARTED (URL-Only, FFMPEG, Detailed Logging, ValueError Fix) ---")
+logger.info("--- YOLOv8 SERVICE SCRIPT STARTED (URL-Only, FFMPEG, Detailed Logging, Refined RC Handling) ---")
 
-app = FastAPI(title="YOLOv8 Object Detection Service (URL Input Only)", version="1.2.1") # Incremented version
+app = FastAPI(title="YOLOv8 Object Detection Service (URL Input Only)", version="1.2.2") # Incremented version
 logger.info("FastAPI app object created for YOLOv8 service.")
 
 PADEL_CLASSES = {0: "person", 32: "sports ball", 39: "tennis racket"}
@@ -125,7 +125,7 @@ async def detect_objects_in_video(
     try:
         video_url_str = str(payload.video_url)
         logger.info(f"Attempting to download video from URL: {video_url_str}")
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client: # Download timeout
             response = await client.get(video_url_str)
             response.raise_for_status()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
@@ -136,17 +136,10 @@ async def detect_objects_in_video(
         video_info = get_video_info(temp_downloaded_path)
         logger.info(f"Video Info: {video_info}")
 
-        # Determine number of frames to process
         # For timeout testing, keep this low. For production, adjust or remove max_frames.
-        num_frames_to_process = 30 # Default for testing
-        if payload.video: # If video output is true, maybe process more, but still keep it reasonable for now
-            num_frames_to_process = 30 # Still 30 for testing to ensure timeout is not the issue
-        # elif payload.data: # If only data, could be slightly more
-            # num_frames_to_process = 150
-        
+        num_frames_to_process = 30 
         frames = extract_frames(temp_downloaded_path, max_frames=num_frames_to_process)
         logger.info(f"Extracted {len(frames)} (max_frames={num_frames_to_process} for timeout testing) frames.")
-
 
         if not frames:
             logger.error(f"No frames extracted from {temp_downloaded_path}.")
@@ -180,7 +173,7 @@ async def detect_objects_in_video(
                     for k_det, det_tensor_list in enumerate(raw_boxes_data):
                         x1, y1, x2, y2, conf, cls_raw = det_tensor_list; cls = int(cls_raw)
                         logger.debug(f"  Frame {original_frame_index}, Detection {k_det}: ClassID={cls}, Conf={conf:.2f}")
-                        if cls in PADEL_CLASSES and conf > 0.3:
+                        if cls in PADEL_CLASSES and conf > 0.3: # Example confidence threshold
                             current_frame_objects.append({
                                 "class": PADEL_CLASSES[cls], "confidence": float(conf),
                                 "bbox": {"x1": float(x1), "y1": float(y1), "x2": float(x2), "y2": float(y2)}
@@ -224,58 +217,78 @@ async def detect_objects_in_video(
                         output_video_path
                     ]
                     
-                    # Use Popen with explicit stdin, stdout, stderr pipes
                     process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     
-                    # Write frames to FFmpeg's stdin
                     for frame_to_write in annotated_frames_list:
-                        if process.stdin.closed: # Check if stdin is already closed
+                        if process.stdin and process.stdin.closed: 
                             logger.warning("FFMPEG stdin pipe closed prematurely. Stopping frame write.")
                             break
                         try:
-                            process.stdin.write(frame_to_write.tobytes())
+                            if process.stdin: process.stdin.write(frame_to_write.tobytes())
                         except (IOError, BrokenPipeError) as e_pipe:
                             logger.warning(f"FFMPEG stdin pipe broken while writing frame: {e_pipe}")
                             break
                     
-                    # Close stdin only if it's not already closed
-                    if not process.stdin.closed:
+                    if process.stdin and not process.stdin.closed:
                         logger.info("Finished writing frames to FFMPEG stdin. Closing pipe.")
                         process.stdin.close()
                     
-                    # Now communicate, this will wait for the process to terminate
-                    stdout_bytes, stderr_bytes = b'', b'' # Initialize
+                    stdout_bytes, stderr_bytes = b'', b''
+                    ffmpeg_timed_out = False
+                    ffmpeg_return_code = None # Initialize
+
                     try:
-                        stdout_bytes, stderr_bytes = process.communicate(timeout=120)
+                        logger.debug("Attempting process.communicate() with timeout...")
+                        stdout_bytes, stderr_bytes = process.communicate(timeout=120) # Timeout for ffmpeg processing
+                        ffmpeg_return_code = process.returncode
+                        logger.debug(f"process.communicate() finished. RC from communicate: {ffmpeg_return_code}")
                     except subprocess.TimeoutExpired:
                         logger.error("FFMPEG process timed out during communicate(). Killing process.")
                         process.kill()
-                        # Try to get any final output after kill
-                        stdout_bytes, stderr_bytes = process.communicate()
-                        raise HTTPException(status_code=500, detail="FFMPEG processing timed out")
-                    except ValueError as ve: # Catch specific "flush of closed file"
-                        if "flush of closed file" in str(ve).lower():
-                            logger.warning(f"Caught '{ve}' during communicate, likely due to already closed stdin. Checking return code.")
-                            # stdout/stderr might be None or incomplete here, rely on process.poll() or wait() if needed
-                            # For now, assume we proceed to check return code.
-                            pass # Proceed to check returncode
+                        try: # Best effort to get output after kill
+                            stdout_bytes, stderr_bytes = process.communicate(timeout=5)
+                        except Exception: pass # Ignore errors getting output after kill
+                        ffmpeg_timed_out = True
+                        ffmpeg_return_code = process.returncode # May be None or non-zero
+                    except ValueError as ve:
+                        if "flush of closed file" in str(ve).lower() or "write to closed file" in str(ve).lower():
+                            logger.warning(f"Caught '{ve}' during communicate(). Assuming ffmpeg might have finished or errored. Will try wait/poll.")
+                            # Try to wait briefly, then poll for return code
+                            try: process.wait(timeout=5) 
+                            except subprocess.TimeoutExpired: logger.warning("ffmpeg also timed out on wait() after ValueError.")
+                            ffmpeg_return_code = process.poll()
                         else:
                             logger.error(f"Unexpected ValueError during communicate: {ve}", exc_info=True)
-                            raise # Re-raise if it's a different ValueError
+                            ffmpeg_return_code = -1 # Indicate error
+                            # raise # Re-raise if it's a different ValueError not handled
+                    except Exception as e_comm:
+                        logger.error(f"Unexpected error during process.communicate(): {e_comm}", exc_info=True)
+                        ffmpeg_return_code = -1 # Indicate error
 
-                    if process.returncode != 0:
-                        logger.error(f"FFMPEG processing failed (return code {process.returncode}):")
+                    # Final check on return code if it wasn't set by communicate() or timeout logic
+                    if ffmpeg_return_code is None:
+                        logger.warning("ffmpeg_return_code is still None. Waiting briefly for process to finish and polling.")
+                        try: process.wait(timeout=5) # Brief wait
+                        except subprocess.TimeoutExpired: logger.warning("ffmpeg timed out on final wait.")
+                        ffmpeg_return_code = process.poll() # Get what we can
+
+                    if ffmpeg_timed_out: # This takes precedence
+                        response_content["message"] = "FFMPEG processing timed out."
+                        logger.error(response_content["message"])
+                        gcs_url_result = ""
+                    elif ffmpeg_return_code != 0:
+                        logger.error(f"FFMPEG processing failed (Return Code: {ffmpeg_return_code}):")
                         if stdout_bytes: logger.error(f"FFMPEG stdout: {stdout_bytes.decode(errors='ignore')}")
                         if stderr_bytes: logger.error(f"FFMPEG stderr: {stderr_bytes.decode(errors='ignore')}")
-                        gcs_url_result = "" 
-                        response_content["message"] = f"FFMPEG processing failed. RC: {process.returncode}"
-                    else:
+                        gcs_url_result = ""
+                        response_content["message"] = f"FFMPEG processing failed. RC: {ffmpeg_return_code}"
+                    else: # ffmpeg_return_code == 0
                         logger.info(f"Video created successfully via FFMPEG: {output_video_path}")
                         gcs_url_result = await upload_to_gcs(output_video_path)
                     
                     response_content["video_url"] = gcs_url_result if gcs_url_result else None
-                    if not gcs_url_result and "message" not in response_content : 
-                         response_content["message"] = "Failed to upload annotated video to GCS."
+                    if not gcs_url_result and "message" not in response_content :
+                         response_content["message"] = "Failed to upload annotated video to GCS (or FFMPEG failed without explicit error)."
                 finally:
                      if output_video_path and os.path.exists(output_video_path):
                         logger.debug(f"Deleting temporary FFMPEG output video file: {output_video_path}")
@@ -287,9 +300,9 @@ async def detect_objects_in_video(
 
         return JSONResponse(content=response_content)
             
-    except HTTPException: 
+    except HTTPException:
         raise
-    except httpx.HTTPStatusError as e: 
+    except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error during video download: {e.response.status_code} - {e.response.text}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Failed to download/access video_url: {e.response.status_code}")
     except Exception as e:
@@ -305,4 +318,3 @@ if __name__ == "__main__":
     if model is None:
         logger.critical("YOLOv8 model could not be loaded at startup. Service will be unhealthy.")
     uvicorn.run(app, host="0.0.0.0", port=8002, log_config=None)
-

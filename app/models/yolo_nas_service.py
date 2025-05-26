@@ -27,8 +27,8 @@ app = FastAPI(title="YOLO-NAS Pose Service", version="1.0.0")
 # Define request model
 class VideoRequest(BaseModel):
     video_url: HttpUrl
-    return_video: bool = False
-    return_both: bool = False
+    video: bool = False
+    data: bool = False
 
 # Simulated YOLO-NAS pose detection function
 # In a real implementation, this would use the actual YOLO-NAS model
@@ -201,8 +201,8 @@ async def detect_pose(
     try:
         # Get parameters from request
         video_url = request.video_url
-        return_video = request.return_video
-        return_both = request.return_both
+        return_video = request.video
+        return_both = request.data
         
         # Download the video from the URL
         temp_path = await download_video(str(video_url))
@@ -224,7 +224,7 @@ async def detect_pose(
             poses = detect_high_accuracy_poses(frame)
             all_poses.append(poses)
             
-            # If return_video or return_both is True, annotate the frame
+            # If video or data is True, annotate the frame
             if return_video or return_both:
                 annotated_frame = draw_poses_on_frame(frame, poses)
                 annotated_frames.append(annotated_frame)
@@ -235,7 +235,7 @@ async def detect_pose(
         # Prepare the JSON response
         json_response = {"poses": all_poses}
         
-        # If return_both is True, create the video and return both
+        # If data is True, create the video and return both
         if return_both:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
@@ -271,7 +271,7 @@ async def detect_pose(
                 "video_base64": video_base64
             }
         
-        # If return_video is True, return the video as a StreamingResponse
+        # If video is True, return the video as a StreamingResponse
         elif return_video:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name

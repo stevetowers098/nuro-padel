@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 import httpx
 import uvicorn
@@ -19,11 +19,11 @@ SERVICES = {
     "combined": "http://localhost:8004"
 }
 
-# Define request model
+# Define request model - simplified for direct use without request wrapper
 class VideoRequest(BaseModel):
     video_url: HttpUrl
-    return_video: bool = False
-    return_both: bool = False
+    video: bool = False  # True = output video
+    data: bool = False   # True = output data
     service: str = "combined"
 
 @app.get("/healthz")
@@ -36,26 +36,30 @@ async def root():
 
 @app.post("/analyze")
 async def full_analysis(
-    request: VideoRequest = Body(...),
+    video_url: HttpUrl,
+    video: bool = False,
+    data: bool = False,
+    service: str = "combined",
     file: Optional[UploadFile] = File(None)
 ):
     """
     Analyze a video using the specified service.
     
     Args:
-        request: The request body containing the video URL and parameters
+        video_url: URL of the video to analyze
+        video: Set to true to output video
+        data: Set to true to output data
+        service: Which service to use (default is "combined")
         file: Optional file upload (for backward compatibility)
         
     Returns:
-        If return_both is True, returns both JSON data and video content.
-        If return_video is True, returns the annotated video as a StreamingResponse.
-        If both are False, returns the analysis as JSON.
+        If both video and data are true, returns both JSON data and video content.
+        If only video is true, returns the annotated video as a StreamingResponse.
+        If only data is true or both are false, returns the analysis as JSON.
     """
-    # Get parameters from request
-    video_url = request.video_url
-    return_video = request.return_video
-    return_both = request.return_both
-    service = request.service
+    # Simplified parameter handling
+    return_video = video
+    return_both = video and data
     
     if service not in SERVICES:
         raise HTTPException(status_code=400, detail=f"Invalid service: {service}")
@@ -68,13 +72,13 @@ async def full_analysis(
         endpoint = "track"
     
     async with httpx.AsyncClient(timeout=300.0) as client:
-        # Prepare the request payload
+        # Prepare the request payload for the service
         json_payload = {
             "video_url": str(video_url),
             "return_video": return_video,
             "return_both": return_both
         }
-        
+    
         # If return_both is True, we need to get both JSON and video
         if return_both:
             # Call the service with return_both=true
@@ -104,54 +108,78 @@ async def full_analysis(
 
 @app.post("/pose")
 async def pose_estimation(
-    request: VideoRequest = Body(...),
+    video_url: HttpUrl,
+    video: bool = False,
+    data: bool = False,
     file: Optional[UploadFile] = File(None)
 ):
     """
     Proxy to YOLO11 pose service.
     
     Args:
-        request: The request body containing the video URL and parameters
+        video_url: URL of the video to analyze
+        video: Set to true to output video
+        data: Set to true to output data
         file: Optional file upload (for backward compatibility)
     """
-    # Create a new request with the updated service parameter
-    request = request.copy(update={"service": "yolo11"})
-    # Reuse the full_analysis function
-    return await full_analysis(request=request, file=file)
+    # Reuse the full_analysis function with yolo11 service
+    return await full_analysis(
+        video_url=video_url,
+        video=video,
+        data=data,
+        service="yolo11",
+        file=file
+    )
 
 @app.post("/track")
 async def object_tracking(
-    request: VideoRequest = Body(...),
+    video_url: HttpUrl,
+    video: bool = False,
+    data: bool = False,
     file: Optional[UploadFile] = File(None)
 ):
     """
     Proxy to YOLOv8 object tracking service.
     
     Args:
-        request: The request body containing the video URL and parameters
+        video_url: URL of the video to analyze
+        video: Set to true to output video
+        data: Set to true to output data
         file: Optional file upload (for backward compatibility)
     """
-    # Create a new request with the updated service parameter
-    request = request.copy(update={"service": "yolov8"})
-    # Reuse the full_analysis function
-    return await full_analysis(request=request, file=file)
+    # Reuse the full_analysis function with yolov8 service
+    return await full_analysis(
+        video_url=video_url,
+        video=video,
+        data=data,
+        service="yolov8",
+        file=file
+    )
 
 @app.post("/mmpose")
 async def biomechanical_analysis(
-    request: VideoRequest = Body(...),
+    video_url: HttpUrl,
+    video: bool = False,
+    data: bool = False,
     file: Optional[UploadFile] = File(None)
 ):
     """
     Proxy to MMPose service.
     
     Args:
-        request: The request body containing the video URL and parameters
+        video_url: URL of the video to analyze
+        video: Set to true to output video
+        data: Set to true to output data
         file: Optional file upload (for backward compatibility)
     """
-    # Create a new request with the updated service parameter
-    request = request.copy(update={"service": "mmpose"})
-    # Reuse the full_analysis function
-    return await full_analysis(request=request, file=file)
+    # Reuse the full_analysis function with mmpose service
+    return await full_analysis(
+        video_url=video_url,
+        video=video,
+        data=data,
+        service="mmpose",
+        file=file
+    )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

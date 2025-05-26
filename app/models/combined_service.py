@@ -28,8 +28,8 @@ app = FastAPI(title="Combined AI Service", version="1.0.0")
 # Define request model
 class VideoRequest(BaseModel):
     video_url: HttpUrl
-    return_video: bool = False
-    return_both: bool = False
+    video: bool = False
+    data: bool = False
 
 # Service URLs
 SERVICES = {
@@ -39,7 +39,7 @@ SERVICES = {
     "mmpose": "http://localhost:8003"
 }
 
-async def call_service(client, service_name, endpoint, video_url, return_video=False, return_both=False):
+async def call_service(client, service_name, endpoint, video_url, video=False, data=False):
     """
     Call a service with the given video URL.
     
@@ -48,8 +48,8 @@ async def call_service(client, service_name, endpoint, video_url, return_video=F
         service_name: The name of the service to call
         endpoint: The endpoint to call
         video_url: The URL of the video to process
-        return_video: Whether to return the annotated video
-        return_both: Whether to return both JSON data and annotated video
+        video: Whether to return the annotated video
+        data: Whether to return both JSON data and annotated video
         
     Returns:
         The response from the service
@@ -58,8 +58,8 @@ async def call_service(client, service_name, endpoint, video_url, return_video=F
         # Prepare the request payload
         json_payload = {
             "video_url": video_url,
-            "return_video": return_video,
-            "return_both": return_both
+            "video": video,
+            "data": data
         }
         
         # Call the service
@@ -239,8 +239,8 @@ async def analyze_video(
     try:
         # Get parameters from request
         video_url = request.video_url
-        return_video = request.return_video
-        return_both = request.return_both
+        return_video = request.video
+        return_both = request.data
         
         # Download the video from the URL
         temp_path = await download_video(str(video_url))
@@ -252,10 +252,10 @@ async def analyze_video(
         # Call all services
         async with httpx.AsyncClient(timeout=300.0) as client:
             tasks = [
-                call_service(client, "yolo11", "pose", str(video_url)),
-                call_service(client, "yolov8", "track", str(video_url)),
-                call_service(client, "yolo_nas", "pose", str(video_url)),
-                call_service(client, "mmpose", "analyze", str(video_url))
+                call_service(client, "yolo11", "pose", str(video_url), video=return_video, data=return_both),
+                call_service(client, "yolov8", "track", str(video_url), video=return_video, data=return_both),
+                call_service(client, "yolo_nas", "pose", str(video_url), video=return_video, data=return_both),
+                call_service(client, "mmpose", "analyze", str(video_url), video=return_video, data=return_both)
             ]
             
             results = await asyncio.gather(*tasks)

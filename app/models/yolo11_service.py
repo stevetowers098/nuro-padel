@@ -27,8 +27,8 @@ app = FastAPI(title="YOLO11 Pose Service", version="1.0.0")
 # Define request model
 class VideoRequest(BaseModel):
     video_url: HttpUrl
-    return_video: bool = False
-    return_both: bool = False
+    video: bool = False
+    data: bool = False
 
 # Simulated YOLO11 pose detection function
 # In a real implementation, this would use the actual YOLO11 model
@@ -175,8 +175,8 @@ async def detect_pose(
         if request:
             # Get parameters from request
             video_url = request.video_url
-            return_video = request.return_video
-            return_both = request.return_both
+            return_video = request.video
+            return_both = request.data
             
             # Download the video from the URL
             temp_path = await download_video(str(video_url))

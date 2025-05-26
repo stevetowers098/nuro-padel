@@ -146,7 +146,7 @@ async def health_check():
     return {"status": "healthy", "model": "yolov8"}
 
 @app.post("/track")
-async def track_video(file: UploadFile = File(...), return_video: bool = False, return_both: bool = False):
+async def track_video(file: UploadFile = File(...), video: bool = False, data: bool = False):
     """
     Track objects in a video using YOLOv8.
     
@@ -183,8 +183,8 @@ async def track_video(file: UploadFile = File(...), return_video: bool = False, 
             objects = track_objects(frame)
             all_objects.append(objects)
             
-            # If return_video or return_both is True, annotate the frame
-            if return_video or return_both:
+        # If video or data is True, annotate the frame
+        if video or data:
                 annotated_frame = draw_objects_on_frame(frame, objects)
                 annotated_frames.append(annotated_frame)
         
@@ -194,8 +194,8 @@ async def track_video(file: UploadFile = File(...), return_video: bool = False, 
         # Prepare the JSON response
         json_response = {"objects": all_objects}
         
-        # If return_both is True, create the video and return both
-        if return_both:
+        # If data is True, create the video and return both
+        if data:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
             
@@ -230,8 +230,8 @@ async def track_video(file: UploadFile = File(...), return_video: bool = False, 
                 "video_base64": video_base64
             }
         
-        # If return_video is True, return the video as a StreamingResponse
-        elif return_video:
+        # If video is True, return the video as a StreamingResponse
+        elif video:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
             

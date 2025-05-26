@@ -29,8 +29,8 @@ app = FastAPI(title="MMPose Biomechanics Service", version="1.0.0")
 # Define request model
 class VideoRequest(BaseModel):
     video_url: HttpUrl
-    return_video: bool = False
-    return_both: bool = False
+    video: bool = False
+    data: bool = False
 
 # Simulated MMPose biomechanical analysis function
 # In a real implementation, this would use the actual MMPose model
@@ -283,8 +283,8 @@ async def analyze_video(
     try:
         # Get parameters from request
         video_url = request.video_url
-        return_video = request.return_video
-        return_both = request.return_both
+        return_video = request.video
+        return_both = request.data
         
         # Download the video from the URL
         temp_path = await download_video(str(video_url))
@@ -306,7 +306,7 @@ async def analyze_video(
             analysis = analyze_biomechanics(frame)
             all_analyses.append(analysis)
             
-            # If return_video or return_both is True, annotate the frame
+            # If video or data is True, annotate the frame
             if return_video or return_both:
                 annotated_frame = draw_biomechanics_on_frame(frame, analysis)
                 annotated_frames.append(annotated_frame)
@@ -317,7 +317,7 @@ async def analyze_video(
         # Prepare the JSON response
         json_response = {"biomechanics": all_analyses}
         
-        # If return_both is True, create the video and return both
+        # If data is True, create the video and return both
         if return_both:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
@@ -353,7 +353,7 @@ async def analyze_video(
                 "video_base64": video_base64
             }
         
-        # If return_video is True, return the video as a StreamingResponse
+        # If video is True, return the video as a StreamingResponse
         elif return_video:
             # Create a video from the annotated frames
             output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name

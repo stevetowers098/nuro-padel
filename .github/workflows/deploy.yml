@@ -20,7 +20,7 @@ jobs:
           echo "Stopping services..."
           sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service || true
           
-          # Update code with FIXED copying
+          # Update code
           echo "Updating code..."
           cd /opt/padel
           
@@ -31,70 +31,80 @@ jobs:
           git clone https://github.com/stevetowers098/nuro-padel.git temp
           mkdir -p app
           
-          # Copy app contents AND requirements folder
           cp -r temp/app/* app/
-          cp -r temp/requirements .
+          cp -r temp/requirements . # Ensure this copies your updated mmpose.txt
           cp temp/requirements.txt .
           
           rm -rf temp
           
           # Update shared environment
           echo "Updating shared environment..."
-          source shared/venv/bin/activate
-          pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          cd /opt/padel/shared
+          source venv/bin/activate
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet --no-cache-dir
+          deactivate
           
-          # Update YOLO environment using requirements file only
+          # Update YOLO environment
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           source venv/bin/activate
-          pip install -r ../requirements/yolo.txt --quiet
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir # Assuming yolo.txt exists and is correct
           deactivate
           
-          # Update MMPose environment with FIXED installation
+          # Update MMPose environment
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
           
-          # Remove any existing conflicting packages
-          pip uninstall mmcv mmcv-lite mmcv-full torch torchvision torchaudio -y --quiet || true
+          echo "Attempting to uninstall openxlab to prevent conflicts..."
+          pip uninstall openxlab -y --quiet || true
           
-          # Install PyTorch first with correct CUDA 11.8 version
-          pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
           
-          # Install MMCV using mim (avoids compilation issues)
-          pip install openmim --quiet
-          mim install mmcv==2.0.1 --quiet
+          echo "Uninstalling previous ML/CV packages that might conflict..."
+          pip uninstall mmdet mmpose mmcv mmcv-lite mmcv-full torch torchvision torchaudio -y --quiet || true
           
-          # Install remaining packages
-          pip install mmpose mmdet opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          echo "Installing PyTorch..."
+          pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cu118 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
+
+          echo "Installing OpenMIM..."
+          pip install openmim --quiet --no-cache-dir
+          
+          echo "Installing MMCV via MIM..."
+          mim install mmcv==2.0.1 --quiet 
+          
+          echo "Installing other MMPose dependencies from requirements file..."
+          pip install -r ../requirements/mmpose.txt --quiet --no-cache-dir # Uses the mmpose.txt file
           
           deactivate
           
-          # Update YOLO-NAS environment using requirements file only
+          # Update YOLO-NAS environment
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           source venv/bin/activate
-          pip install -r ../requirements/yolo-nas.txt --quiet
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          pip install -r ../requirements/yolo-nas.txt --quiet --no-cache-dir # Assuming yolo-nas.txt exists
           deactivate
           
-          # Update Combined environment using YOLO requirements
+          # Update Combined environment
           echo "Updating Combined environment..."
           cd /opt/padel/combined
           source venv/bin/activate
-          pip install -r ../requirements/yolo.txt --quiet
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir # Assuming this reuses yolo.txt
           deactivate
           
           cd /opt/padel
           
-          # Create service files with CORRECT PATHS
+          # Create service files
           echo "Creating service files..."
-          
           # Main API Service
           sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
           [Unit]
           Description=NuroPadel Main API
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -103,7 +113,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -113,7 +122,6 @@ jobs:
           [Unit]
           Description=YOLO11 Pose Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -122,7 +130,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -132,7 +139,6 @@ jobs:
           [Unit]
           Description=YOLOv8 Detection Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -141,7 +147,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -151,7 +156,6 @@ jobs:
           [Unit]
           Description=MMPose Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -161,7 +165,6 @@ jobs:
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
           Environment="CUDA_HOME=/usr/local/cuda-11.8"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -171,7 +174,6 @@ jobs:
           [Unit]
           Description=YOLO-NAS Pose Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -180,7 +182,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -190,7 +191,6 @@ jobs:
           [Unit]
           Description=Combined Analysis Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -199,7 +199,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL

@@ -31,7 +31,7 @@ jobs:
           git clone https://github.com/stevetowers098/nuro-padel.git temp
           mkdir -p app
           
-          # FIXED: Copy app contents AND requirements folder
+          # Copy app contents AND requirements folder
           cp -r temp/app/* app/
           cp -r temp/requirements .
           cp temp/requirements.txt .
@@ -43,21 +43,24 @@ jobs:
           source shared/venv/bin/activate
           pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
           
-          # Update YOLO environment using requirements file
+          # Update YOLO environment using requirements file only
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           source venv/bin/activate
           pip install -r ../requirements/yolo.txt --quiet
           deactivate
           
-          # Update MMPose environment using requirements file
+          # Update MMPose environment using requirements file only
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
+          # Set CUDA environment for mmcv compilation
+          export CUDA_HOME=/usr/local/cuda-11.8
+          export PATH=$CUDA_HOME/bin:$PATH
           pip install -r ../requirements/mmpose.txt --quiet
           deactivate
           
-          # Update YOLO-NAS environment using requirements file
+          # Update YOLO-NAS environment using requirements file only
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           source venv/bin/activate
@@ -147,6 +150,7 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
+          Environment="CUDA_HOME=/usr/local/cuda-11.8"
           
           [Install]
           WantedBy=multi-user.target

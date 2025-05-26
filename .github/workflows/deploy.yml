@@ -42,34 +42,38 @@ jobs:
           source shared/venv/bin/activate
           pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
           
-          # Update YOLO environment (YOLO11 + YOLOv8)
+          # Update YOLO environment (YOLO11 + YOLOv8) - FIXED: Added torch
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           source venv/bin/activate
-          pip install ultralytics==8.3.139 torch torchvision opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          pip install torch torchvision --quiet
+          pip install ultralytics==8.3.139 opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
           deactivate
           
-          # Update MMPose environment
+          # Update MMPose environment - FIXED: Added torch
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
+          pip install torch torchvision --quiet
           pip install openmim --quiet
           mim install "mmcv>=2.0.0rc4" --quiet
           pip install mmpose opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
           deactivate
           
-          # Update YOLO-NAS environment
+          # Update YOLO-NAS environment - FIXED: Added torch and torchvision
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           source venv/bin/activate
-          pip install super-gradients torch==1.13.1 supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          pip install torch==1.13.1 torchvision --quiet
+          pip install super-gradients supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
           deactivate
           
-          # Update Combined environment
+          # Update Combined environment - FIXED: Added torch
           echo "Updating Combined environment..."
           cd /opt/padel/combined
           source venv/bin/activate
-          pip install ultralytics supervision opencv-python torch fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          pip install torch torchvision --quiet
+          pip install ultralytics supervision opencv-python fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
           deactivate
           
           cd /opt/padel

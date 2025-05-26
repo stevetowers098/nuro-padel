@@ -64,7 +64,7 @@ async def upload_to_gcs(video_path: str) -> str:
         return blob.public_url
     
     except Exception as e:
-        logger.error(f"Error uploading to GCS: {str(e)}")
+logger.error(f"Error processing video: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error uploading to GCS: {str(e)}")
 
 # Load the YOLO11 pose model with optimizations

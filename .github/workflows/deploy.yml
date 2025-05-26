@@ -1,219 +1,223 @@
 name: Deploy NuroPadel to VM
 on:
- push:
-   branches: [main]
+  push:
+    branches: [main]
 jobs:
- deploy:
-   runs-on: ubuntu-latest
-   
-   steps:
-   - uses: actions/checkout@v4
-   
-   - name: Deploy to VM
-     uses: appleboy/ssh-action@v1.0.0
-     with:
-       host: ${{ secrets.VM_HOST }}
-       username: ${{ secrets.VM_USER }}
-       key: ${{ secrets.VM_SSH_KEY }}
-       script: |
-         # Stop all services
-         echo "Stopping services..."
-         sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service || true
-         
-         # Update code
-         echo "Updating code..."
-         cd /opt/padel
-         
-         if [ -d "app" ]; then
-           mv app app_backup_$(date +%Y%m%d_%H%M%S)
-         fi
-         
-         git clone https://github.com/stevetowers098/nuro-padel.git temp
-         mkdir -p app
-         cp -r temp/* app/
-         rm -rf temp
-         
-         # Update shared environment
-         echo "Updating shared environment..."
-         source shared/venv/bin/activate
-         pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
-         
-         # Update YOLO environment (YOLO11 + YOLOv8)
-         echo "Updating YOLO environment..."
-         cd /opt/padel/yolo
-         source venv/bin/activate
-         pip install ultralytics==8.3.139 opencv-python supervision torch torchvision --quiet
-         echo "Downloading YOLO models..."
-         python -c "from ultralytics import YOLO; YOLO('yolo11m-pose.pt'); YOLO('yolov8m.pt')" || true
-         
-         # Update MMPose environment
-         echo "Updating MMPose environment..."
-         cd /opt/padel/mmpose
-         source venv/bin/activate
-         pip install openmim --quiet
-         mim install mmcv==1.7.2 --quiet
-         pip install mmpose opencv-python supervision --quiet
-         
-         # Update YOLO-NAS environment
-         echo "Updating YOLO-NAS environment..."
-         cd /opt/padel/yolo-nas
-         source venv/bin/activate
-         pip install super-gradients torch==1.13.1 supervision --quiet
-         echo "Downloading YOLO-NAS models..."
-         python -c "from super_gradients.training import models; models.get('yolo_nas_pose_m', pretrained_weights='coco_pose')" || true
-         
-         # Update Combined environment
-         echo "Updating Combined environment..."
-         cd /opt/padel/combined
-         source venv/bin/activate
-         pip install ultralytics supervision opencv-python torch --quiet
-         
-         cd /opt/padel
-         
-         # Create service files
-         echo "Creating service files..."
-         
-         # Main API Service
-         sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
-         [Unit]
-         Description=NuroPadel Main API
-         After=network.target
-         
-         [Service]
-         User=Towers
-         Group=Towers
-         WorkingDirectory=/opt/padel/app
-         ExecStart=/opt/padel/shared/venv/bin/python main.py
-         Restart=always
-         RestartSec=10
-         Environment="PYTHONPATH=/opt/padel"
-         
-         [Install]
-         WantedBy=multi-user.target
-         EOL
-         
-         # YOLO11 Service
-         sudo tee /etc/systemd/system/yolo11-service.service > /dev/null << 'EOL'
-         [Unit]
-         Description=YOLO11 Pose Service
-         After=network.target
-         
-         [Service]
-         User=Towers
-         Group=Towers
-         WorkingDirectory=/opt/padel/app
-         ExecStart=/opt/padel/yolo/venv/bin/python -m models.yolo11_service
-         Restart=always
-         RestartSec=10
-         Environment="PYTHONPATH=/opt/padel"
-         
-         [Install]
-         WantedBy=multi-user.target
-         EOL
-         
-         # YOLOv8 Service
-         sudo tee /etc/systemd/system/yolov8-service.service > /dev/null << 'EOL'
-         [Unit]
-         Description=YOLOv8 Detection Service
-         After=network.target
-         
-         [Service]
-         User=Towers
-         Group=Towers
-         WorkingDirectory=/opt/padel/app
-         ExecStart=/opt/padel/yolo/venv/bin/python -m models.yolov8_service
-         Restart=always
-         RestartSec=10
-         Environment="PYTHONPATH=/opt/padel"
-         
-         [Install]
-         WantedBy=multi-user.target
-         EOL
-         
-         # MMPose Service
-         sudo tee /etc/systemd/system/mmpose-service.service > /dev/null << 'EOL'
-         [Unit]
-         Description=MMPose Service
-         After=network.target
-         
-         [Service]
-         User=Towers
-         Group=Towers
-         WorkingDirectory=/opt/padel/app
-         ExecStart=/opt/padel/mmpose/venv/bin/python -m models.mmpose_service
-         Restart=always
-         RestartSec=10
-         Environment="PYTHONPATH=/opt/padel"
-         
-         [Install]
-         WantedBy=multi-user.target
-         EOL
-         
-         # YOLO-NAS Service
-         sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
-         [Unit]
-         Description=YOLO-NAS Pose Service
-         After=network.target
-         
-         [Service]
-         User=Towers
-         Group=Towers
-         WorkingDirectory=/opt/padel/app
-         ExecStart=/opt/padel/yolo-nas/venv/bin/python -m models.yolo_nas_service
-         Restart=always
-         RestartSec=10
-         Environment="PYTHONPATH=/opt/padel"
-         
-         [Install]
-         WantedBy=multi-user.target
-         EOL
-         
-         # Combined Service
-         sudo tee /etc/systemd/system/combined-service.service > /dev/null << 'EOL'
-         [Unit]
-         Description=Combined Analysis Service
-         After=network.target
-         
-         [Service]
-         User=Towers
-         Group=Towers
-         WorkingDirectory=/opt/padel/app
-         ExecStart=/opt/padel/combined/venv/bin/python -m models.combined_service
-         Restart=always
-         RestartSec=10
-         Environment="PYTHONPATH=/opt/padel"
-         
-         [Install]
-         WantedBy=multi-user.target
-         EOL
-         
-         # Start services
-         echo "Starting services..."
-         sudo systemctl daemon-reload
-         sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service
-         sudo systemctl start padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service
-         
-         # Wait and verify
-         echo "Waiting for services..."
-         sleep 30
-         
-         echo "Service Status:"
-         for service in padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service; do
-           status=$(systemctl is-active $service)
-           echo "$service: $status"
-           if [ "$status" != "active" ]; then
-             echo "Logs for $service:"
-             sudo journalctl -u $service -n 5 --no-pager
-           fi
-         done
-         
-         echo "Health Check:"
-         for port in 8000 8001 8002 8003 8004 8005; do
-           if curl -s -f http://localhost:$port/healthz > /dev/null; then
-             echo "✅ Port $port: healthy"
-           else
-             echo "❌ Port $port: not responding"
-           fi
-         done
-         
-         echo "🎉 Deployment complete!"
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to VM
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          # Stop all services
+          echo "Stopping services..."
+          sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service || true
+          
+          # Update code with FIXED copying
+          echo "Updating code..."
+          cd /opt/padel
+          
+          if [ -d "app" ]; then
+            mv app app_backup_$(date +%Y%m%d_%H%M%S)
+          fi
+          
+          git clone https://github.com/stevetowers098/nuro-padel.git temp
+          mkdir -p app
+          
+          # FIXED: Copy only app contents, not the whole repo
+          cp -r temp/app/* app/
+          cp temp/requirements.txt .
+          
+          rm -rf temp
+          
+          # Update shared environment
+          echo "Updating shared environment..."
+          source shared/venv/bin/activate
+          pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          
+          # Update YOLO environment (YOLO11 + YOLOv8)
+          echo "Updating YOLO environment..."
+          cd /opt/padel/yolo
+          source venv/bin/activate
+          pip install ultralytics==8.3.139 opencv-python supervision torch torchvision --quiet
+          echo "Downloading YOLO models..."
+          python -c "from ultralytics import YOLO; YOLO('yolo11m-pose.pt'); YOLO('yolov8m.pt')" || true
+          
+          # Update MMPose environment
+          echo "Updating MMPose environment..."
+          cd /opt/padel/mmpose
+          source venv/bin/activate
+          pip install openmim --quiet
+          mim install mmcv==1.7.2 --quiet
+          pip install mmpose opencv-python supervision --quiet
+          
+          # Update YOLO-NAS environment
+          echo "Updating YOLO-NAS environment..."
+          cd /opt/padel/yolo-nas
+          source venv/bin/activate
+          pip install super-gradients torch==1.13.1 supervision --quiet
+          echo "Downloading YOLO-NAS models..."
+          python -c "from super_gradients.training import models; models.get('yolo_nas_pose_m', pretrained_weights='coco_pose')" || true
+          
+          # Update Combined environment
+          echo "Updating Combined environment..."
+          cd /opt/padel/combined
+          source venv/bin/activate
+          pip install ultralytics supervision opencv-python torch --quiet
+          
+          cd /opt/padel
+          
+          # Create service files with CORRECT PATHS
+          echo "Creating service files..."
+          
+          # Main API Service
+          sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
+          [Unit]
+          Description=NuroPadel Main API
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/shared/venv/bin/python main.py
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          # YOLO11 Service
+          sudo tee /etc/systemd/system/yolo11-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=YOLO11 Pose Service
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/yolo/venv/bin/python -m models.yolo11_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          # YOLOv8 Service
+          sudo tee /etc/systemd/system/yolov8-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=YOLOv8 Detection Service
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/yolo/venv/bin/python -m models.yolov8_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          # MMPose Service
+          sudo tee /etc/systemd/system/mmpose-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=MMPose Service
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/mmpose/venv/bin/python -m models.mmpose_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          # YOLO-NAS Service
+          sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=YOLO-NAS Pose Service
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/yolo-nas/venv/bin/python -m models.yolo_nas_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          # Combined Service
+          sudo tee /etc/systemd/system/combined-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=Combined Analysis Service
+          After=network.target
+          
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app
+          ExecStart=/opt/padel/combined/venv/bin/python -m models.combined_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
+          # Start services
+          echo "Starting services..."
+          sudo systemctl daemon-reload
+          sudo systemctl enable padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service
+          sudo systemctl start padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service
+          
+          # Wait and verify
+          echo "Waiting for services..."
+          sleep 30
+          
+          echo "Service Status:"
+          for service in padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service; do
+            status=$(systemctl is-active $service)
+            echo "$service: $status"
+            if [ "$status" != "active" ]; then
+              echo "Logs for $service:"
+              sudo journalctl -u $service -n 5 --no-pager
+            fi
+          done
+          
+          echo "Health Check:"
+          for port in 8000 8001 8002 8003 8004 8005; do
+            if curl -s -f http://localhost:$port/healthz > /dev/null; then
+              echo "✅ Port $port: healthy"
+            else
+              echo "❌ Port $port: not responding"
+            fi
+          done
+          
+          echo "🎉 Deployment complete!"

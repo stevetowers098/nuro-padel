@@ -181,7 +181,7 @@ async def download_video(url: str) -> str:
         logger.error(f"Error downloading video: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
 
-@app.post("/pose")
+@app.post("/yolo-nas")
 async def detect_pose(
     request: VideoRequest = Body(...),
     file: Optional[UploadFile] = File(None)
@@ -312,4 +312,4 @@ async def detect_pose(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    uvicorn.run(app, host="0.0.0.0", port=8004)

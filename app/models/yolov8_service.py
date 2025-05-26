@@ -145,7 +145,7 @@ def draw_objects_on_frame(frame: np.ndarray, objects: List[Dict[str, Any]]) -> n
 async def health_check():
     return {"status": "healthy", "model": "yolov8"}
 
-@app.post("/track")
+@app.post("/yolov8")
 async def track_video(file: UploadFile = File(...), video: bool = False, data: bool = False):
     """
     Track objects in a video using YOLOv8.
@@ -271,4 +271,4 @@ async def track_video(file: UploadFile = File(...), video: bool = False, data: b
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8005)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

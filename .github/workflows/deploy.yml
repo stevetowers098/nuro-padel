@@ -20,7 +20,7 @@ jobs:
           echo "Stopping services..."
           sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service || true
           
-          # Update code with FIXED copying
+          # Update code
           echo "Updating code..."
           cd /opt/padel
           
@@ -31,7 +31,6 @@ jobs:
           git clone https://github.com/stevetowers098/nuro-padel.git temp
           mkdir -p app
           
-          # Copy app contents AND requirements folder
           cp -r temp/app/* app/
           cp -r temp/requirements .
           cp temp/requirements.txt .
@@ -40,61 +39,78 @@ jobs:
           
           # Update shared environment
           echo "Updating shared environment..."
-          source shared/venv/bin/activate
-          pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          cd /opt/padel/shared
+          source venv/bin/activate
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet --no-cache-dir
+          deactivate
           
-          # Update YOLO environment using requirements file only
+          # Update YOLO environment
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           source venv/bin/activate
-          pip install -r ../requirements/yolo.txt --quiet
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir
           deactivate
           
-          # Update MMPose environment with FIXED installation
+          # Update MMPose environment with memory optimizations
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           source venv/bin/activate
           
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          
           # Remove any existing conflicting packages
           pip uninstall mmcv mmcv-lite mmcv-full torch torchvision torchaudio -y --quiet || true
           
-          # Install PyTorch first with correct CUDA 11.8 version
-          pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet
+          # Install PyTorch components one by one
+          echo "Installing PyTorch..."
+          pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
+          echo "Installing TorchVision..."
+          pip install torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
+          echo "Installing TorchAudio..."
+          pip install torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
           
-          # Install MMCV using mim (avoids compilation issues)
-          pip install openmim --quiet
+          echo "Installing OpenMIM..."
+          pip install openmim --quiet --no-cache-dir
+          
+          echo "Installing MMCV via MIM..."
           mim install mmcv==2.0.1 --quiet
           
-          # Install remaining packages
-          pip install mmpose mmdet opencv-python supervision fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet
+          echo "Installing mmpose and mmdet..."
+          pip install mmpose mmdet --quiet --no-cache-dir
+          echo "Installing CV and supervision libraries..."
+          pip install opencv-python supervision --quiet --no-cache-dir
+          echo "Installing API and GCS libraries..."
+          pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage --quiet --no-cache-dir
           
           deactivate
           
-          # Update YOLO-NAS environment using requirements file only
+          # Update YOLO-NAS environment
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           source venv/bin/activate
-          pip install -r ../requirements/yolo-nas.txt --quiet
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          pip install -r ../requirements/yolo-nas.txt --quiet --no-cache-dir
           deactivate
           
-          # Update Combined environment using YOLO requirements
+          # Update Combined environment
           echo "Updating Combined environment..."
           cd /opt/padel/combined
           source venv/bin/activate
-          pip install -r ../requirements/yolo.txt --quiet
+          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          pip install -r ../requirements/yolo.txt --quiet --no-cache-dir
           deactivate
           
           cd /opt/padel
           
-          # Create service files with CORRECT PATHS
+          # Create service files
           echo "Creating service files..."
-          
           # Main API Service
           sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
           [Unit]
           Description=NuroPadel Main API
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -103,7 +119,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -113,7 +128,6 @@ jobs:
           [Unit]
           Description=YOLO11 Pose Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -122,7 +136,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -132,7 +145,6 @@ jobs:
           [Unit]
           Description=YOLOv8 Detection Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -141,7 +153,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -151,7 +162,6 @@ jobs:
           [Unit]
           Description=MMPose Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -161,7 +171,6 @@ jobs:
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
           Environment="CUDA_HOME=/usr/local/cuda-11.8"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -171,7 +180,6 @@ jobs:
           [Unit]
           Description=YOLO-NAS Pose Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -180,7 +188,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -190,7 +197,6 @@ jobs:
           [Unit]
           Description=Combined Analysis Service
           After=network.target
-          
           [Service]
           User=Towers
           Group=Towers
@@ -199,7 +205,6 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app"
-          
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -234,3 +239,50 @@ jobs:
           done
           
           echo "🎉 Deployment complete! Models will download on first use."
+```**2. Increase Swap Space on the VM (Crucial VM-Level Fix)**
+
+If your VM runs out of physical RAM, having swap space allows it to use disk space as a temporary, slower form of RAM. This can prevent OOM kills during memory-intensive operations like package installations.
+
+**Run these commands on your Linux VM (`padel-ai`):**
+
+```bash
+# Check current swap
+free -h
+swapon --show
+
+# Create a 4GB swap file (adjust size if needed, e.g., 8G)
+sudo fallocate -l 4G /swapfile
+
+# Set correct permissions
+sudo chmod 600 /swapfile
+
+# Set up the swap area
+sudo mkswap /swapfile
+
+# Enable the swap file
+sudo swapon /swapfile
+
+# Verify swap is active
+free -h
+swapon --show
+
+# Make swap permanent (add to /etc/fstab)
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```*After adding swap, it's a good idea to reboot the VM or at least re-run the deployment to see if it resolves the "Killed" errors.*
+
+**3. Upgrade VM Instance Type (If Budget Allows)**
+
+If OOM issues persist even with swap and optimized installations, the VM instance might simply not have enough physical RAM for your build and runtime needs. Consider upgrading to a GCP instance type with more RAM. The T4 GPU is good for inference, but the build process itself is CPU and RAM bound.
+
+**4. More Aggressive Venv Cleanup (Consider if issues persist)**
+
+Before installing dependencies, you could completely remove and recreate the virtual environments to ensure a truly clean state. Modify the script sections like this:
+
+```bash
+# Example for MMPose venv
+echo "Recreating MMPose virtual environment..."
+cd /opt/padel/mmpose
+rm -rf venv # Remove existing venv
+python3 -m venv venv # Create a new one
+source venv/bin/activate
+# ... rest of the pip install commands for this venv

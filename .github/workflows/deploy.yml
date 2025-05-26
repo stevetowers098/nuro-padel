@@ -97,7 +97,7 @@ jobs:
             pip install torch==1.12.1 torchvision==0.13.1 --index-url https://download.pytorch.org/whl/cu116 --quiet
             pip install openmim --quiet
             mim install mmcv==1.7.2 --quiet
-            pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy supervision --quiet
+            pip install mmpose fastapi uvicorn opencv-python pydantic httpx numpy supervision python-multipart --quiet
             echo "✅ Legacy PyTorch environment created successfully"
             cd /opt/padel
           fi
@@ -111,7 +111,7 @@ jobs:
             source yolo-nas-venv/bin/activate
             pip install --upgrade pip --quiet
             pip install torch==1.13.1 torchvision==0.14.1 --index-url https://download.pytorch.org/whl/cu117 --quiet
-            pip install super-gradients fastapi uvicorn pydantic httpx numpy supervision --quiet
+            pip install super-gradients fastapi uvicorn pydantic httpx numpy supervision python-multipart --quiet
             echo "✅ YOLO-NAS environment created successfully"
             cd /opt/padel
           fi
@@ -129,7 +129,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m app.main
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m main
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -148,7 +148,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m app.models.yolo11_service
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m models.yolo11_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -167,7 +167,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m app.models.yolov8_service
+          ExecStart=/opt/padel/envs/modern-torch/venv/bin/python -m models.yolov8_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -186,7 +186,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/legacy-torch/venv/bin/python -m app.models.mmpose_service
+          ExecStart=/opt/padel/envs/legacy-torch/venv/bin/python -m models.mmpose_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -205,7 +205,7 @@ jobs:
           User=Towers
           Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/envs/specialized/yolo-nas-venv/bin/python -m app.models.yolo_nas_service
+          ExecStart=/opt/padel/envs/specialized/yolo-nas-venv/bin/python -m models.yolo_nas_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -244,7 +244,7 @@ jobs:
           echo "Testing health endpoints..."
           sleep 5
           
-          for port in 8000 8001 8002 8003 8004; do
+          for port in 8000 8001 8002 8003 8005; do
             if timeout 5 curl -s -f http://localhost:$port/healthz > /dev/null 2>&1; then
               echo "✅ Port $port: healthy"
             else

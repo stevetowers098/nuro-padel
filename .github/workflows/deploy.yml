@@ -51,10 +51,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.main
+          ExecStart=/opt/padel/yolo/venv/bin/python -m app.main
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -69,10 +69,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.models.yolo11_service
+          ExecStart=/opt/padel/yolo/venv/bin/python -m app.models.yolo11_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -87,10 +87,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.models.yolov8_service
+          ExecStart=/opt/padel/yolo/venv/bin/python -m app.models.yolov8_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -105,10 +105,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.models.mmpose_service
+          ExecStart=/opt/padel/mmpose/venv/bin/python -m app.models.mmpose_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"
@@ -123,10 +123,10 @@ jobs:
           After=network.target
           
           [Service]
-          User=padel
-          Group=padel
+          User=Towers
+          Group=Towers
           WorkingDirectory=/opt/padel/app
-          ExecStart=/opt/padel/shared/venv/bin/python -m app.models.yolo_nas_service
+          ExecStart=/opt/padel/yolo-nas/venv/bin/python -m app.models.yolo_nas_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel"

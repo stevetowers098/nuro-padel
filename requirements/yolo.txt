@@ -1,11 +1,21 @@
-torch
-torchvision
-ultralytics
-opencv-python
-supervision
-fastapi
-uvicorn
-pydantic
-httpx
-python-multipart
-google-cloud-storage
+# requirements/yolo.txt
+
+# Pin FastAPI and Pydantic for v1 compatibility
+fastapi<=0.100.0,>=0.95.0 # Or a specific version like 0.99.1
+pydantic<2.0.0,>=1.10.0    # Or a specific version like 1.10.13
+
+# Core ML/CV for YOLOv8
+torch # Keep this, deploy.yml for mmpose installs a specific CUDA version, yolo env can get a compatible one
+torchvision # Companion to torch
+ultralytics # For YOLOv8 models
+
+# Other necessary packages
+opencv-python # For image/video processing (consider opencv-python-headless if no GUI needed)
+supervision # For annotations, if used by yolov8_service.py
+uvicorn[standard] # ASGI server (uvicorn is already listed with [standard] in your original requirements.txt)
+httpx # If yolov8_service.py makes outbound HTTP calls
+python-multipart # For FastAPI file uploads
+google-cloud-storage # If yolov8_service.py interacts with GCS
+
+# Make sure numpy is also present if not pulled in as a sub-dependency, often needed.
+numpy

@@ -2,13 +2,13 @@
 # ===================================================================
 
 # --- Core ML/DL with Latest CUDA Support ---
-torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
-torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
+torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 
-# --- YOLO Models (Latest) ---
-ultralytics>=8.3.0          # Latest YOLOv11, YOLOv8 support
-super-gradients>=3.7.1      # YOLO-NAS - compatible with PyTorch 2.5.1
+# --- YOLO Models (Compatible Versions) ---
+ultralytics==8.2.103        # Stable YOLOv11, YOLOv8 support
+super-gradients==3.7.0      # YOLO-NAS - stable version
 
 # --- FastAPI Stack (Latest) ---
 fastapi==0.115.12          # Latest stable
@@ -21,7 +21,7 @@ supervision==0.24.0        # Latest with improved YOLO integration
 pillow==10.4.0             # Latest with security fixes
 
 # --- Core Dependencies ---
-numpy>=1.24.0,<2.0.0      # Stable numpy 1.x for compatibility
+numpy>=1.24.0,<1.27.0     # Compatible with YOLO packages
 httpx==0.27.2              # Latest async client
 python-multipart==0.0.12  # Latest for file uploads
 

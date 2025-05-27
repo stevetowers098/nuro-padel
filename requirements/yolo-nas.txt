@@ -21,7 +21,7 @@ opencv-python-headless==4.10.0.84  # Latest stable
 pillow==10.4.0             # Latest with security fixes
 
 # --- Core Dependencies ---
-numpy>=1.24.0,<2.0.0      # Stable numpy 1.x for compatibility
+numpy>=1.24.0,<1.27.0     # Compatible with YOLO packages
 httpx==0.27.2              # Latest async client
 python-multipart==0.0.12  # Latest for file uploads
 

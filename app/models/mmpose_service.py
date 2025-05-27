@@ -100,7 +100,7 @@ except Exception as e_rtmpose:
     try:
         # Method 2: Let MMPose download everything automatically
         logger.info("Attempting to load RTMPose with automatic download...")
-        config_name = 'projects/rtmpose/rtmpose/body_2d_keypoint/rtmpose-m_8xb256-420e_coco-256x192.py'
+        config_name = '/opt/padel/mmpose/venv/lib/python3.8/site-packages/mmpose/.mim/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py'
         checkpoint_url = 'https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
         
         mmpose_model = init_model(config_name, checkpoint_url, device=model_device)

@@ -84,16 +84,31 @@ jobs:
         echo "2. Verify public key is on VM: cat ~/.ssh/authorized_keys"
         echo "3. Fix permissions: chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
 
-    - name: Fallback - Test with gcloud SSH
+    - name: Alternative - GCP Console Instructions
       if: steps.ssh_test.outcome == 'failure'
       run: |
-        echo "🔄 Attempting fallback gcloud SSH connection..."
-        gcloud compute ssh padel-ai \
-          --zone=australia-southeast1-a \
-          --project=surf-coach \
-          --ssh-flag="-o ConnectTimeout=10" \
-          --ssh-flag="-o StrictHostKeyChecking=no" \
-          --command="echo '✅ gcloud SSH works! VM is accessible via GCP SSH keys'"
+        echo "🔄 SSH Key authentication failed. Manual setup required."
+        echo ""
+        echo "📋 IMMEDIATE SOLUTION - Use GCP Console:"
+        echo "1. Go to https://console.cloud.google.com/compute/instances"
+        echo "2. Click 'SSH' next to your padel-ai instance"
+        echo "3. In the terminal, run these commands:"
+        echo ""
+        echo "   # Create SSH directory"
+        echo "   mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+        echo ""
+        echo "   # Add your GitHub Actions public key"
+        echo "   echo 'YOUR_PUBLIC_KEY_HERE' >> ~/.ssh/authorized_keys"
+        echo "   chmod 600 ~/.ssh/authorized_keys"
+        echo ""
+        echo "   # Restart SSH service"
+        echo "   sudo systemctl restart ssh"
+        echo ""
+        echo "🔑 To get your public key from private key in GitHub Secrets:"
+        echo "   ssh-keygen -y -f <(echo \"\$VM_SSH_KEY\")"
+        echo ""
+        echo "⚠️  This deployment will FAIL until SSH keys are properly configured"
+        exit 1
 
     - name: Prepare VM for Deployment
       uses: appleboy/ssh-action@v0.1.7
@@ -110,8 +125,9 @@ jobs:
           # Stop all current services (including combined-service)
           sudo systemctl stop padel-api combined-service yolo11-service yolov8-service mmpose-service yolo-nas-service 2>/dev/null || true
           echo "Creating base directories..."
-          sudo mkdir -p /opt/padel/{app,shared,yolo,mmpose,yolo-nas}
-          sudo mkdir -p /opt/padel/app/{configs/body_2d_keypoint/rtmpose/coco,weights,scripts,uploads,processed}
+          sudo mkdir -p /opt/padel/app /opt/padel/shared /opt/padel/yolo /opt/padel/mmpose /opt/padel/yolo-nas
+          sudo mkdir -p /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco
+          sudo mkdir -p /opt/padel/app/weights /opt/padel/app/scripts /opt/padel/app/uploads /opt/padel/app/processed
           sudo chown -R Towers:Towers /opt/padel
           echo "Preserving model weights..."
           if [ -d "/opt/padel/app/weights" ]; then
@@ -120,7 +136,13 @@ jobs:
           fi
           echo "Cleaning old code..."
           find /opt/padel/app -maxdepth 1 -type f -delete
-          find /opt/padel/app -maxdepth 1 -mindepth 1 -type d ! -name weights ! -name uploads ! -name processed -exec rm -rf {} + 2>/dev/null || true
+          # Clean old code directories (preserving weights, uploads, processed)
+          for dir in /opt/padel/app/*/; do
+            dirname=$(basename "$dir")
+            if [ "$dirname" != "weights" ] && [ "$dirname" != "uploads" ] && [ "$dirname" != "processed" ]; then
+              rm -rf "$dir" 2>/dev/null || true
+            fi
+          done
           echo "VM prepared for code transfer"
 
     - name: Smart Code Update

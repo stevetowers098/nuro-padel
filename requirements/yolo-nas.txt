@@ -1,5 +1,5 @@
 torch==1.13.1
-torchvision
+torchvision==0.14.1
 super-gradients
 fastapi==0.104.1
 uvicorn==0.24.0
@@ -9,3 +9,5 @@ python-multipart
 google-cloud-storage
 numpy
 opencv-python-headless
+onnx==1.15.0
+onnxruntime>=1.15.0

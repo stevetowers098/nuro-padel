@@ -156,26 +156,13 @@ jobs:
         debug: true
         script: |
           set -e
-          echo "📋 Checking if requirements changed..."
+          echo "📦 Downloading and updating code..."
           cd /opt/padel
           curl -sL https://github.com/stevetowers098/nuro-padel/archive/refs/heads/main.tar.gz | tar -xz
-          REBUILD_VENVS=false
-          if [ ! -f "requirements.txt" ] || ! diff -q nuro-padel-main/requirements.txt requirements.txt >/dev/null 2>&1; then
-            echo "🔄 Main requirements changed - need to rebuild shared venv"
-            REBUILD_VENVS=true
-          fi
-          if [ ! -d "requirements" ] || ! diff -q -r nuro-padel-main/requirements/ requirements/ >/dev/null 2>&1; then
-            echo "🔄 Service requirements changed - need to rebuild service venvs"
-            REBUILD_VENVS=true
-          fi
           
-          echo "📦 Copying new code..."
+          echo "📂 Copying new code..."
           cp -r nuro-padel-main/* app/
           rm -rf nuro-padel-main
-          
-          echo "📄 Updating requirements files..."
-          cp -r app/requirements /opt/padel/ 2>/dev/null || echo "⚠️ No requirements directory"
-          cp app/requirements.txt /opt/padel/ 2>/dev/null || echo "⚠️ No requirements.txt"
           
           echo "🔄 Preserving manually managed weights..."
           if [ -d "/tmp/weights_backup" ]; then
@@ -187,10 +174,9 @@ jobs:
             mkdir -p app/weights
           fi
           
-          echo "REBUILD_VENVS=$REBUILD_VENVS"
-          echo "🎯 Smart code update complete!"
+          echo "🎯 Code update complete!"
 
-    - name: Setup Virtual Environments
+    - name: Setup Virtual Environments (Smart)
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
@@ -201,61 +187,183 @@ jobs:
         debug: true
         script: |
           set -e
+          
+          # Check if we need to rebuild environments
+          cd /opt/padel
+          REBUILD_VENVS=false
+          if [ ! -f "requirements.txt" ] || ! diff -q app/requirements.txt requirements.txt >/dev/null 2>&1; then
+            echo "🔄 Main requirements changed - need to rebuild shared venv"
+            REBUILD_VENVS=true
+          fi
+          if [ ! -d "requirements" ] || ! diff -q -r app/requirements/ requirements/ >/dev/null 2>&1; then
+            echo "🔄 Service requirements changed - need to rebuild service venvs"
+            REBUILD_VENVS=true
+          fi
+          
+          # Function to setup/check virtual environment
           setup_venv() {
             local venv_path=$1
             local venv_name=$2
             local req_file=$3
-            echo "🔧 Setting up $venv_name environment..."
+            
             cd $venv_path
-            if [ -d "venv" ]; then
-              rm -rf venv
-            fi
-            python3.10 -m venv venv
-            source venv/bin/activate
-            pip install --upgrade pip setuptools wheel --quiet --no-cache-dir
-            if [ -f "$req_file" ]; then
-              pip install -r "$req_file" --quiet --no-cache-dir
+            if [ "$REBUILD_VENVS" = "true" ] || [ ! -d "venv" ]; then
+              echo "🔧 Setting up $venv_name environment..."
+              if [ -d "venv" ]; then
+                rm -rf venv
+              fi
+              python3.10 -m venv venv
+              source venv/bin/activate
+              pip install --upgrade pip setuptools wheel --quiet --no-cache-dir --disable-pip-version-check
+              if [ -f "$req_file" ]; then
+                pip install -r "$req_file" --quiet --no-cache-dir --disable-pip-version-check
+              else
+                echo "⚠️ $req_file not found, using fallback packages"
+                case $venv_name in
+                  "shared")
+                    pip install fastapi==0.104.1 uvicorn==0.24.0 pydantic==2.5.0 httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir --disable-pip-version-check
+                    ;;
+                  "yolo")
+                    pip install fastapi==0.104.1 pydantic==2.5.0 ultralytics torch torchvision --quiet --no-cache-dir --disable-pip-version-check
+                    ;;
+                  "yolo-nas")
+                    pip install fastapi==0.104.1 pydantic==2.5.0 super-gradients torch==1.13 --quiet --no-cache-dir --disable-pip-version-check
+                    ;;
+                esac
+              fi
+              deactivate
+              echo "✅ $venv_name environment ready"
             else
-              echo "⚠️ $req_file not found, using fallback packages"
-              case $venv_name in
-                "shared")
-                  pip install fastapi==0.104.1 uvicorn==0.24.0 pydantic==2.5.0 httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir
-                  ;;
-                "yolo")
-                  pip install fastapi==0.104.1 pydantic==2.5.0 ultralytics torch torchvision --quiet --no-cache-dir
-                  ;;
-                "yolo-nas")
-                  pip install fastapi==0.104.1 pydantic==2.5.0 super-gradients torch==1.13 --quiet --no-cache-dir
-                  ;;
-              esac
+              echo "⚡ $venv_name environment exists and requirements unchanged - skipping"
             fi
-            deactivate
-            echo "✅ $venv_name environment ready"
           }
           
-          echo "🏗️ Setting up virtual environments..."
+          if [ "$REBUILD_VENVS" = "true" ]; then
+            echo "🏗️ Rebuilding virtual environments..."
+          else
+            echo "⚡ Requirements unchanged - checking existing environments..."
+          fi
+          
           setup_venv "/opt/padel/shared" "shared" "/opt/padel/requirements.txt"
           setup_venv "/opt/padel/yolo" "yolo" "/opt/padel/requirements/yolo.txt"
           setup_venv "/opt/padel/yolo-nas" "yolo-nas" "/opt/padel/requirements/yolo-nas.txt"
           
-          echo "🔧 Setting up MMPose environment..."
+          # MMPose special handling with package compatibility fixes
           cd /opt/padel/mmpose
-          if [ -d "venv" ]; then rm -rf venv; fi
-          python3.10 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip setuptools==60.2.0 --quiet --no-cache-dir
-          pip uninstall openxlab torch torchvision torchaudio triton -y --quiet 2>/dev/null || true
-          pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
-          pip install openmim --quiet --no-cache-dir
-          mim install "mmpose>=1.0.0"
-          mim install "mmcv>=2.0.1"
-          if [ -f "/opt/padel/requirements/mmpose.txt" ]; then
-            pip install -r /opt/padel/requirements/mmpose.txt --quiet --no-cache-dir
+          if [ "$REBUILD_VENVS" = "true" ] || [ ! -d "venv" ]; then
+            echo "🔧 Setting up MMPose environment with compatibility fixes..."
+            if [ -d "venv" ]; then rm -rf venv; fi
+            python3.10 -m venv venv
+            source venv/bin/activate
+            
+            # Upgrade pip and setuptools
+            pip install --upgrade pip setuptools==60.2.0 --quiet --no-cache-dir --disable-pip-version-check
+            
+            # Clean up any conflicting packages
+            pip uninstall openxlab torch torchvision torchaudio triton xtcocotools pycocotools numpy -y --quiet 2>/dev/null || true
+            
+            # Install compatible NumPy version first
+            pip install numpy==1.21.6 --quiet --no-cache-dir --disable-pip-version-check
+            
+            # Install PyTorch with compatible versions
+            pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir --disable-pip-version-check
+            
+            # Install cython before cocotools
+            pip install cython --quiet --no-cache-dir --disable-pip-version-check
+            
+            # Install cocotools in correct order
+            pip install pycocotools --quiet --no-cache-dir --disable-pip-version-check
+            pip install xtcocotools --no-deps --force-reinstall --quiet --no-cache-dir --disable-pip-version-check
+            
+            # Install MMPose dependencies
+            pip install openmim --quiet --no-cache-dir --disable-pip-version-check
+            mim install "mmpose>=1.0.0"
+            mim install "mmcv>=2.0.1"
+            
+            # Install additional requirements
+            if [ -f "/opt/padel/requirements/mmpose.txt" ]; then
+              pip install -r /opt/padel/requirements/mmpose.txt --quiet --no-cache-dir --disable-pip-version-check
+            else
+              pip install fastapi==0.104.1 pydantic==2.5.0 mmpose==1.0.0 --quiet --no-cache-dir --disable-pip-version-check
+            fi
+            
+            # Verify installation
+            echo "🔍 Verifying MMPose installation..."
+            python -c "import numpy as np; print(f'NumPy version: {np.__version__}'); import xtcocotools; print('xtcocotools imported successfully'); import mmpose; print('MMPose imported successfully'); print('✅ All MMPose dependencies working correctly')" 2>/dev/null || echo "⚠️ MMPose verification failed - manual fix may be required"
+            
+            deactivate
+            echo "✅ MMPose environment ready"
           else
-            pip install fastapi==0.104.1 pydantic==2.5.0 mmpose==1.0.0 --quiet --no-cache-dir
+            echo "⚡ MMPose environment exists and requirements unchanged - skipping"
           fi
-          deactivate
-          echo "✅ All environments ready"
+          
+          echo "🎯 Virtual environment setup complete!"
+
+    - name: Configure and Start Services
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: Towers
+        key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 600s
+        command_timeout: 600s
+        debug: true
+        script: |
+          set -e
+          check_service_health() {
+            local port=$1
+            local service_name=$2
+            local max_retries=20
+            local retry_count=0
+            while [ $retry_count -lt $max_retries ]; do
+              if curl -s -f --max-time 5 http://localhost:$port/healthz > /dev/null 2>&1; then
+                echo "✅ $service_name (port $port): healthy"
+                return 0
+              fi
+              retry_count=$((retry_count + 1))
+              echo "⏳ Waiting for $service_name (attempt $retry_count/$max_retries)..."
+              sleep 3
+            done
+            echo "❌ $service_name (port $port): failed health check"
+            sudo journalctl -u $service_name -n 5 --no-pager || true
+            return 1
+          }
+          
+          echo "🔄 Reloading systemd and starting services..."
+          sudo systemctl daemon-reload
+          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
+          for service in $ACTIVE_SERVICES; do
+            echo "Starting $service..."
+            sudo systemctl enable $service
+            sudo systemctl restart $service
+            sleep 5
+          done
+          
+          echo "⏳ Waiting for services to initialize (45 seconds)..."
+          sleep 45
+          
+          echo "🏥 Running health checks..."
+          FAILED_SERVICES=0
+          check_service_health 8000 "padel-api" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          check_service_health 8001 "yolo11-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          check_service_health 8002 "yolov8-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          check_service_health 8003 "mmpose-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          check_service_health 8004 "yolo-nas-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          
+          echo "📊 Final service status:"
+          for service in $ACTIVE_SERVICES; do
+            status=$(systemctl is-active $service)
+            echo "  $service: $status"
+          done
+          
+          if [ $FAILED_SERVICES -gt 0 ]; then
+            echo "⚠️ $FAILED_SERVICES service(s) failed health checks"
+            echo "Check logs with: sudo journalctl -u <service-name> -f"
+          else
+            echo "🎉 All services healthy! Deployment successful!"
+          fi
+          
+          echo "🎯 Deployment complete!"
 
     - name: Configure and Start Services
       uses: appleboy/ssh-action@v0.1.7

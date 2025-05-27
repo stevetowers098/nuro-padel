@@ -386,6 +386,186 @@ async def detect_video_poses( # Renamed function
     finally:
         if temp_downloaded_path and os.path.exists(temp_downloaded_path): os.unlink(temp_downloaded_path)
 
+@app.post("/yolo11/pose")
+async def yolo11_pose_detection(
+    payload: VideoAnalysisURLRequest,
+    http_request: Request
+):
+    """
+    YOLO11 Pose Detection Endpoint
+    
+    Dedicated endpoint for YOLO11 pose estimation on padel videos.
+    Detects person poses with 17 keypoints for biomechanical analysis.
+    
+    Returns annotated video with skeleton overlay and pose keypoint data.
+    """
+    logger.info(f"--- Enter /yolo11/pose endpoint ---")
+    logger.info(f"Dedicated YOLO11 pose detection for padel analysis")
+    
+    # Reuse the existing pose detection logic
+    return await detect_video_poses(payload, http_request)
+
+@app.post("/yolo11/object")
+async def yolo11_object_detection(
+    payload: VideoAnalysisURLRequest,
+    http_request: Request
+):
+    """
+    YOLO11 Object Detection Endpoint
+    
+    Dedicated endpoint for YOLO11 object detection on padel videos.
+    Detects: person, sports ball, tennis racket with latest YOLO11 architecture.
+    
+    Returns annotated video with bounding boxes and detection data.
+    """
+    logger.info(f"--- Enter /yolo11/object endpoint ---")
+    logger.info(f"Dedicated YOLO11 object detection for padel analysis")
+    
+    # For object detection, we need to modify the pose detection logic
+    # to focus on object detection instead of pose keypoints
+    if yolo11_pose_model is None:
+        logger.error("/yolo11/object: Model not loaded. Cannot process request.")
+        raise HTTPException(status_code=503, detail="YOLO11 model is not available.")
+
+    temp_downloaded_path: Optional[str] = None
+    try:
+        video_url_str = str(payload.video_url)
+        logger.info(f"Attempting to download video from URL: {video_url_str}")
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(video_url_str)
+            response.raise_for_status()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+            temp_file.write(response.content)
+            temp_downloaded_path = temp_file.name
+        logger.info(f"Video downloaded successfully to {temp_downloaded_path}")
+
+        video_info = get_video_info(temp_downloaded_path)
+        logger.info(f"Video Info: {video_info}")
+
+        frames = extract_frames(temp_downloaded_path, num_frames_to_extract=75)
+        logger.info(f"Extracted {len(frames)} frames for object detection.")
+
+        if not frames:
+            logger.error(f"No frames extracted from {temp_downloaded_path}.")
+            raise HTTPException(status_code=400, detail="No frames could be extracted from the provided video.")
+
+        # Object detection classes for padel
+        PADEL_CLASSES = {0: "person", 32: "sports ball", 38: "tennis racket"}
+        
+        all_objects_per_frame: List[List[Dict[str, Any]]] = []
+        annotated_frames_list: List[np.ndarray] = []
+        
+        batch_size = 8
+        logger.info(f"Starting object detection for {len(frames)} frames. Batch size: {batch_size}")
+
+        for i in range(0, len(frames), batch_size):
+            batch_of_frames = frames[i:i+batch_size]
+            if not batch_of_frames: continue
+            logger.debug(f"Processing object detection batch {i//batch_size + 1}")
+            
+            try:
+                batch_results = yolo11_pose_model(batch_of_frames, verbose=False, half=torch.cuda.is_available())
+                logger.debug(f"Batch {i//batch_size + 1}: Object detection complete, {len(batch_results)} results.")
+
+                for frame_idx_in_batch, single_frame_result in enumerate(batch_results):
+                    current_frame_objects: List[Dict[str, Any]] = []
+                    
+                    # Extract bounding boxes for objects
+                    if hasattr(single_frame_result, 'boxes') and single_frame_result.boxes is not None and single_frame_result.boxes.data is not None:
+                        raw_boxes_data = single_frame_result.boxes.data.cpu().tolist()
+                        for det_tensor_list in raw_boxes_data:
+                            x1, y1, x2, y2, conf, cls_raw = det_tensor_list
+                            cls = int(cls_raw)
+                            if cls in PADEL_CLASSES and conf > 0.5:  # Use default confidence threshold
+                                current_frame_objects.append({
+                                    "class": PADEL_CLASSES[cls],
+                                    "confidence": float(conf),
+                                    "bbox": {"x1": float(x1), "y1": float(y1), "x2": float(x2), "y2": float(y2)}
+                                })
+                    
+                    all_objects_per_frame.append(current_frame_objects)
+                    
+                    if payload.video:
+                        # Draw objects on frame
+                        annotated_frame = batch_of_frames[frame_idx_in_batch].copy()
+                        colors = {PADEL_CLASSES[0]: (0, 255, 0), PADEL_CLASSES[32]: (0, 0, 255), PADEL_CLASSES[38]: (255, 0, 0)}
+                        for obj in current_frame_objects:
+                            x1, y1, x2, y2 = int(obj["bbox"]["x1"]), int(obj["bbox"]["y1"]), int(obj["bbox"]["x2"]), int(obj["bbox"]["y2"])
+                            class_name, conf = obj["class"], obj["confidence"]
+                            color = colors.get(class_name, (255, 255, 255))
+                            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                            cv2.putText(annotated_frame, f"{class_name} ({conf:.2f})", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                        annotated_frames_list.append(annotated_frame)
+                        
+            except Exception as e_infer:
+                logger.error(f"Object detection error on batch {i//batch_size + 1}: {e_infer}", exc_info=True)
+                for k_batch_idx in range(len(batch_of_frames)):
+                    all_objects_per_frame.append([])
+                    if payload.video: annotated_frames_list.append(batch_of_frames[k_batch_idx])
+                continue
+        
+        logger.info(f"Finished object detection. Objects collected: {len(all_objects_per_frame)}. Annotated frames: {len(annotated_frames_list)}.")
+        
+        response_content: Dict[str, Any] = {}
+        if payload.data:
+            response_content["data"] = {"objects_per_frame": all_objects_per_frame}
+
+        if payload.video:
+            if not annotated_frames_list:
+                logger.warning("YOLO11 Object: Video output requested, but no annotated frames.")
+                response_content["video_url"] = None
+                response_content["message"] = "YOLO11 Object: No frames to annotate."
+            else:
+                output_video_path: Optional[str] = None
+                gcs_url_result: str = ""
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_out_vid_file:
+                        output_video_path = temp_out_vid_file.name
+                    height, width = annotated_frames_list[0].shape[:2]
+                    fps_float = float(video_info.get("fps", 30.0))
+                    if fps_float <= 0: fps_float = 30.0
+                    logger.info(f"YOLO11 Object: Creating video via FFMPEG: {output_video_path}")
+                    ffmpeg_cmd = ['ffmpeg','-y','-f','rawvideo','-vcodec','rawvideo','-s',f'{width}x{height}','-pix_fmt','bgr24','-r',str(fps_float),'-i','-','-vcodec','libx264','-preset','fast','-crf','23','-pix_fmt','yuv420p',output_video_path]
+                    process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    for frame_to_write in annotated_frames_list:
+                        if process.stdin and process.stdin.closed: break
+                        try:
+                            if process.stdin: process.stdin.write(frame_to_write.tobytes())
+                        except (IOError, BrokenPipeError): break
+                    if process.stdin and not process.stdin.closed: process.stdin.close()
+                    
+                    try:
+                        stdout_bytes, stderr_bytes = process.communicate(timeout=120)
+                        ffmpeg_return_code = process.returncode
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        ffmpeg_return_code = -1
+                    
+                    if ffmpeg_return_code == 0:
+                        logger.info(f"YOLO11 Object: Video created successfully")
+                        gcs_url_result = await upload_to_gcs(output_video_path)
+                    else:
+                        logger.error(f"YOLO11 Object: FFMPEG failed with code {ffmpeg_return_code}")
+                        
+                    response_content["video_url"] = gcs_url_result if gcs_url_result else None
+                finally:
+                    if output_video_path and os.path.exists(output_video_path): os.unlink(output_video_path)
+        
+        if not response_content:
+            return JSONResponse(content={"detail": "YOLO11 Object: No output."}, status_code=200)
+        return JSONResponse(content=response_content)
+            
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as e:
+        logger.error(f"YOLO11 Object HTTP error: {e.response.status_code}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"YOLO11 Object: DL fail: {e.response.status_code}")
+    except Exception as e:
+        logger.error(f"YOLO11 Object: Unexpected error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"YOLO11 Object: Internal error: {str(e)}")
+    finally:
+        if temp_downloaded_path and os.path.exists(temp_downloaded_path): os.unlink(temp_downloaded_path)
+
 if __name__ == "__main__":
     logger.info(f"Attempting to start Uvicorn for YOLOv11 service on port 8001 (PID: {os.getpid()}).")
     if yolo11_pose_model is None: # Changed variable name

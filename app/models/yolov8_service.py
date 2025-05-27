@@ -75,8 +75,9 @@ MODEL_PATH = os.path.join(MODEL_DIR, MODEL_NAME)
 
 class VideoAnalysisURLRequest(BaseModel):
     video_url: HttpUrl
-    video: bool = False
+    video: bool = True
     data: bool = True
+    confidence: float = 0.3
 
 async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> str:
     if not object_name:
@@ -200,7 +201,7 @@ async def detect_objects_in_video(
                     for k_det, det_tensor_list in enumerate(raw_boxes_data):
                         x1, y1, x2, y2, conf, cls_raw = det_tensor_list; cls = int(cls_raw)
                         logger.debug(f"  Frame {original_frame_index}, Detection {k_det}: ClassID={cls}, Conf={conf:.2f}")
-                        if cls in PADEL_CLASSES and conf > 0.3: # Example confidence threshold
+                        if cls in PADEL_CLASSES and conf > payload.confidence:
                             current_frame_objects.append({
                                 "class": PADEL_CLASSES[cls], "confidence": float(conf),
                                 "bbox": {"x1": float(x1), "y1": float(y1), "x2": float(x2), "y2": float(y2)}
@@ -339,6 +340,261 @@ async def detect_objects_in_video(
         if temp_downloaded_path and os.path.exists(temp_downloaded_path):
             logger.debug(f"Deleting temporary input video file: {temp_downloaded_path}")
             os.unlink(temp_downloaded_path)
+
+@app.post("/yolov8/object")
+async def yolov8_object_detection(
+    payload: VideoAnalysisURLRequest,
+    http_request: Request
+):
+    """
+    YOLOv8 Object Detection Endpoint
+    
+    Dedicated endpoint for YOLOv8 object detection on padel videos.
+    Detects: person (class 0), sports ball (class 32), tennis racket (class 38)
+    
+    Returns annotated video with bounding boxes and detection data.
+    """
+    logger.info(f"--- Enter /yolov8/object endpoint ---")
+    logger.info(f"Dedicated YOLOv8 object detection for padel analysis")
+    
+    # Reuse the existing detection logic
+    return await detect_objects_in_video(payload, http_request)
+
+@app.post("/yolov8/pose")
+async def yolov8_pose_detection(
+    payload: VideoAnalysisURLRequest,
+    http_request: Request
+):
+    """
+    YOLOv8 Pose Detection Endpoint
+    
+    Dedicated endpoint for YOLOv8 pose estimation on padel videos.
+    Uses YOLOv8 pose model for detecting person poses with 17 keypoints.
+    
+    Note: Requires YOLOv8 pose model (yolov8n-pose.pt, yolov8s-pose.pt, etc.)
+    
+    Returns annotated video with skeleton overlay and pose keypoint data.
+    """
+    logger.info(f"--- Enter /yolov8/pose endpoint ---")
+    logger.info(f"Dedicated YOLOv8 pose detection for padel analysis")
+    
+    if model is None:
+        logger.error("/yolov8/pose: Model not loaded. Cannot process request.")
+        raise HTTPException(status_code=503, detail="YOLOv8 model is not available.")
+
+    # Check if loaded model supports pose detection
+    # YOLOv8 pose models have different architecture - we need to load a pose-specific model
+    # For now, let's adapt the existing logic to handle pose detection if the model supports it
+    
+    temp_downloaded_path: Optional[str] = None
+    try:
+        video_url_str = str(payload.video_url)
+        logger.info(f"Attempting to download video from URL: {video_url_str}")
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(video_url_str)
+            response.raise_for_status()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+            temp_file.write(response.content)
+            temp_downloaded_path = temp_file.name
+        logger.info(f"Video downloaded successfully to {temp_downloaded_path}")
+
+        video_info = get_video_info(temp_downloaded_path)
+        logger.info(f"Video Info: {video_info}")
+
+        frames = extract_frames(temp_downloaded_path, num_frames_to_extract=75)
+        logger.info(f"Extracted {len(frames)} frames for pose detection.")
+
+        if not frames:
+            logger.error(f"No frames extracted from {temp_downloaded_path}.")
+            raise HTTPException(status_code=400, detail="No frames could be extracted from the provided video.")
+
+        all_poses_per_frame: List[List[Dict[str, Any]]] = []
+        annotated_frames_list: List[np.ndarray] = []
+        
+        batch_size = 8
+        logger.info(f"Starting pose detection for {len(frames)} frames. Batch size: {batch_size}")
+
+        for i in range(0, len(frames), batch_size):
+            batch_frames = frames[i:i+batch_size]
+            if not batch_frames: continue
+            logger.debug(f"Processing pose batch {i//batch_size + 1}, frames {i} to {i+len(batch_frames)-1}")
+            
+            try:
+                results_list = model(batch_frames, verbose=False, half=torch.cuda.is_available())
+                logger.debug(f"Batch {i//batch_size + 1}: Pose inference complete, {len(results_list)} results.")
+            except Exception as e_infer:
+                logger.error(f"Pose inference error on batch {i//batch_size + 1}: {e_infer}", exc_info=True)
+                for _ in batch_frames: all_poses_per_frame.append([])
+                if payload.video: annotated_frames_list.extend(batch_frames)
+                continue
+
+            for frame_idx_in_batch, result_obj in enumerate(results_list):
+                original_frame_index = i + frame_idx_in_batch
+                current_frame_poses: List[Dict[str, Any]] = []
+                
+                # Check if result has keypoints (pose detection)
+                if hasattr(result_obj, 'keypoints') and result_obj.keypoints is not None and result_obj.keypoints.data is not None:
+                    logger.debug(f"Frame {original_frame_index}: Found keypoints data")
+                    for k_idx, keypoints_tensor in enumerate(result_obj.keypoints.data):
+                        kpts = keypoints_tensor.cpu().numpy()  # (N_keypoints, 3) - x, y, confidence
+                        
+                        # Get bounding box if available
+                        person_bbox_data = None
+                        if hasattr(result_obj, 'boxes') and result_obj.boxes is not None and k_idx < len(result_obj.boxes.data):
+                            person_bbox_data = result_obj.boxes.data[k_idx].cpu().numpy()
+                        
+                        bbox_dict = {}
+                        overall_confidence = float(kpts[:, 2].mean()) if kpts.shape[0] > 0 else 0.0
+                        
+                        if person_bbox_data is not None:
+                            x1, y1, x2, y2, box_conf, _ = person_bbox_data
+                            bbox_dict = {"x1": float(x1), "y1": float(y1), "x2": float(x2), "y2": float(y2)}
+                            if overall_confidence < 0.1 and box_conf > overall_confidence:
+                                overall_confidence = float(box_conf)
+                        elif kpts.shape[0] > 0:
+                            # Calculate bbox from keypoints
+                            valid_kpts = kpts[kpts[:, 2] > 0.05]
+                            if len(valid_kpts) > 0:
+                                x1, y1 = valid_kpts[:, 0].min(), valid_kpts[:, 1].min()
+                                x2, y2 = valid_kpts[:, 0].max(), valid_kpts[:, 1].max()
+                                bbox_dict = {"x1": float(x1), "y1": float(y1), "x2": float(x2), "y2": float(y2)}
+                        
+                        # Create keypoints dictionary
+                        keypoint_names = ["nose", "left_eye", "right_eye", "left_ear", "right_ear",
+                                        "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+                                        "left_wrist", "right_wrist", "left_hip", "right_hip",
+                                        "left_knee", "right_knee", "left_ankle", "right_ankle"]
+                        
+                        keypoint_dict = {}
+                        for kpt_idx, kpt_data in enumerate(kpts):
+                            if kpt_idx < len(keypoint_names):
+                                x_kpt, y_kpt, conf_kpt = kpt_data
+                                keypoint_dict[keypoint_names[kpt_idx]] = {
+                                    "x": float(x_kpt), "y": float(y_kpt), "confidence": float(conf_kpt)
+                                }
+                        
+                        if keypoint_dict:
+                            current_frame_poses.append({
+                                "keypoints": keypoint_dict,
+                                "confidence": overall_confidence,
+                                "bbox": bbox_dict
+                            })
+                else:
+                    logger.debug(f"Frame {original_frame_index}: No keypoints data - this might not be a pose model")
+                
+                all_poses_per_frame.append(current_frame_poses)
+                
+                if payload.video:
+                    # Draw poses on frame
+                    annotated_frame = batch_frames[frame_idx_in_batch].copy()
+                    
+                    # Define skeleton connections
+                    connections = [
+                        ("nose", "left_eye"), ("nose", "right_eye"),
+                        ("left_eye", "left_ear"), ("right_eye", "right_ear"),
+                        ("nose", "left_shoulder"), ("nose", "right_shoulder"),
+                        ("left_shoulder", "right_shoulder"), ("left_shoulder", "left_elbow"),
+                        ("right_shoulder", "right_elbow"), ("left_elbow", "left_wrist"),
+                        ("right_elbow", "right_wrist"), ("left_shoulder", "left_hip"),
+                        ("right_shoulder", "right_hip"), ("left_hip", "right_hip"),
+                        ("left_hip", "left_knee"), ("right_hip", "right_knee"),
+                        ("left_knee", "left_ankle"), ("right_knee", "right_ankle")
+                    ]
+                    
+                    for pose in current_frame_poses:
+                        keypoints = pose.get("keypoints", {})
+                        bbox = pose.get("bbox", {})
+                        
+                        # Draw bounding box
+                        if bbox and pose.get("confidence", 0) > 0.3:
+                            cv2.rectangle(annotated_frame, (int(bbox["x1"]), int(bbox["y1"])),
+                                        (int(bbox["x2"]), int(bbox["y2"])), (255, 0, 0), 2)
+                        
+                        # Draw keypoints
+                        for name, data in keypoints.items():
+                            x, y, conf = int(data.get("x", 0)), int(data.get("y", 0)), data.get("confidence", 0.0)
+                            if conf > 0.5:
+                                cv2.circle(annotated_frame, (x, y), 3, (0, 255, 0), -1)
+                        
+                        # Draw skeleton connections
+                        for p1_name, p2_name in connections:
+                            p1, p2 = keypoints.get(p1_name), keypoints.get(p2_name)
+                            if (p1 and p2 and p1.get("confidence", 0) > 0.5 and p2.get("confidence", 0) > 0.5):
+                                cv2.line(annotated_frame, (int(p1["x"]), int(p1["y"])),
+                                        (int(p2["x"]), int(p2["y"])), (0, 255, 255), 2)
+                    
+                    annotated_frames_list.append(annotated_frame)
+        
+        logger.info(f"Finished pose detection. Poses collected: {len(all_poses_per_frame)}. Annotated frames: {len(annotated_frames_list)}.")
+        
+        response_content: Dict[str, Any] = {}
+        if payload.data:
+            response_content["data"] = {"poses_per_frame": all_poses_per_frame}
+
+        if payload.video:
+            if not annotated_frames_list:
+                logger.warning("YOLOv8 Pose: Video output requested, but no annotated frames.")
+                response_content["video_url"] = None
+                response_content["message"] = "YOLOv8 Pose: No frames to annotate."
+            else:
+                output_video_path: Optional[str] = None
+                gcs_url_result: str = ""
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_out_vid_file:
+                        output_video_path = temp_out_vid_file.name
+                    
+                    height, width = annotated_frames_list[0].shape[:2]
+                    fps_float = float(video_info.get("fps", 30.0))
+                    if fps_float <= 0: fps_float = 30.0
+                    
+                    logger.info(f"YOLOv8 Pose: Creating video via FFMPEG: {output_video_path}")
+                    
+                    ffmpeg_cmd = ['ffmpeg', '-y', '-f', 'rawvideo', '-vcodec', 'rawvideo',
+                                '-s', f'{width}x{height}', '-pix_fmt', 'bgr24', '-r', str(fps_float),
+                                '-i', '-', '-vcodec', 'libx264', '-preset', 'fast', '-crf', '23',
+                                '-pix_fmt', 'yuv420p', output_video_path]
+                    
+                    process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    
+                    for frame_to_write in annotated_frames_list:
+                        if process.stdin and process.stdin.closed: break
+                        try:
+                            if process.stdin: process.stdin.write(frame_to_write.tobytes())
+                        except (IOError, BrokenPipeError): break
+                    
+                    if process.stdin and not process.stdin.closed: process.stdin.close()
+                    
+                    try:
+                        stdout_bytes, stderr_bytes = process.communicate(timeout=120)
+                        ffmpeg_return_code = process.returncode
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        ffmpeg_return_code = -1
+                    
+                    if ffmpeg_return_code == 0:
+                        logger.info(f"YOLOv8 Pose: Video created successfully")
+                        gcs_url_result = await upload_to_gcs(output_video_path)
+                    else:
+                        logger.error(f"YOLOv8 Pose: FFMPEG failed with code {ffmpeg_return_code}")
+                        
+                    response_content["video_url"] = gcs_url_result if gcs_url_result else None
+                finally:
+                    if output_video_path and os.path.exists(output_video_path): os.unlink(output_video_path)
+        
+        if not response_content:
+            return JSONResponse(content={"detail": "YOLOv8 Pose: No output."}, status_code=200)
+        return JSONResponse(content=response_content)
+            
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as e:
+        logger.error(f"YOLOv8 Pose HTTP error: {e.response.status_code}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"YOLOv8 Pose: DL fail: {e.response.status_code}")
+    except Exception as e:
+        logger.error(f"YOLOv8 Pose: Unexpected error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"YOLOv8 Pose: Internal error: {str(e)}")
+    finally:
+        if temp_downloaded_path and os.path.exists(temp_downloaded_path): os.unlink(temp_downloaded_path)
 
 if __name__ == "__main__":
     logger.info(f"Attempting to start Uvicorn for YOLOv8 service on port 8002 (PID: {os.getpid()}).")

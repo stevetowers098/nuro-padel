@@ -122,8 +122,8 @@ jobs:
         script: |
           set -e
           echo "Stopping existing services..."
-          # Stop all current services (including combined-service)
-          sudo systemctl stop padel-api combined-service yolo11-service yolov8-service mmpose-service yolo-nas-service 2>/dev/null || true
+          # Stop all current services
+          sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service 2>/dev/null || true
           echo "Creating base directories..."
           sudo mkdir -p /opt/padel/app /opt/padel/shared /opt/padel/yolo /opt/padel/mmpose /opt/padel/yolo-nas
           sudo mkdir -p /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco
@@ -221,13 +221,16 @@ jobs:
                 echo "⚠️ $req_file not found, using fallback packages"
                 case $venv_name in
                   "shared")
-                    pip install fastapi==0.104.1 uvicorn==0.24.0 pydantic==2.5.0 httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir --disable-pip-version-check
+                    pip install fastapi==0.115.12 uvicorn==0.32.0 pydantic==2.11.5 httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir --disable-pip-version-check
                     ;;
                   "yolo")
-                    pip install fastapi==0.104.1 pydantic==2.5.0 ultralytics torch torchvision --quiet --no-cache-dir --disable-pip-version-check
+                    pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
+                    pip install fastapi==0.115.12 pydantic==2.11.5 ultralytics super-gradients --quiet --no-cache-dir --disable-pip-version-check
                     ;;
                   "yolo-nas")
-                    pip install torch==1.13.1 torchvision==0.14.1 super-gradients fastapi==0.104.1 pydantic==2.5.0 onnx==1.15.0 "onnxruntime>=1.15.0" --quiet --no-cache-dir --disable-pip-version-check
+                    # Conservative PyTorch versions for YOLO-NAS compatibility
+                    pip install 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
+                    pip install super-gradients fastapi==0.115.12 pydantic==2.11.5 --quiet --no-cache-dir --disable-pip-version-check
                     ;;
                 esac
               fi
@@ -244,9 +247,9 @@ jobs:
             echo "⚡ Requirements unchanged - checking existing environments..."
           fi
           
-          setup_venv "/opt/padel/shared" "shared" "/opt/padel/requirements.txt"
-          setup_venv "/opt/padel/yolo" "yolo" "/opt/padel/requirements/yolo.txt"
-          setup_venv "/opt/padel/yolo-nas" "yolo-nas" "/opt/padel/requirements/yolo-nas.txt"
+          setup_venv "/opt/padel/shared" "shared" "/opt/padel/app/requirements/optimized_main.txt"
+          setup_venv "/opt/padel/yolo" "yolo" "/opt/padel/app/requirements/optimized_yolo.txt"
+          setup_venv "/opt/padel/yolo-nas" "yolo-nas" "/opt/padel/app/requirements/yolo-nas.txt"
           
           # MMPose special handling with package compatibility fixes
           cd /opt/padel/mmpose
@@ -262,11 +265,11 @@ jobs:
             # Clean up any conflicting packages
             pip uninstall openxlab torch torchvision torchaudio triton xtcocotools pycocotools numpy -y --quiet 2>/dev/null || true
             
-            # Install compatible NumPy version first
-            pip install numpy==1.21.6 --quiet --no-cache-dir --disable-pip-version-check
+            # Install compatible NumPy version first (compatible with PyTorch 2.5.1)
+            pip install numpy==1.24.3 --quiet --no-cache-dir --disable-pip-version-check
             
-            # Install PyTorch with compatible versions
-            pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir --disable-pip-version-check
+            # Install PyTorch with latest stable versions
+            pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
             
             # Install cython before cocotools
             pip install cython --quiet --no-cache-dir --disable-pip-version-check
@@ -281,10 +284,10 @@ jobs:
             mim install "mmcv>=2.0.1"
             
             # Install additional requirements
-            if [ -f "/opt/padel/requirements/mmpose.txt" ]; then
-              pip install -r /opt/padel/requirements/mmpose.txt --quiet --no-cache-dir --disable-pip-version-check
+            if [ -f "/opt/padel/app/requirements/optimized_mmpose.txt" ]; then
+              pip install -r /opt/padel/app/requirements/optimized_mmpose.txt --quiet --no-cache-dir --disable-pip-version-check
             else
-              pip install fastapi==0.104.1 pydantic==2.5.0 mmpose==1.0.0 --quiet --no-cache-dir --disable-pip-version-check
+              pip install fastapi==0.115.12 pydantic==2.11.5 mmpose==1.3.2 --quiet --no-cache-dir --disable-pip-version-check
             fi
             
             # Verify installation
@@ -298,6 +301,23 @@ jobs:
           fi
           
           echo "🎯 Virtual environment setup complete!"
+
+    - name: Copy Service Configurations
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: Towers
+        key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 60s
+        command_timeout: 60s
+        debug: true
+        script: |
+          set -e
+          echo "📋 Copying systemd service files..."
+          sudo cp /opt/padel/app/service_configs/*.service /etc/systemd/system/
+          echo "🔄 Reloading systemd daemon..."
+          sudo systemctl daemon-reload
+          echo "✅ Service configurations installed"
 
     - name: Configure and Start Services
       uses: appleboy/ssh-action@v0.1.7
@@ -329,29 +349,28 @@ jobs:
             return 1
           }
           
-          echo "🔄 Reloading systemd and starting services..."
-          sudo systemctl daemon-reload
-          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
-          for service in $ACTIVE_SERVICES; do
+          echo "🔄 Starting all services..."
+          ALL_SERVICES="yolo11-service yolov8-service mmpose-service yolo-nas-service padel-api"
+          for service in $ALL_SERVICES; do
             echo "Starting $service..."
             sudo systemctl enable $service
             sudo systemctl restart $service
             sleep 5
           done
           
-          echo "⏳ Waiting for services to initialize (45 seconds)..."
-          sleep 45
+          echo "⏳ Waiting for all services to initialize (60 seconds)..."
+          sleep 60
           
           echo "🏥 Running health checks..."
           FAILED_SERVICES=0
-          check_service_health 8000 "padel-api" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
           check_service_health 8001 "yolo11-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
           check_service_health 8002 "yolov8-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
           check_service_health 8003 "mmpose-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
           check_service_health 8004 "yolo-nas-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          check_service_health 8000 "padel-api" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
           
           echo "📊 Final service status:"
-          for service in $ACTIVE_SERVICES; do
+          for service in $ALL_SERVICES; do
             status=$(systemctl is-active $service)
             echo "  $service: $status"
           done

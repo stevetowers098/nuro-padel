@@ -33,10 +33,10 @@ class VideoRequest(BaseModel):
 
 # Service URLs
 SERVICES = {
-    "yolo11": "http://localhost:8001",
-    "yolov8": "http://localhost:8005", 
-    "yolo_nas": "http://localhost:8002",
-    "mmpose": "http://localhost:8003"
+    "yolo11": "http://localhost:8001/yolo11",
+    "yolov8": "http://localhost:8002/yolov8", 
+    "yolo_nas": "http://localhost:8004/yolo-nas",
+    "mmpose": "http://localhost:8003/mmpose"
 }
 
 async def call_service(client, service_name, endpoint, video_url, video=False, data=False):
@@ -252,10 +252,10 @@ async def analyze_video(
         # Call all services
         async with httpx.AsyncClient(timeout=300.0) as client:
             tasks = [
-                call_service(client, "yolo11", "pose", str(video_url), video=return_video, data=return_both),
-                call_service(client, "yolov8", "track", str(video_url), video=return_video, data=return_both),
-                call_service(client, "yolo_nas", "pose", str(video_url), video=return_video, data=return_both),
-                call_service(client, "mmpose", "analyze", str(video_url), video=return_video, data=return_both)
+                call_service(client, "yolo11", "", str(video_url), video=return_video, data=return_both),
+                call_service(client, "yolov8", "", str(video_url), video=return_video, data=return_both),
+                call_service(client, "yolo_nas", "", str(video_url), video=return_video, data=return_both),
+                call_service(client, "mmpose", "", str(video_url), video=return_video, data=return_both)
             ]
             
             results = await asyncio.gather(*tasks)

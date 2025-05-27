@@ -157,7 +157,7 @@ jobs:
         command_timeout: 900s
         script: |
           echo "Stopping services..."
-          sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service || true
+          sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service combined-service || true
           
           echo "Updating code in /opt/padel/app ..."
           cd /opt/padel
@@ -311,10 +311,26 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
+          sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
+          [Unit]
+          Description=YOLO-NAS Object Detection Service
+          After=network.target
+          [Service]
+          User=Towers
+          Group=Towers
+          WorkingDirectory=/opt/padel/app/app
+          ExecStart=/opt/padel/yolo-nas/venv/bin/python -m models.yolo_nas_service
+          Restart=always
+          RestartSec=10
+          Environment="PYTHONPATH=/opt/padel/app/app"
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+          
           echo "Reloading systemd and managing services..."
           sudo systemctl daemon-reload
           
-          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service"
+          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
           for service_to_manage in $ACTIVE_SERVICES; do
             echo "Enabling and starting $service_to_manage..."
             sudo systemctl enable $service_to_manage
@@ -339,13 +355,14 @@ jobs:
           done
           
           echo "Final Health Check:"
-          HEALTH_CHECK_PORTS="8000 8001 8002 8003" 
+          HEALTH_CHECK_PORTS="8000 8001 8002 8003 8004" 
           for port in $HEALTH_CHECK_PORTS; do
             SERVICE_FOR_PORT_MSG="" 
             if [ "$port" == "8000" ]; then SERVICE_FOR_PORT_MSG="(padel-api with GPU auto-management)"; fi
             if [ "$port" == "8001" ]; then SERVICE_FOR_PORT_MSG="(yolo11-service)"; fi
             if [ "$port" == "8002" ]; then SERVICE_FOR_PORT_MSG="(yolov8-service)"; fi
             if [ "$port" == "8003" ]; then SERVICE_FOR_PORT_MSG="(mmpose-service)"; fi
+            if [ "$port" == "8004" ]; then SERVICE_FOR_PORT_MSG="(yolo-nas-service)"; fi
 
             if curl -s -f --max-time 10 http://localhost:$port/healthz > /dev/null; then
               echo "✅ Port $port $SERVICE_FOR_PORT_MSG: healthy"

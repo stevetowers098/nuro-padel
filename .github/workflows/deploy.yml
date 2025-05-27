@@ -1,4 +1,4 @@
-- name: Prepare VM for Deployment
+name: Prepare VM for Deployment
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}

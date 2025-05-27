@@ -131,6 +131,22 @@ jobs:
           wget -nv -O /opt/padel/app/weights/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth || echo "WARNING: HRNet weights download failed, but continuing."
           echo "HRNet weights download attempt finished."
 
+    - name: Download YOLOv8 Model
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 300s
+        command_timeout: 360s
+        script: |
+          if [ ! -f "/opt/padel/app/weights/yolov8m.pt" ]; then
+            echo "Downloading YOLOv8 model..."
+            wget -O /opt/padel/app/weights/yolov8m.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m.pt
+          else
+            echo "✅ YOLOv8 model already exists"
+          fi
+
     - name: Deploy Application Code and Setup Environments
       uses: appleboy/ssh-action@v0.1.7
       with:
@@ -295,26 +311,10 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
-          [Unit]
-          Description=YOLO-NAS Pose Estimation Service
-          After=network.target
-          [Service]
-          User=Towers
-          Group=Towers
-          WorkingDirectory=/opt/padel/app/app
-          ExecStart=/opt/padel/yolo-nas/venv/bin/python -m models.yolo_nas_service
-          Restart=always
-          RestartSec=10
-          Environment="PYTHONPATH=/opt/padel/app/app"
-          [Install]
-          WantedBy=multi-user.target
-          EOL
-          
           echo "Reloading systemd and managing services..."
           sudo systemctl daemon-reload
           
-          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
+          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service"
           for service_to_manage in $ACTIVE_SERVICES; do
             echo "Enabling and starting $service_to_manage..."
             sudo systemctl enable $service_to_manage
@@ -339,14 +339,13 @@ jobs:
           done
           
           echo "Final Health Check:"
-          HEALTH_CHECK_PORTS="8000 8001 8002 8003 8004" 
+          HEALTH_CHECK_PORTS="8000 8001 8002 8003" 
           for port in $HEALTH_CHECK_PORTS; do
             SERVICE_FOR_PORT_MSG="" 
             if [ "$port" == "8000" ]; then SERVICE_FOR_PORT_MSG="(padel-api with GPU auto-management)"; fi
             if [ "$port" == "8001" ]; then SERVICE_FOR_PORT_MSG="(yolo11-service)"; fi
             if [ "$port" == "8002" ]; then SERVICE_FOR_PORT_MSG="(yolov8-service)"; fi
             if [ "$port" == "8003" ]; then SERVICE_FOR_PORT_MSG="(mmpose-service)"; fi
-            if [ "$port" == "8004" ]; then SERVICE_FOR_PORT_MSG="(yolo-nas-service)"; fi
 
             if curl -s -f --max-time 10 http://localhost:$port/healthz > /dev/null; then
               echo "✅ Port $port $SERVICE_FOR_PORT_MSG: healthy"

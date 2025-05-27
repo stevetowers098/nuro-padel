@@ -66,32 +66,37 @@ jobs:
           rm -rf /opt/padel/app/*
           echo "VM prepared for code transfer"
 
-    - name: Deploy Code to VM
+    - name: Smart Code Update
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
         username: Towers
         key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 300s
-        command_timeout: 300s
+        timeout: 180s
+        command_timeout: 180s
         script: |
           set -e
-          echo "Downloading code directly on VM..."
+          echo "📋 Checking if requirements changed..."
           cd /opt/padel
-          curl -sL --max-time 120 --retry 3 https://github.com/stevetowers098/nuro-padel/archive/refs/heads/main.tar.gz | tar -xz
+          curl -sL https://github.com/stevetowers098/nuro-padel/archive/refs/heads/main.tar.gz | tar -xz
+          REBUILD_VENVS=false
+          if [ ! -f "requirements.txt" ] || ! diff -q nuro-padel-main/requirements.txt requirements.txt >/dev/null 2>&1; then
+            echo "🔄 Main requirements changed - need to rebuild shared venv"
+            REBUILD_VENVS=true
+          fi
+          if [ ! -d "requirements" ] || ! diff -q -r nuro-padel-main/requirements/ requirements/ >/dev/null 2>&1; then
+            echo "🔄 Service requirements changed - need to rebuild service venvs"
+            REBUILD_VENVS=true
+          fi
+          echo "📦 Updating application code..."
+          sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service 2>/dev/null || true
+          rm -rf app/*
           mv nuro-padel-main/* app/
           rm -rf nuro-padel-main
-          echo "Setting up requirements files..."
-          if [ -d "app/requirements" ]; then
-            cp -r app/requirements /opt/padel/
-            echo "Requirements directory copied"
-          fi
-          if [ -f "app/requirements.txt" ]; then
-            cp app/requirements.txt /opt/padel/
-            echo "Requirements.txt copied"
-          fi
-          echo "Code deployment complete!"
-          ls -la /opt/padel/app/
+          cp -r app/requirements /opt/padel/ 2>/dev/null || true
+          cp app/requirements.txt /opt/padel/ 2>/dev/null || true
+          echo "REBUILD_VENVS=$REBUILD_VENVS" > /tmp/deployment_flags
+          echo "📊 Deployment type: $([ "$REBUILD_VENVS" = "true" ] && echo "FULL (requirements changed)" || echo "FAST (code only)")"
 
     - name: Setup Virtual Environments
       uses: appleboy/ssh-action@v0.1.7

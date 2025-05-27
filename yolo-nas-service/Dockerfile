@@ -1,7 +1,7 @@
 # YOLO-NAS Service Dockerfile
 # ⚠️ RISKY: Deci AI dissolved - super-gradients may have compatibility issues
 
-FROM nvidia/cuda:11.8-runtime-ubuntu22.04 AS base
+FROM ubuntu:22.04 AS base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -45,7 +45,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install PyTorch first with conservative versions for YOLO-NAS compatibility
-RUN pip install --no-cache-dir 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' 'torchaudio>=2.0.0,<2.6.0' --index-url https://download.pytorch.org/whl/cu118
+RUN pip install --no-cache-dir 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' 'torchaudio>=2.0.0,<2.6.0'
 
 # Install other core dependencies
 RUN pip install --no-cache-dir numpy scipy

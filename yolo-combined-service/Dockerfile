@@ -1,7 +1,7 @@
 # YOLO Combined Service Dockerfile (YOLO11 + YOLOv8)
 # Multi-stage build for optimized container size
 
-FROM nvidia/cuda:11.8-runtime-ubuntu22.04 AS base
+FROM ubuntu:22.04 AS base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive

@@ -1,7 +1,126 @@
+# NuroPadel Docker Project .gitignore
+
+# === Python ===
 __pycache__/
-*.pyc
-*.pyo
-*.log
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# === Virtual Environments ===
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# === IDE & Editors ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
-*.tmp
+Thumbs.db
+
+# === Docker ===
+.dockerignore
+docker-compose.override.yml
+.docker/
+
+# === Logs ===
+*.log
+logs/
+*.out
+
+# === Model Weights & Data ===
+weights/*.pt
+weights/*.pth
+weights/*.onnx
+weights/*.engine
+weights/*.trt
+!weights/README.md
+
+# === Temporary Files ===
+.tmp/
+tmp/
 temp/
+*.tmp
+*.temp
+
+# === Secrets & Config ===
+.env.local
+.env.production
+.env.development
+*.key
+*.pem
+gcp-key.json
+service-account.json
+
+# === OS Generated ===
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# === Testing ===
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# === Jupyter Notebooks ===
+.ipynb_checkpoints
+
+# === CUDA ===
+*.cu.o
+*.ptx
+
+# === Backup Files ===
+*.bak
+*.backup
+*~
+
+# === Runtime ===
+pid
+*.pid
+*.seed
+*.pid.lock
+
+# === npm (if any frontend components) ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# === Local Development ===
+.local/
+local_config.json

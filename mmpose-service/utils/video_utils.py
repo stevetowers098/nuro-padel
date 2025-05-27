@@ -1,9 +1,9 @@
 import cv2
 import numpy as np
-from typing import Dict, Any, List # Added List
-import logging # Added for error logging
+from typing import Dict, Any, List
+import logging
 
-logger = logging.getLogger(__name__) # For logging within this util
+logger = logging.getLogger(__name__)
 
 def get_video_info(video_path: str) -> Dict[str, Any]:
     cap = cv2.VideoCapture(video_path)

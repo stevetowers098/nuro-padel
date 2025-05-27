@@ -224,13 +224,19 @@ jobs:
                     pip install fastapi==0.115.12 uvicorn==0.32.0 pydantic==2.11.5 httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir --disable-pip-version-check
                     ;;
                   "yolo")
-                    pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
-                    pip install fastapi==0.115.12 pydantic==2.11.5 ultralytics super-gradients --quiet --no-cache-dir --disable-pip-version-check
+                    # Install PyTorch first with CUDA support
+                    pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
+                    # Install compatible NumPy
+                    pip install numpy==1.26.4 --quiet --no-cache-dir --disable-pip-version-check
+                    # Install other packages
+                    pip install fastapi==0.115.12 pydantic==2.11.5 --quiet --no-cache-dir --disable-pip-version-check
+                    pip install ultralytics==8.3.0 super-gradients==3.7.1 --quiet --no-cache-dir --disable-pip-version-check
                     ;;
                   "yolo-nas")
-                    # Conservative PyTorch versions for YOLO-NAS compatibility
-                    pip install 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
-                    pip install super-gradients fastapi==0.115.12 pydantic==2.11.5 --quiet --no-cache-dir --disable-pip-version-check
+                    # YOLO-NAS with same PyTorch version for consistency
+                    pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
+                    pip install numpy==1.26.4 --quiet --no-cache-dir --disable-pip-version-check
+                    pip install super-gradients==3.7.1 fastapi==0.115.12 pydantic==2.11.5 --quiet --no-cache-dir --disable-pip-version-check
                     ;;
                 esac
               fi

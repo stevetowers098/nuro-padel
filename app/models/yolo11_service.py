@@ -1,3 +1,28 @@
+import os
+from pathlib import Path
+
+# === PRODUCTION SAFETY: DISABLE ALL AUTO-DOWNLOADS ===
+os.environ['YOLO_OFFLINE'] = '1'
+os.environ['ULTRALYTICS_OFFLINE'] = '1'
+os.environ['ONLINE'] = 'False'
+os.environ['YOLO_TELEMETRY'] = 'False'
+
+# Force local-only model loading
+WEIGHTS_DIR = Path("/opt/padel/app/weights")
+
+def get_local_model_path(model_name: str) -> str:
+    """Get absolute path to model - fails if not exists locally"""
+    model_path = WEIGHTS_DIR / model_name
+    if not model_path.exists():
+        available_models = list(WEIGHTS_DIR.glob("*.pt"))
+        raise FileNotFoundError(
+            f"❌ PRODUCTION ERROR: Model {model_name} not found locally.\n"
+            f"📁 Checked: {model_path}\n"
+            f"📋 Available: {[m.name for m in available_models]}\n"
+            f"🚫 Auto-download disabled for production stability."
+        )
+    return str(model_path.absolute())
+
 from fastapi import FastAPI, HTTPException, Request # Removed UploadFile, File, Body
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, HttpUrl # For request body validation

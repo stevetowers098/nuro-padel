@@ -74,17 +74,19 @@ model = None
 try:
     logger.info(f"Attempting to load YOLOv8 model from: {MODEL_PATH}")
     if not os.path.exists(MODEL_PATH):
-        logger.warning(f"Model file {MODEL_PATH} does not exist. YOLO will attempt to download '{MODEL_NAME}'.")
-        os.makedirs(MODEL_DIR, exist_ok=True)
-    model = YOLO(MODEL_PATH if os.path.exists(MODEL_PATH) else MODEL_NAME)
-    logger.info(f"YOLOv8 model '{MODEL_NAME}' loaded.")
+        logger.error(f"CRITICAL: Model file {MODEL_PATH} does not exist. This service requires the model file to be present.")
+        logger.error("Please ensure YOLOv8 model is downloaded to weights directory during deployment.")
+        model = None
+    else:
+        model = YOLO(MODEL_PATH)  # Only use manual path, no fallback
+    logger.info(f"YOLOv8 model '{MODEL_NAME}' loaded successfully from {MODEL_PATH}.")
     if torch.cuda.is_available():
         logger.info("Moving YOLOv8 model to CUDA device and fusing layers.")
         model.to('cuda')
         model.fuse()
         logger.info("YOLOv8 model on CUDA and fused.")
     else:
-        logger.info("CUDA not available. YOLOv8 model on CPU.")
+        logger.info("CUDA not available. YOLOv8 model will run on CPU.")
 except Exception as e:
     logger.error(f"CRITICAL: Failed to load YOLOv8 model: {e}", exc_info=True)
     model = None

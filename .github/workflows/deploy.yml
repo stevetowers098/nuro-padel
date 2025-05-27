@@ -7,7 +7,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v3
@@ -22,103 +21,101 @@ jobs:
 
     - name: Start VM Instance if Stopped
       run: |
-        echo "🔍 Checking VM instance status..."
-        STATUS=$(gcloud compute instances describe padel-ai \
-          --zone=australia-southeast1-a \
-          --project=surf-coach \
-          --format="value(status)" 2>/dev/null || echo "ERROR")
-        
+        echo "Checking VM instance status..."
+        STATUS=$(gcloud compute instances describe padel-ai --zone=australia-southeast1-a --project=surf-coach --format="value(status)" 2>/dev/null || echo "ERROR")
         echo "Current VM status: $STATUS"
-        
         if [ "$STATUS" = "TERMINATED" ] || [ "$STATUS" = "STOPPED" ]; then
-          echo "🚀 VM is stopped. Starting instance..."
-          gcloud compute instances start padel-ai \
-            --zone=australia-southeast1-a \
-            --project=surf-coach
-          
-          echo "⏳ Waiting for VM to boot and SSH to be ready..."
+          echo "VM is stopped. Starting instance..."
+          gcloud compute instances start padel-ai --zone=australia-southeast1-a --project=surf-coach
+          echo "Waiting for VM to boot..."
           sleep 90
-          
-          echo "🔗 Testing SSH connection..."
+          echo "Testing SSH connection..."
           for i in {1..20}; do
-            if timeout 15 gcloud compute ssh padel-ai \
-              --zone=australia-southeast1-a \
-              --project=surf-coach \
-              --command="echo 'SSH Ready'" \
-              --ssh-flag="-o ConnectTimeout=10" \
-              --ssh-flag="-o StrictHostKeyChecking=no" 2>/dev/null; then
-              echo "✅ SSH connection ready!"
+            if timeout 15 gcloud compute ssh padel-ai --zone=australia-southeast1-a --project=surf-coach --command="echo 'SSH Ready'" --ssh-flag="-o ConnectTimeout=10" --ssh-flag="-o StrictHostKeyChecking=no" 2>/dev/null; then
+              echo "SSH connection ready!"
               break
             fi
-            echo "⏳ SSH attempt $i/20..."
+            echo "SSH attempt $i/20..."
             sleep 15
           done
-          
         elif [ "$STATUS" = "RUNNING" ]; then
-          echo "✅ VM is already running"
+          echo "VM is already running"
         else
-          echo "⚠️ Unknown VM status: $STATUS, attempting to start..."
-          gcloud compute instances start padel-ai \
-            --zone=australia-southeast1-a \
-            --project=surf-coach || true
+          echo "Unknown VM status: $STATUS, attempting to start..."
+          gcloud compute instances start padel-ai --zone=australia-southeast1-a --project=surf-coach || true
           sleep 60
         fi
 
-    - name: Deploy Application Code
+    - name: Prepare VM for Deployment
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
         username: Towers
         key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 300s
-        command_timeout: 300s
+        timeout: 120s
+        command_timeout: 120s
         script: |
           set -e
-          echo "🛑 Stopping existing services first..."
-          sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service 2>/dev/null || true
-          
-          echo "📁 Creating base directories..."
+          echo "Stopping existing services..."
+          # Stop all current services (including combined-service)
+          sudo systemctl stop padel-api combined-service yolo11-service yolov8-service mmpose-service yolo-nas-service 2>/dev/null || true
+          echo "Creating base directories..."
           sudo mkdir -p /opt/padel/{app,shared,yolo,mmpose,yolo-nas}
-          sudo mkdir -p /opt/padel/app/{configs/body_2d_keypoint/rtmpose/coco,weights,scripts}
+          sudo mkdir -p /opt/padel/app/{configs/body_2d_keypoint/rtmpose/coco,weights,scripts,uploads,processed}
           sudo chown -R Towers:Towers /opt/padel
-          
-          echo "📦 Deploying application code..."
+          echo "Preserving model weights..."
+          if [ -d "/opt/padel/app/weights" ]; then
+            cp -r /opt/padel/app/weights /tmp/weights_backup
+            echo "Model weights backed up"
+          fi
+          echo "Cleaning old code..."
+          find /opt/padel/app -maxdepth 1 -type f -delete
+          find /opt/padel/app -maxdepth 1 -type d ! -name weights ! -name uploads ! -name processed -exec rm -rf {} + 2>/dev/null || true
+          echo "VM prepared for code transfer"
+
+    - name: Smart Code Update
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: Towers
+        key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 180s
+        command_timeout: 180s
+        script: |
+          set -e
+          echo "📋 Checking if requirements changed..."
           cd /opt/padel
-          rm -rf app
-          
-          echo "📥 Downloading latest code..."
-          if timeout 60 git clone --depth 1 --single-branch --quiet https://github.com/stevetowers098/nuro-padel.git app; then
-            echo "✅ Git clone successful"
-          else
-            echo "⚠️ Git clone failed, trying archive download..."
-            rm -rf app
-            wget -q --timeout=30 -O latest.zip https://github.com/stevetowers098/nuro-padel/archive/refs/heads/main.zip
-            unzip -q latest.zip
-            mv nuro-padel-main app
-            rm latest.zip
-            echo "✅ Archive download successful"
+          curl -sL https://github.com/stevetowers098/nuro-padel/archive/refs/heads/main.tar.gz | tar -xz
+          REBUILD_VENVS=false
+          if [ ! -f "requirements.txt" ] || ! diff -q nuro-padel-main/requirements.txt requirements.txt >/dev/null 2>&1; then
+            echo "🔄 Main requirements changed - need to rebuild shared venv"
+            REBUILD_VENVS=true
+          fi
+          if [ ! -d "requirements" ] || ! diff -q -r nuro-padel-main/requirements/ requirements/ >/dev/null 2>&1; then
+            echo "🔄 Service requirements changed - need to rebuild service venvs"
+            REBUILD_VENVS=true
           fi
           
-          echo "📋 Verifying deployment:"
-          ls -la app/
+          echo "📦 Copying new code..."
+          cp -r nuro-padel-main/* app/
+          rm -rf nuro-padel-main
           
-          echo "📄 Copying requirements files..."
+          echo "📄 Updating requirements files..."
           cp -r app/requirements /opt/padel/ 2>/dev/null || echo "⚠️ No requirements directory"
           cp app/requirements.txt /opt/padel/ 2>/dev/null || echo "⚠️ No requirements.txt"
           
           echo "🔄 Preserving manually managed weights..."
-          if [ -d "/opt/padel/app/weights" ]; then
-            echo "📋 Current weights inventory:"
-            ls -la /opt/padel/app/weights/
-            echo "✅ Weights preserved (manual management)"
+          if [ -d "/tmp/weights_backup" ]; then
+            cp -r /tmp/weights_backup/* app/weights/ 2>/dev/null || true
+            rm -rf /tmp/weights_backup
+            echo "✅ Model weights restored"
           else
-            echo "⚠️ No weights directory found - weights must be manually uploaded"
+            echo "⚠️ No weights backup found - weights must be manually uploaded"
             mkdir -p app/weights
-            echo "# Manual Weight Management" > app/weights/README.md
-            echo "Place your model weight files (.pt) in this directory" >> app/weights/README.md
-            echo "Required files: yolo11n-pose.pt, yolov8n.pt, etc." >> app/weights/README.md
           fi
-          echo "🎯 Code deployment complete!"
+          
+          echo "REBUILD_VENVS=$REBUILD_VENVS"
+          echo "🎯 Smart code update complete!"
 
     - name: Setup Virtual Environments
       uses: appleboy/ssh-action@v0.1.7
@@ -151,10 +148,10 @@ jobs:
                   pip install fastapi==0.104.1 uvicorn==0.24.0 pydantic==2.5.0 httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir
                   ;;
                 "yolo")
-                  pip install fastapi==0.99.1 pydantic==1.10.13 ultralytics torch torchvision --quiet --no-cache-dir
+                  pip install fastapi==0.104.1 pydantic==2.5.0 ultralytics torch torchvision --quiet --no-cache-dir
                   ;;
                 "yolo-nas")
-                  pip install fastapi==0.99.1 pydantic==1.10.13 super-gradients torch==1.13 --quiet --no-cache-dir
+                  pip install fastapi==0.104.1 pydantic==2.5.0 super-gradients torch==1.13 --quiet --no-cache-dir
                   ;;
               esac
             fi
@@ -181,7 +178,7 @@ jobs:
           if [ -f "/opt/padel/requirements/mmpose.txt" ]; then
             pip install -r /opt/padel/requirements/mmpose.txt --quiet --no-cache-dir
           else
-            pip install fastapi==0.99.1 pydantic==1.10.13 mmpose==1.0.0 --quiet --no-cache-dir
+            pip install fastapi==0.104.1 pydantic==2.5.0 mmpose==1.0.0 --quiet --no-cache-dir
           fi
           deactivate
           echo "✅ All environments ready"
@@ -224,8 +221,6 @@ jobs:
             sudo systemctl restart $service
             sleep 5
           done
-          sudo systemctl stop combined-service 2>/dev/null || true
-          sudo systemctl disable combined-service 2>/dev/null || true
           
           echo "⏳ Waiting for services to initialize (45 seconds)..."
           sleep 45

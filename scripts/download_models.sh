@@ -7,16 +7,27 @@ pwd
 ls -l "$PWD"
 ls -ld "$PWD" || true
 
-# Ensure script is running from the correct directory
+# Ensure script is running from the correct directory and weights dir exists
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "SCRIPT_DIR: $SCRIPT_DIR"
-cd "$SCRIPT_DIR/../weights"
+WEIGHTS_DIR="$SCRIPT_DIR/../weights"
+if [ ! -d "$WEIGHTS_DIR" ]; then
+  echo "ERROR: Weights directory $WEIGHTS_DIR does not exist!"
+  exit 2
+fi
+cd "$WEIGHTS_DIR"
 echo "Now in: $PWD"
 ls -l "$PWD"
 
 # Check write permissions
 if [ ! -w "$PWD" ]; then
   echo "ERROR: No write permission to $PWD"
+  exit 2
+fi
+
+# Check wget is installed
+if ! command -v wget >/dev/null 2>&1; then
+  echo "ERROR: wget is not installed!"
   exit 2
 fi
 

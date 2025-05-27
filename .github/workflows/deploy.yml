@@ -161,13 +161,26 @@ jobs:
           
           echo "Updating code in /opt/padel/app ..."
           cd /opt/padel
-          
+
           if [ -d "app_old_backup" ]; then rm -rf app_old_backup; fi
           if [ -d "app_current_backup" ]; then mv app_current_backup app_old_backup || true; fi
-          if [ -d "app" ]; then mv app app_current_backup || true; fi
-          
+          if [ -d "app" ]; then 
+            echo "Preserving weights directory before moving app..."
+            if [ -d "app/weights" ]; then
+              mv app/weights weights_backup_$$
+            fi
+            mv app app_current_backup || true
+          fi
+
           echo "Cloning repository into /opt/padel/app ..."
           git clone https://github.com/stevetowers098/nuro-padel.git app
+
+          # Restore weights if backup exists
+          if [ -d "weights_backup_$$" ]; then
+            echo "Restoring preserved weights directory..."
+            rm -rf app/weights
+            mv weights_backup_$$ app/weights
+          fi
           
           echo "Copying requirements files..."
           if [ -d "/opt/padel/app/requirements" ]; then
@@ -210,7 +223,8 @@ jobs:
           cd /opt/padel/mmpose
           if [ ! -d "venv" ]; then echo "Creating venv for mmpose"; python3 -m venv venv; fi
           source venv/bin/activate
-          pip install --upgrade pip setuptools --quiet --no-cache-dir
+          pip install --upgrade pip --quiet --no-cache-dir
+          pip install setuptools==60.2.0 --quiet --no-cache-dir
           echo "Aggressively uninstalling torch, torchvision, torchaudio, triton, openxlab before reinstall for MMPose..."
           pip uninstall openxlab torch torchvision torchaudio triton -y --quiet || true 
           echo "Installing PyTorch for MMPose (CUDA 11.8) with --no-cache-dir..."

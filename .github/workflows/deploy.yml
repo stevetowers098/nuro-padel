@@ -2,7 +2,7 @@ name: Deploy NuroPadel to VM
 on:
   push:
     branches: [main]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -12,7 +12,6 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    # AUTO-START VM IF STOPPED
     - name: Authenticate to Google Cloud
       uses: google-github-actions/auth@v1
       with:
@@ -40,7 +39,6 @@ jobs:
           echo "⏳ Waiting for VM to boot and SSH to be ready..."
           sleep 90
           
-          # Wait for SSH to be ready
           echo "🔗 Testing SSH connection..."
           for i in {1..20}; do
             if timeout 15 gcloud compute ssh padel-ai \
@@ -66,7 +64,6 @@ jobs:
           sleep 60
         fi
 
-    # ORIGINAL DEPLOYMENT STEPS (Enhanced with better timeouts)
     - name: Ensure Base App Directories Exist on VM
       uses: appleboy/ssh-action@v0.1.7
       with:
@@ -140,26 +137,22 @@ jobs:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 900s  # 15 minutes for full deployment
+        timeout: 900s
         command_timeout: 900s
         script: |
-          # Stop all services
           echo "Stopping services..."
           sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service || true
           
-          # Update code
           echo "Updating code in /opt/padel/app ..."
           cd /opt/padel
           
-          # Backup strategy
           if [ -d "app_old_backup" ]; then rm -rf app_old_backup; fi
           if [ -d "app_current_backup" ]; then mv app_current_backup app_old_backup || true; fi
-          if [ -d "app" ]; then mv app app_current_backup || true; fi # Backup existing /opt/padel/app
+          if [ -d "app" ]; then mv app app_current_backup || true; fi
           
           echo "Cloning repository into /opt/padel/app ..."
           git clone https://github.com/stevetowers098/nuro-padel.git app
           
-          # Copy requirements from the cloned repo root to /opt/padel/ for venv setup
           echo "Copying requirements files..."
           if [ -d "/opt/padel/app/requirements" ]; then
             cp -r /opt/padel/app/requirements /opt/padel/
@@ -172,9 +165,6 @@ jobs:
             echo "WARNING: /opt/padel/app/requirements.txt file not found after clone."
           fi
           
-          # --- VIRTUAL ENVIRONMENT UPDATES ---
-          
-          # Update shared environment (ENHANCED with GPU management)
           echo "Updating shared environment (/opt/padel/shared/venv)..."
           cd /opt/padel/shared
           if [ ! -d "venv" ]; then echo "Creating venv for shared"; python3 -m venv venv; fi
@@ -184,12 +174,10 @@ jobs:
             pip install -r /opt/padel/requirements.txt --quiet --no-cache-dir
           else
             echo "WARNING: /opt/padel/requirements.txt not found for shared venv."
-            # Enhanced fallback with GPU management
             pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir
           fi
           deactivate
           
-          # Update YOLO environment
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           if [ ! -d "venv" ]; then echo "Creating venv for yolo"; python3 -m venv venv; fi
@@ -202,7 +190,6 @@ jobs:
           fi
           deactivate
           
-          # Update MMPose environment
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           if [ ! -d "venv" ]; then echo "Creating venv for mmpose"; python3 -m venv venv; fi
@@ -228,7 +215,6 @@ jobs:
           fi
           deactivate
           
-          # Update YOLO-NAS environment
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           if [ ! -d "venv" ]; then echo "Creating venv for yolo-nas"; python3 -m venv venv; fi
@@ -241,12 +227,8 @@ jobs:
           fi
           deactivate
           
-          echo "Skipping Combined environment update as combined-service will be disabled."
-          
-          # --- SYSTEMD SERVICE FILE CREATION ---
           echo "Creating/Updating systemd service files with GPU management support..."
 
-          # Main API Service - ENHANCED with GPU management
           sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
           [Unit]
           Description=NuroPadel Main API Gateway with GPU Auto-Management
@@ -264,7 +246,6 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # YOLO11 Service
           sudo tee /etc/systemd/system/yolo11-service.service > /dev/null << 'EOL'
           [Unit]
           Description=YOLOv11 Pose and Object Detection Service
@@ -281,7 +262,6 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # YOLOv8 Service
           sudo tee /etc/systemd/system/yolov8-service.service > /dev/null << 'EOL'
           [Unit]
           Description=YOLOv8 Object Detection Service
@@ -298,7 +278,6 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # MMPose Service
           sudo tee /etc/systemd/system/mmpose-service.service > /dev/null << 'EOL'
           [Unit]
           Description=MMPose Pose Estimation Service
@@ -316,7 +295,6 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # YOLO-NAS Service
           sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
           [Unit]
           Description=YOLO-NAS Pose Estimation Service
@@ -333,7 +311,6 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # --- Start services and health checks ---
           echo "Reloading systemd and managing services..."
           sudo systemctl daemon-reload
           

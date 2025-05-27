@@ -2,6 +2,8 @@ name: Deploy NuroPadel to VM
 on:
   push:
     branches: [main]
+  workflow_dispatch:  # Allow manual trigger
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -10,6 +12,81 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
+    # NEW: Auto-start VM if stopped
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Start VM Instance if Stopped
+      run: |
+        echo "🔍 Checking VM instance status..."
+        STATUS=$(gcloud compute instances describe padel-ai \
+          --zone=australia-southeast1-a \
+          --project=surf-coach \
+          --format="value(status)" 2>/dev/null || echo "ERROR")
+        
+        echo "Current VM status: $STATUS"
+        
+        if [ "$STATUS" = "TERMINATED" ] || [ "$STATUS" = "STOPPED" ]; then
+          echo "🚀 VM is stopped. Starting instance..."
+          gcloud compute instances start padel-ai \
+            --zone=australia-southeast1-a \
+            --project=surf-coach
+          
+          echo "⏳ Waiting for VM to boot and SSH to be ready..."
+          sleep 90  # Give VM extra time to boot
+          
+          # Wait for SSH to be ready with better error handling
+          echo "🔗 Testing SSH connection..."
+          for i in {1..20}; do
+            if timeout 15 gcloud compute ssh padel-ai \
+              --zone=australia-southeast1-a \
+              --project=surf-coach \
+              --command="echo 'SSH Ready'" \
+              --ssh-flag="-o ConnectTimeout=10" \
+              --ssh-flag="-o StrictHostKeyChecking=no" 2>/dev/null; then
+              echo "✅ SSH connection ready!"
+              break
+            fi
+            echo "⏳ Waiting for SSH... attempt $i/20"
+            sleep 15
+          done
+          
+          echo "🎯 VM startup complete, proceeding with deployment..."
+        elif [ "$STATUS" = "RUNNING" ]; then
+          echo "✅ VM is already running"
+        else
+          echo "⚠️ Unknown VM status: $STATUS"
+          echo "🚀 Attempting to start anyway..."
+          gcloud compute instances start padel-ai \
+            --zone=australia-southeast1-a \
+            --project=surf-coach || true
+          sleep 60
+        fi
+
+    # Wait a bit more to ensure all services are stable
+    - name: Final SSH Readiness Check
+      run: |
+        echo "🔧 Final SSH connection verification..."
+        for i in {1..10}; do
+          if timeout 10 gcloud compute ssh padel-ai \
+            --zone=australia-southeast1-a \
+            --project=surf-coach \
+            --command="echo 'Final SSH check passed'" \
+            --ssh-flag="-o ConnectTimeout=10" \
+            --ssh-flag="-o StrictHostKeyChecking=no" 2>/dev/null; then
+            echo "✅ Final SSH check passed!"
+            break
+          fi
+          echo "⏳ Final SSH check... attempt $i/10"
+          sleep 10
+        done
+
+    # Your existing deployment steps (unchanged)
     - name: Ensure Base App Directories Exist on VM
       uses: appleboy/ssh-action@v0.1.7
       with:
@@ -117,7 +194,7 @@ jobs:
             pip install -r /opt/padel/requirements.txt --quiet --no-cache-dir
           else
             echo "WARNING: /opt/padel/requirements.txt not found for shared venv."
-            pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage # Fallback
+            pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage google-cloud-compute # Fallback with GPU management
           fi
           deactivate
           
@@ -179,10 +256,10 @@ jobs:
           # --- And your actual runnable code is in /opt/padel/app/app/ ---
           echo "Creating/Updating systemd service files with corrected paths..."
 
-          # Main API Service (padel-api)
+          # Main API Service (padel-api) - ENHANCED with GPU management environment
           sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
           [Unit]
-          Description=NuroPadel Main API Gateway
+          Description=NuroPadel Main API Gateway with GPU Management
           After=network.target
           [Service]
           User=Towers
@@ -192,6 +269,8 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app/app"
+          Environment="GOOGLE_CLOUD_PROJECT=surf-coach"
+          Environment="GOOGLE_APPLICATION_CREDENTIALS=/opt/padel/app/service-account.json"
           [Install]
           WantedBy=multi-user.target
           EOL
@@ -315,7 +394,7 @@ jobs:
           HEALTH_CHECK_PORTS="8000 8001 8002 8003 8004" 
           for port in $HEALTH_CHECK_PORTS; do
             SERVICE_FOR_PORT_MSG="" 
-            if [ "$port" == "8000" ]; then SERVICE_FOR_PORT_MSG="(padel-api)"; fi
+            if [ "$port" == "8000" ]; then SERVICE_FOR_PORT_MSG="(padel-api with GPU management)"; fi
             if [ "$port" == "8001" ]; then SERVICE_FOR_PORT_MSG="(yolo11-service)"; fi
             if [ "$port" == "8002" ]; then SERVICE_FOR_PORT_MSG="(yolov8-service)"; fi
             if [ "$port" == "8003" ]; then SERVICE_FOR_PORT_MSG="(mmpose-service)"; fi
@@ -341,3 +420,13 @@ jobs:
           done
           
           echo "🎉 Deployment to VM complete!"
+
+    # NEW: Optional auto-stop VM after successful deployment (comment out if you want VM to stay running)
+    # - name: Stop VM to Save Costs (Optional)
+    #   if: success()  # Only if deployment succeeded
+    #   run: |
+    #     echo "💰 Deployment successful. Stopping VM to save costs..."
+    #     gcloud compute instances stop padel-ai \
+    #       --zone=australia-southeast1-a \
+    #       --project=surf-coach
+    #     echo "🎯 VM stopped. Will auto-start on next deployment or manual trigger."

@@ -74,9 +74,15 @@ jobs:
         command_timeout: 120s
         script: |
           echo "Ensuring base directories for configs and weights exist..."
-          mkdir -p /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco
-          mkdir -p /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco
-          mkdir -p /opt/padel/app/weights
+          whoami
+          id
+          df -h /opt/padel || df -h /
+          ls -ld /opt/padel /opt/padel/app || ls -ld /opt/padel
+          ls -l /opt/padel/app || true
+          sudo mkdir -p /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco
+          sudo mkdir -p /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco
+          sudo mkdir -p /opt/padel/app/weights
+          sudo chown -R $USER:$USER /opt/padel/app
           echo "Base directories ensured."
 
     - name: Download RTMPose Config

@@ -73,15 +73,20 @@ jobs:
         timeout: 60s
         command_timeout: 120s
         script: |
+          set -x
           echo "Ensuring base directories for configs and weights exist..."
+          echo "USER: $USER"
           whoami
           id
           df -h /opt/padel || df -h /
-          ls -ld /opt/padel /opt/padel/app || ls -ld /opt/padel
-          ls -l /opt/padel/app || true
+          ls -ld /opt || true
+          ls -ld /opt/padel || true
+          ls -ld /opt/padel/app || true
+          sudo -n true || echo "WARNING: Sudo may require a password!"
           sudo mkdir -p /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco
           sudo mkdir -p /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco
           sudo mkdir -p /opt/padel/app/weights
+          sudo ls -ld /opt/padel /opt/padel/app /opt/padel/app/weights || true
           sudo chown -R $USER:$USER /opt/padel/app
           echo "Base directories ensured."
 

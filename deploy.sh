@@ -324,24 +324,15 @@ deploy_vm() {
     # Clean previous deployment safely (only project files)
     ssh "$VM_HOST" "cd $VM_PATH && find . -maxdepth 1 -name '*.md' -o -name '*.yml' -o -name '*.sh' -o -name '*.conf' -o -name '*-service' | xargs rm -rf 2>/dev/null || true"
     
-    # Sync only project files to VM (no --delete to avoid system file conflicts)
+    # Sync all project files to VM (simplified and comprehensive)
     rsync -avz \
         --exclude='*.git*' \
         --exclude='__pycache__' \
         --exclude='*.pyc' \
         --exclude='node_modules' \
         --exclude='.pytest_cache' \
-        --include='*/' \
-        --include='*.md' \
-        --include='*.yml' \
-        --include='*.yaml' \
-        --include='*.sh' \
-        --include='*.conf' \
-        --include='*.py' \
-        --include='*.txt' \
-        --include='*.json' \
-        --include='Dockerfile' \
-        --exclude='*' \
+        --exclude='.vscode' \
+        --exclude='*.log' \
         ./ "$VM_HOST:$VM_PATH/"
     
     # Make deploy script executable

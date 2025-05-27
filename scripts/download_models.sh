@@ -1,6 +1,25 @@
 #!/bin/bash
 set -euo pipefail
 
+# Debug info
+whoami
+pwd
+ls -l "$PWD"
+ls -ld "$PWD" || true
+
+# Ensure script is running from the correct directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "SCRIPT_DIR: $SCRIPT_DIR"
+cd "$SCRIPT_DIR/../weights"
+echo "Now in: $PWD"
+ls -l "$PWD"
+
+# Check write permissions
+if [ ! -w "$PWD" ]; then
+  echo "ERROR: No write permission to $PWD"
+  exit 2
+fi
+
 # Download YOLOv8 model
 if [ ! -f "yolov8m.pt" ]; then
   wget --timeout=60 --tries=2 -nv -O yolov8m.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m.pt || echo "WARNING: YOLOv8 model download failed, but continuing."
@@ -28,12 +47,5 @@ if [ ! -f "yolo11n-pose.pt" ]; then
 else
   echo "✅ yolo11n-pose.pt already exists"
 fi
-
-# Download YOLO-NAS weights (optional, add URL if needed)
-# if [ ! -f "yolo_nas_pose_m_coco_pose.pth" ]; then
-#   wget --timeout=60 --tries=2 -nv -O yolo_nas_pose_m_coco_pose.pth <YOLO_NAS_MODEL_URL> || echo "WARNING: YOLO-NAS weights download failed, but continuing."
-# else
-#   echo "✅ yolo_nas_pose_m_coco_pose.pth already exists"
-# fi
 
 echo "Model download script complete."

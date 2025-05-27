@@ -267,6 +267,7 @@ jobs:
     
     steps:
     - name: Cleanup old container images
+      continue-on-error: true
       uses: actions/delete-package-versions@v4
       with:
         package-name: '${{ env.IMAGE_PREFIX }}/yolo-combined'
@@ -275,6 +276,7 @@ jobs:
         delete-only-untagged-versions: true
         
     - name: Cleanup MMPose images
+      continue-on-error: true
       uses: actions/delete-package-versions@v4
       with:
         package-name: '${{ env.IMAGE_PREFIX }}/mmpose'
@@ -283,6 +285,7 @@ jobs:
         delete-only-untagged-versions: true
         
     - name: Cleanup YOLO-NAS images
+      continue-on-error: true
       uses: actions/delete-package-versions@v4
       with:
         package-name: '${{ env.IMAGE_PREFIX }}/yolo-nas'

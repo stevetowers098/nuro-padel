@@ -2,14 +2,14 @@
 # Verified versions - super-gradients is still maintained open source
 
 # --- Core ML/DL with CUDA Support ---
-torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
-torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
+torch==2.3.1
+torchvision==0.18.1
+
+# --- Core Dependencies (Compatible with super-gradients) ---
+numpy>=1.21.0,<=1.23.5
 
 # --- YOLO-NAS ---
 super-gradients>=3.7.0
-
-# --- Core Dependencies ---
-numpy>=1.24.0,<2.0.0
 
 # --- Computer Vision ---
 opencv-python-headless==4.10.0.84

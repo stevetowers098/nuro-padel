@@ -2,6 +2,8 @@ name: Deploy NuroPadel to VM
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -10,12 +12,66 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Start VM Instance if Stopped
+      run: |
+        echo "🔍 Checking VM instance status..."
+        STATUS=$(gcloud compute instances describe padel-ai \
+          --zone=australia-southeast1-a \
+          --project=surf-coach \
+          --format="value(status)" 2>/dev/null || echo "ERROR")
+        
+        echo "Current VM status: $STATUS"
+        
+        if [ "$STATUS" = "TERMINATED" ] || [ "$STATUS" = "STOPPED" ]; then
+          echo "🚀 VM is stopped. Starting instance..."
+          gcloud compute instances start padel-ai \
+            --zone=australia-southeast1-a \
+            --project=surf-coach
+          
+          echo "⏳ Waiting for VM to boot and SSH to be ready..."
+          sleep 90
+          
+          echo "🔗 Testing SSH connection..."
+          for i in {1..20}; do
+            if timeout 15 gcloud compute ssh padel-ai \
+              --zone=australia-southeast1-a \
+              --project=surf-coach \
+              --command="echo 'SSH Ready'" \
+              --ssh-flag="-o ConnectTimeout=10" \
+              --ssh-flag="-o StrictHostKeyChecking=no" 2>/dev/null; then
+              echo "✅ SSH connection ready!"
+              break
+            fi
+            echo "⏳ SSH attempt $i/20..."
+            sleep 15
+          done
+          
+        elif [ "$STATUS" = "RUNNING" ]; then
+          echo "✅ VM is already running"
+        else
+          echo "⚠️ Unknown VM status: $STATUS, attempting to start..."
+          gcloud compute instances start padel-ai \
+            --zone=australia-southeast1-a \
+            --project=surf-coach || true
+          sleep 60
+        fi
+
     - name: Ensure Base App Directories Exist on VM
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 60s
+        command_timeout: 120s
         script: |
           echo "Ensuring base directories for configs and weights exist..."
           mkdir -p /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco
@@ -29,6 +85,8 @@ jobs:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 120s
+        command_timeout: 180s
         script: |
           echo "Attempting to download RTMPose config..."
           wget -nv -O /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/rtmpose/coco/rtmpose-m_8xb256-420e_coco-256x192.py || echo "WARNING: RTMPose config download failed, but continuing."
@@ -40,6 +98,8 @@ jobs:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 120s
+        command_timeout: 180s
         script: |
           echo "Attempting to download HRNet config..."
           wget -nv -O /opt/padel/app/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py || echo "WARNING: HRNet config download failed, but continuing."
@@ -51,6 +111,8 @@ jobs:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 300s
+        command_timeout: 360s
         script: |
           echo "Attempting to download RTMPose weights..."
           wget -nv -O /opt/padel/app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth https://download.openmmlab.com/mmpose/v1/projects/rtmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth || echo "WARNING: RTMPose weights download failed, but continuing."
@@ -62,6 +124,8 @@ jobs:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 300s
+        command_timeout: 360s
         script: |
           echo "Attempting to download HRNet weights..."
           wget -nv -O /opt/padel/app/weights/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth || echo "WARNING: HRNet weights download failed, but continuing."
@@ -73,27 +137,23 @@ jobs:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 900s
+        command_timeout: 900s
         script: |
-          # Stop all services
           echo "Stopping services..."
           sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service || true
           
-          # Update code
           echo "Updating code in /opt/padel/app ..."
           cd /opt/padel
           
-          # Backup strategy
           if [ -d "app_old_backup" ]; then rm -rf app_old_backup; fi
           if [ -d "app_current_backup" ]; then mv app_current_backup app_old_backup || true; fi
-          if [ -d "app" ]; then mv app app_current_backup || true; fi # Backup existing /opt/padel/app
+          if [ -d "app" ]; then mv app app_current_backup || true; fi
           
           echo "Cloning repository into /opt/padel/app ..."
-          git clone https://github.com/stevetowers098/nuro-padel.git app # Clone directly into /opt/padel/app
-                                                                         # This means /opt/padel/app is now your repo root.
-                                                                         # And your repo's 'app' folder is at /opt/padel/app/app/
+          git clone https://github.com/stevetowers098/nuro-padel.git app
           
-          # Copy requirements from the cloned repo root to /opt/padel/ for venv setup
-          echo "Copying requirements files from /opt/padel/app/requirements to /opt/padel/requirements ..."
+          echo "Copying requirements files..."
           if [ -d "/opt/padel/app/requirements" ]; then
             cp -r /opt/padel/app/requirements /opt/padel/
           else
@@ -105,9 +165,6 @@ jobs:
             echo "WARNING: /opt/padel/app/requirements.txt file not found after clone."
           fi
           
-          # --- VIRTUAL ENVIRONMENT UPDATES ---
-          
-          # Update shared environment
           echo "Updating shared environment (/opt/padel/shared/venv)..."
           cd /opt/padel/shared
           if [ ! -d "venv" ]; then echo "Creating venv for shared"; python3 -m venv venv; fi
@@ -117,11 +174,10 @@ jobs:
             pip install -r /opt/padel/requirements.txt --quiet --no-cache-dir
           else
             echo "WARNING: /opt/padel/requirements.txt not found for shared venv."
-            pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage # Fallback
+            pip install fastapi uvicorn pydantic httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir
           fi
           deactivate
           
-          # Update YOLO environment (/opt/padel/yolo/venv)
           echo "Updating YOLO environment..."
           cd /opt/padel/yolo
           if [ ! -d "venv" ]; then echo "Creating venv for yolo"; python3 -m venv venv; fi
@@ -134,7 +190,6 @@ jobs:
           fi
           deactivate
           
-          # Update MMPose environment (/opt/padel/mmpose/venv)
           echo "Updating MMPose environment..."
           cd /opt/padel/mmpose
           if [ ! -d "venv" ]; then echo "Creating venv for mmpose"; python3 -m venv venv; fi
@@ -160,7 +215,6 @@ jobs:
           fi
           deactivate
           
-          # Update YOLO-NAS environment (/opt/padel/yolo-nas/venv)
           echo "Updating YOLO-NAS environment..."
           cd /opt/padel/yolo-nas
           if [ ! -d "venv" ]; then echo "Creating venv for yolo-nas"; python3 -m venv venv; fi
@@ -173,16 +227,11 @@ jobs:
           fi
           deactivate
           
-          echo "Skipping Combined environment update as combined-service will be disabled."
-          
-          # --- SYSTEMD SERVICE FILE CREATION (Paths assume repo root is /opt/padel/app) ---
-          # --- And your actual runnable code is in /opt/padel/app/app/ ---
-          echo "Creating/Updating systemd service files with corrected paths..."
+          echo "Creating/Updating systemd service files with GPU management support..."
 
-          # Main API Service (padel-api)
           sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
           [Unit]
-          Description=NuroPadel Main API Gateway
+          Description=NuroPadel Main API Gateway with GPU Auto-Management
           After=network.target
           [Service]
           User=Towers
@@ -192,11 +241,11 @@ jobs:
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app/app"
+          Environment="GOOGLE_CLOUD_PROJECT=surf-coach"
           [Install]
           WantedBy=multi-user.target
           EOL
           
-          # YOLO11 Service
           sudo tee /etc/systemd/system/yolo11-service.service > /dev/null << 'EOL'
           [Unit]
           Description=YOLOv11 Pose and Object Detection Service
@@ -213,7 +262,6 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # YOLOv8 Service
           sudo tee /etc/systemd/system/yolov8-service.service > /dev/null << 'EOL'
           [Unit]
           Description=YOLOv8 Object Detection Service
@@ -230,7 +278,6 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # MMPose Service
           sudo tee /etc/systemd/system/mmpose-service.service > /dev/null << 'EOL'
           [Unit]
           Description=MMPose Pose Estimation Service
@@ -248,7 +295,6 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # YOLO-NAS Service
           sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
           [Unit]
           Description=YOLO-NAS Pose Estimation Service
@@ -256,26 +302,8 @@ jobs:
           [Service]
           User=Towers
           Group=Towers
-          WorkingDirectory=/opt/padel/app/app  # CORRECTED
+          WorkingDirectory=/opt/padel/app/app
           ExecStart=/opt/padel/yolo-nas/venv/bin/python -m models.yolo_nas_service
-          Restart=always
-          RestartSec=10
-          Environment="PYTHONPATH=/opt/padel/app/app" # CORRECTED
-          [Install]
-          WantedBy=multi-user.target
-          EOL
-
-          
-          # Combined Service (Definition remains, but will be disabled)
-          sudo tee /etc/systemd/system/combined-service.service > /dev/null << 'EOL'
-          [Unit]
-          Description=Combined Analysis Service (Targeted for Disabling)
-          After=network.target
-          [Service]
-          User=Towers
-          Group=Towers
-          WorkingDirectory=/opt/padel/app/app 
-          ExecStart=/opt/padel/combined/venv/bin/python -m models.combined_service
           Restart=always
           RestartSec=10
           Environment="PYTHONPATH=/opt/padel/app/app"
@@ -283,7 +311,6 @@ jobs:
           WantedBy=multi-user.target
           EOL
           
-          # --- Start services and health checks ---
           echo "Reloading systemd and managing services..."
           sudo systemctl daemon-reload
           
@@ -315,7 +342,7 @@ jobs:
           HEALTH_CHECK_PORTS="8000 8001 8002 8003 8004" 
           for port in $HEALTH_CHECK_PORTS; do
             SERVICE_FOR_PORT_MSG="" 
-            if [ "$port" == "8000" ]; then SERVICE_FOR_PORT_MSG="(padel-api)"; fi
+            if [ "$port" == "8000" ]; then SERVICE_FOR_PORT_MSG="(padel-api with GPU auto-management)"; fi
             if [ "$port" == "8001" ]; then SERVICE_FOR_PORT_MSG="(yolo11-service)"; fi
             if [ "$port" == "8002" ]; then SERVICE_FOR_PORT_MSG="(yolov8-service)"; fi
             if [ "$port" == "8003" ]; then SERVICE_FOR_PORT_MSG="(mmpose-service)"; fi
@@ -324,20 +351,8 @@ jobs:
             if curl -s -f --max-time 10 http://localhost:$port/healthz > /dev/null; then
               echo "✅ Port $port $SERVICE_FOR_PORT_MSG: healthy"
             else
-              echo "❌ Port $port $SERVICE_FOR_PORT_MSG: not responding. Service on this port might have an issue."
-              SERVICE_NAME_FOR_LOG_CHECK=""
-              case "$port" in
-                "8000") SERVICE_NAME_FOR_LOG_CHECK="padel-api";;
-                "8001") SERVICE_NAME_FOR_LOG_CHECK="yolo11-service";;
-                "8002") SERVICE_NAME_FOR_LOG_CHECK="yolov8-service";;
-                "8003") SERVICE_NAME_FOR_LOG_CHECK="mmpose-service";;
-                "8004") SERVICE_NAME_FOR_LOG_CHECK="yolo-nas-service";;
-              esac
-              if [ ! -z "$SERVICE_NAME_FOR_LOG_CHECK" ]; then
-                echo "Recent logs for $SERVICE_NAME_FOR_LOG_CHECK that might be on port $port (last 10 lines, last 3 mins):"
-                sudo journalctl -u $SERVICE_NAME_FOR_LOG_CHECK -n 10 --no-pager --since "3 minutes ago"
-              fi
+              echo "❌ Port $port $SERVICE_FOR_PORT_MSG: not responding"
             fi
           done
           
-          echo "🎉 Deployment to VM complete!"
+          echo "🎉 Deployment complete! VM auto-start/stop now enabled."

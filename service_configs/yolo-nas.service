@@ -1,4 +1,3 @@
-@"
 [Unit]
 Description=YOLO-NAS Pose Service
 After=network.target
@@ -14,4 +13,3 @@ RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-"@ | Out-File -FilePath "service_configs\yolo-nas.service" -Encoding UTF8

@@ -106,6 +106,18 @@ jobs:
           cp -r app/requirements /opt/padel/ 2>/dev/null || echo "⚠️ No requirements directory"
           cp app/requirements.txt /opt/padel/ 2>/dev/null || echo "⚠️ No requirements.txt"
           
+          echo "🔄 Preserving manually managed weights..."
+          if [ -d "/opt/padel/app/weights" ]; then
+            echo "📋 Current weights inventory:"
+            ls -la /opt/padel/app/weights/
+            echo "✅ Weights preserved (manual management)"
+          else
+            echo "⚠️ No weights directory found - weights must be manually uploaded"
+            mkdir -p app/weights
+            echo "# Manual Weight Management" > app/weights/README.md
+            echo "Place your model weight files (.pt) in this directory" >> app/weights/README.md
+            echo "Required files: yolo11n-pose.pt, yolov8n.pt, etc." >> app/weights/README.md
+          fi
           echo "🎯 Code deployment complete!"
 
     - name: Setup Virtual Environments
@@ -127,7 +139,7 @@ jobs:
             if [ -d "venv" ]; then
               rm -rf venv
             fi
-            python3 -m venv venv
+            python3.10 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip setuptools wheel --quiet --no-cache-dir
             if [ -f "$req_file" ]; then
@@ -158,13 +170,14 @@ jobs:
           echo "🔧 Setting up MMPose environment..."
           cd /opt/padel/mmpose
           if [ -d "venv" ]; then rm -rf venv; fi
-          python3 -m venv venv
+          python3.10 -m venv venv
           source venv/bin/activate
           pip install --upgrade pip setuptools==60.2.0 --quiet --no-cache-dir
           pip uninstall openxlab torch torchvision torchaudio triton -y --quiet 2>/dev/null || true
           pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
           pip install openmim --quiet --no-cache-dir
-          mim install mmcv==2.0.1 --quiet
+          mim install "mmpose>=1.0.0"
+          mim install "mmcv>=2.0.1"
           if [ -f "/opt/padel/requirements/mmpose.txt" ]; then
             pip install -r /opt/padel/requirements/mmpose.txt --quiet --no-cache-dir
           else

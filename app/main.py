@@ -24,12 +24,20 @@ PROJECT_ID = "surf-coach"
 ZONE = "australia-southeast1-a" 
 INSTANCE_NAME = "padel-ai"
 
-# Updated service URLs with consistent port numbering and endpoints
+# Updated service URLs with consistent port numbering
 SERVICES = {
-    "yolo11": "http://localhost:8001/yolo11",
-    "yolov8": "http://localhost:8002/yolov8",  # Changed from 8005 to 8002
-    "yolo_nas": "http://localhost:8004/yolo-nas",  # Changed to port 8004
-    "mmpose": "http://localhost:8003/mmpose"
+    "yolo11": "http://localhost:8001",
+    "yolov8": "http://localhost:8002",  # Changed from 8005 to 8002
+    "yolo_nas": "http://localhost:8004",  # Changed to port 8004
+    "mmpose": "http://localhost:8003"
+}
+
+# Service endpoints for API calls
+SERVICE_ENDPOINTS = {
+    "yolo11": "yolo11",
+    "yolov8": "yolov8",
+    "yolo_nas": "yolo-nas",
+    "mmpose": "mmpose"
 }
 
 class VideoRequest(BaseModel):
@@ -38,13 +46,16 @@ class VideoRequest(BaseModel):
     data: bool = False   # True = output data
 
 class GPUManager:
-    """Handles GPU instance start/stop for cost optimization"""
+    """Handles GPU instance start/stop for cost optimization with request queuing"""
     
     def __init__(self):
         if GPU_MANAGEMENT_AVAILABLE:
             self.compute_client = compute_v1.InstancesClient()
         else:
             self.compute_client = None
+        self.active_requests = 0
+        self.shutdown_delay = 300  # 5 minutes before auto-shutdown
+        self._shutdown_task = None
     
     def is_instance_running(self):
         """Check if GPU instance is currently running"""
@@ -138,6 +149,29 @@ class GPUManager:
         
         print("⚠️ Timeout waiting for services, proceeding anyway...")
         return True  # Don't fail if we can't verify readiness
+    
+    async def schedule_shutdown(self):
+        """Schedule GPU shutdown after delay if no active requests"""
+        await asyncio.sleep(self.shutdown_delay)
+        if self.active_requests == 0:
+            print(f"💰 Auto-stopping GPU after {self.shutdown_delay}s idle time...")
+            self.stop_instance()
+        else:
+            print(f"🔄 GPU shutdown cancelled - {self.active_requests} active requests")
+    
+    def start_request(self):
+        """Track start of new request"""
+        self.active_requests += 1
+        if self._shutdown_task:
+            self._shutdown_task.cancel()
+            self._shutdown_task = None
+            print("🔄 GPU auto-shutdown cancelled - new request received")
+    
+    def end_request(self):
+        """Track end of request and schedule shutdown if idle"""
+        self.active_requests = max(0, self.active_requests - 1)
+        if self.active_requests == 0 and not self._shutdown_task:
+            self._shutdown_task = asyncio.create_task(self.schedule_shutdown())
 
 # Initialize GPU manager
 gpu_manager = GPUManager()
@@ -196,8 +230,9 @@ async def main_analysis(
     start_time = time.time()
     
     try:
-        # 🚀 NEW: Auto-start GPU if needed (cost optimization)
+        # 🚀 Track request start for smart GPU management
         if GPU_MANAGEMENT_AVAILABLE:
+            gpu_manager.start_request()
             print("🔍 Checking GPU instance status...")
             await gpu_manager.start_instance_if_needed()
         
@@ -210,8 +245,10 @@ async def main_analysis(
                 try:
                     print(f"   → Calling {service_name}...")
                     # Use consistent parameter names (video, data)
+                    endpoint = SERVICE_ENDPOINTS[service_name]
+                    full_url = f"{service_url}/{endpoint}"
                     response = await client.post(
-                        service_url,
+                        full_url,
                         json={
                             "video_url": str(video_url),
                             "video": video,
@@ -246,20 +283,18 @@ async def main_analysis(
             }
         }
         
-        # 💰 NEW: Auto-stop GPU to save costs
+        # 💰 NEW: Smart GPU management - schedule shutdown if idle
         if GPU_MANAGEMENT_AVAILABLE:
-            print("💰 Auto-stopping GPU to save costs...")
-            gpu_manager.stop_instance()
-            combined_result["cost_optimization"]["gpu_auto_stopped"] = True
+            gpu_manager.end_request()
+            combined_result["cost_optimization"]["smart_shutdown"] = "scheduled"
         
         return combined_result
         
     except Exception as e:
-        # 🚨 Always try to stop GPU even if processing failed
+        # 🚨 Always track request end even if processing failed
         if GPU_MANAGEMENT_AVAILABLE:
             print(f"🚨 Error during processing: {e}")
-            print("💰 Stopping GPU due to error...")
-            gpu_manager.stop_instance()
+            gpu_manager.end_request()
         
         raise HTTPException(status_code=500, detail=str(e))
 

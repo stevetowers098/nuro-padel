@@ -58,8 +58,8 @@ app = FastAPI(title="YOLO-NAS Pose Service", version="1.0.0")
 GCS_BUCKET_NAME = "padel-ai"
 GCS_FOLDER = "processed"
 
-# Load the YOLO-NAS model with optimizations
-model = models.get("yolo_nas_pose_m", pretrained_weights="coco_pose")
+# Load the YOLO-NAS model with proper pretrained_weights string
+model = models.get("yolo_nas_pose_n", pretrained_weights="coco_pose")
 # GPU optimization if available
 if torch.cuda.is_available():
     model.to('cuda')

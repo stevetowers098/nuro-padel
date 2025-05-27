@@ -135,8 +135,8 @@ class GPUManager:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     for service_url in SERVICES.values():
                         try:
-                            # Try to reach any service
-                            response = await client.get(service_url.replace(service_url.split('/')[-1], 'healthz'))
+                            # Try to reach any service health endpoint
+                            response = await client.get(f"{service_url}/healthz")
                             if response.status_code == 200:
                                 return True
                         except:

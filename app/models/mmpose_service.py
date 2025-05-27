@@ -558,6 +558,31 @@ async def analyze_video_endpoint(
         if temp_downloaded_path and os.path.exists(temp_downloaded_path):
             os.unlink(temp_downloaded_path)
 
+@app.post("/mmpose/pose")
+async def mmpose_pose_analysis(
+    payload: VideoAnalysisURLRequest,
+    http_request: Request
+):
+    """
+    MMPose Biomechanical Analysis Endpoint
+    
+    Dedicated endpoint for high-precision pose estimation and biomechanical analysis.
+    Uses RTMPose or HRNet models for detailed pose keypoint detection with 17 keypoints.
+    
+    Returns annotated video with skeleton overlay, joint angles, and biomechanical metrics:
+    - Posture score
+    - Balance score
+    - Movement efficiency
+    - Power potential
+    
+    Ideal for detailed movement analysis and technique assessment.
+    """
+    logger.info(f"--- Enter /mmpose/pose endpoint ---")
+    logger.info(f"Dedicated MMPose biomechanical analysis for detailed pose estimation")
+    
+    # Reuse the existing biomechanical analysis logic
+    return await analyze_video_endpoint(payload, http_request)
+
 if __name__ == "__main__":
     logger.info(f"Attempting to start Uvicorn for MMPose service on port 8003 (PID: {os.getpid()}).")
     if mmpose_model is None:

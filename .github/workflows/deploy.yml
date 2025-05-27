@@ -46,6 +46,26 @@ jobs:
           sleep 60
         fi
 
+    - name: Test SSH Connectivity
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: Towers
+        key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 30s
+        command_timeout: 15s
+        debug: true
+        script: |
+          echo "=== SSH Connection Test ==="
+          echo "User: $(whoami)"
+          echo "Host: $(hostname)"
+          echo "Date: $(date)"
+          echo "SSH client version: $(ssh -V 2>&1)"
+          echo "Current directory: $(pwd)"
+          echo "Home directory: $HOME"
+          echo "User ID: $(id)"
+          echo "=== Connection Successful ==="
+
     - name: Prepare VM for Deployment
       uses: appleboy/ssh-action@v0.1.7
       with:
@@ -54,6 +74,7 @@ jobs:
         key: ${{ secrets.VM_SSH_KEY }}
         timeout: 120s
         command_timeout: 120s
+        debug: true
         script: |
           set -e
           echo "Stopping existing services..."
@@ -70,7 +91,7 @@ jobs:
           fi
           echo "Cleaning old code..."
           find /opt/padel/app -maxdepth 1 -type f -delete
-          find /opt/padel/app -maxdepth 1 -type d ! -name weights ! -name uploads ! -name processed -exec rm -rf {} + 2>/dev/null || true
+          find /opt/padel/app -maxdepth 1 -mindepth 1 -type d ! -name weights ! -name uploads ! -name processed -exec rm -rf {} + 2>/dev/null || true
           echo "VM prepared for code transfer"
 
     - name: Smart Code Update
@@ -81,6 +102,7 @@ jobs:
         key: ${{ secrets.VM_SSH_KEY }}
         timeout: 180s
         command_timeout: 180s
+        debug: true
         script: |
           set -e
           echo "📋 Checking if requirements changed..."
@@ -125,6 +147,7 @@ jobs:
         key: ${{ secrets.VM_SSH_KEY }}
         timeout: 1200s
         command_timeout: 1200s
+        debug: true
         script: |
           set -e
           setup_venv() {
@@ -191,6 +214,7 @@ jobs:
         key: ${{ secrets.VM_SSH_KEY }}
         timeout: 600s
         command_timeout: 600s
+        debug: true
         script: |
           set -e
           check_service_health() {

@@ -74,90 +74,19 @@ jobs:
         command_timeout: 600s
         script: |
           set -e
-          
           echo "🛑 Stopping existing services first..."
           sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service 2>/dev/null || true
-          
           echo "📁 Creating base directories..."
           sudo mkdir -p /opt/padel/{app,shared,yolo,mmpose,yolo-nas}
           sudo mkdir -p /opt/padel/app/{configs/body_2d_keypoint/rtmpose/coco,weights,scripts}
           sudo chown -R Towers:Towers /opt/padel
-          
           echo "📦 Deploying application code..."
           cd /opt/padel
-
-          # Backup existing app
-          if [ -d "app_old_backup" ]; then rm -rf app_old_backup; fi
-          if [ -d "app_current_backup" ]; then mv app_current_backup app_old_backup || true; fi
-          if [ -d "app" ]; then 
-            echo "Preserving weights directory..."
-            if [ -d "app/weights" ]; then
-              mv app/weights weights_backup_$$
-            fi
-            mv app app_current_backup || true
-          fi
-
-          echo "Cloning repository..."
+          rm -rf app
           git clone https://github.com/stevetowers098/nuro-padel.git app
-
-          # Restore weights if backup exists
-          if [ -d "weights_backup_$$" ]; then
-            echo "Restoring preserved weights directory..."
-            rm -rf app/weights
-            mv weights_backup_$$ app/weights
-          fi
-          
-          # Copy requirements files
-          if [ -d "app/requirements" ]; then
-            cp -r app/requirements /opt/padel/
-          fi
-          if [ -f "app/requirements.txt" ]; then
-            cp app/requirements.txt /opt/padel/
-          fi
-
-    - name: Download Model Files
-      uses: appleboy/ssh-action@v0.1.7
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: Towers
-        key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 600s
-        command_timeout: 900s
-        script: |
-          set -e
-          
-          echo "📥 Setting up model download script..."
-          mkdir -p /opt/padel/app/scripts
-          
-          # Create proper download script with correct URLs
-          cat > /opt/padel/app/scripts/download_models.sh << 'EOF'
-          #!/bin/bash
-          set -e
-          echo "Downloading model weights to /opt/padel/app/weights..."
-          cd /opt/padel/app/weights
-          
-          # Download YOLOv11 pose model
-          if [ ! -f "yolo11n-pose.pt" ]; then
-            echo "Downloading yolo11n-pose.pt..."
-            wget -q --timeout=120 "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolo11n-pose.pt" || \
-            wget -q --timeout=120 "https://github.com/ultralytics/assets/releases/download/v8.0.0/yolov8n-pose.pt" -O "yolo11n-pose.pt" || \
-            echo "Failed to download yolo11n-pose.pt"
-          fi
-          
-          # Download YOLOv8 medium model
-          if [ ! -f "yolov8m.pt" ]; then
-            echo "Downloading yolov8m.pt..."
-            wget -q --timeout=120 "https://github.com/ultralytics/assets/releases/download/v8.0.0/yolov8m.pt" || \
-            echo "Failed to download yolov8m.pt"
-          fi
-          
-          # List downloaded files
-          echo "Downloaded model files:"
-          ls -la /opt/padel/app/weights/
-          EOF
-          
-          chmod +x /opt/padel/app/scripts/download_models.sh
-          /opt/padel/app/scripts/download_models.sh
+          # Copy requirements files (hardcoded, never change)
+          cp -r app/requirements /opt/padel/ || true
+          cp app/requirements.txt /opt/padel/ || true
 
     - name: Setup Virtual Environments
       uses: appleboy/ssh-action@v0.1.7
@@ -169,105 +98,38 @@ jobs:
         command_timeout: 1200s
         script: |
           set -e
-          
           # Function to create and setup virtual environments
           setup_venv() {
             local venv_path=$1
             local venv_name=$2
             local req_file=$3
-            
             echo "🔧 Setting up $venv_name environment..."
             cd $venv_path
-            
             if [ -d "venv" ]; then
-              echo "Removing existing $venv_name venv..."
               rm -rf venv
             fi
-            
-            echo "Creating fresh $venv_name venv..."
             python3 -m venv venv
             source venv/bin/activate
-            
-            echo "Upgrading pip and setuptools..."
             pip install --upgrade pip setuptools wheel --quiet --no-cache-dir
-            
-            if [ -f "$req_file" ] && [ -s "$req_file" ]; then
-              echo "Installing requirements from $req_file..."
-              pip install -r "$req_file" --quiet --no-cache-dir
-            else
-              echo "WARNING: $req_file not found or empty!"
-              # Install fallback packages based on environment
-              case $venv_name in
-                "shared")
-                  pip install fastapi==0.104.1 uvicorn==0.24.0 pydantic==2.5.0 httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir
-                  ;;
-                "yolo")
-                  pip install fastapi==0.99.1 pydantic==1.10.13 ultralytics torch torchvision --quiet --no-cache-dir
-                  ;;
-                "yolo-nas")
-                  pip install fastapi==0.99.1 pydantic==1.10.13 super-gradients torch==1.13 --quiet --no-cache-dir
-                  ;;
-              esac
-            fi
-            
+            pip install -r "$req_file" --quiet --no-cache-dir || true
             deactivate
             echo "✅ $venv_name environment ready"
           }
-          
           echo "🏗️ Setting up virtual environments..."
-          
-          # Setup shared environment
           setup_venv "/opt/padel/shared" "shared" "/opt/padel/requirements.txt"
-          
-          # Setup YOLO environment  
           setup_venv "/opt/padel/yolo" "yolo" "/opt/padel/requirements/yolo.txt"
-          
-          # Setup YOLO-NAS environment
           setup_venv "/opt/padel/yolo-nas" "yolo-nas" "/opt/padel/requirements/yolo-nas.txt"
-          
           # Special setup for MMPose (complex dependencies)
-          echo "🔧 Setting up MMPose environment (special handling)..."
           cd /opt/padel/mmpose
-          
-          if [ -d "venv" ]; then
-            rm -rf venv
-          fi
-          
+          if [ -d "venv" ]; then rm -rf venv; fi
           python3 -m venv venv
           source venv/bin/activate
-          
-          # Install specific setuptools version for MMPose compatibility
           pip install --upgrade pip setuptools==60.2.0 --quiet --no-cache-dir
-          
-          # Remove any existing PyTorch installations
           pip uninstall openxlab torch torchvision torchaudio triton -y --quiet 2>/dev/null || true
-          
-          # Install PyTorch with CUDA 11.8 support
-          echo "Installing PyTorch with CUDA 11.8..."
-          pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 \
-            --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
-          
-          # Verify PyTorch installation
-          python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')" || exit 1
-          
-          # Install OpenMIM for MMCV management
+          pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
           pip install openmim --quiet --no-cache-dir
-          
-          # Install MMCV via MIM
-          echo "Installing MMCV via MIM..."
           mim install mmcv==2.0.1 --quiet
-          
-          # Verify MMCV installation
-          python -c "import mmcv; print(f'MMCV version: {mmcv.__version__}'); from mmcv.ops import MultiScaleDeformableAttention; print('MMCV ops available')" || echo "WARNING: MMCV verification failed"
-          
-          # Install MMPose requirements if available
-          if [ -f "/opt/padel/requirements/mmpose.txt" ]; then
-            pip install -r /opt/padel/requirements/mmpose.txt --quiet --no-cache-dir
-          else
-            echo "Installing fallback MMPose dependencies..."
-            pip install fastapi==0.99.1 pydantic==1.10.13 mmpose==1.0.0 --quiet --no-cache-dir
-          fi
-          
+          pip install -r /opt/padel/requirements/mmpose.txt --quiet --no-cache-dir || true
           deactivate
           echo "✅ MMPose environment ready"
 
@@ -281,14 +143,25 @@ jobs:
         command_timeout: 600s
         script: |
           set -e
-          
-          # Health check function
+          sudo systemctl daemon-reload
+          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
+          for service in $ACTIVE_SERVICES; do
+            echo "Starting $service..."
+            sudo systemctl enable $service
+            sudo systemctl restart $service
+            sleep 5
+          done
+          sudo systemctl stop combined-service 2>/dev/null || true
+          sudo systemctl disable combined-service 2>/dev/null || true
+          echo "⏳ Waiting for services to initialize (45 seconds)..."
+          sleep 45
+          echo "🏥 Running health checks..."
+          FAILED_SERVICES=0
           check_service_health() {
             local port=$1
             local service_name=$2
             local max_retries=20
             local retry_count=0
-            
             while [ $retry_count -lt $max_retries ]; do
               if curl -s -f --max-time 5 http://localhost:$port/healthz > /dev/null 2>&1; then
                 echo "✅ $service_name (port $port): healthy"
@@ -303,137 +176,20 @@ jobs:
             sudo journalctl -u $service_name -n 5 --no-pager || true
             return 1
           }
-          
-          echo "📝 Creating systemd service files..."
-          
-          # Main API service
-          sudo tee /etc/systemd/system/padel-api.service > /dev/null << 'EOL'
-          [Unit]
-          Description=NuroPadel Main API Gateway with GPU Auto-Management
-          After=network.target
-          [Service]
-          User=Towers
-          Group=Towers
-          WorkingDirectory=/opt/padel/app/app
-          ExecStart=/opt/padel/shared/venv/bin/python main.py
-          Restart=always
-          RestartSec=10
-          Environment="PYTHONPATH=/opt/padel/app/app"
-          Environment="GOOGLE_CLOUD_PROJECT=surf-coach"
-          [Install]
-          WantedBy=multi-user.target
-          EOL
-          
-          # YOLO11 service
-          sudo tee /etc/systemd/system/yolo11-service.service > /dev/null << 'EOL'
-          [Unit]
-          Description=YOLOv11 Pose and Object Detection Service
-          After=network.target
-          [Service]
-          User=Towers
-          Group=Towers
-          WorkingDirectory=/opt/padel/app/app
-          ExecStart=/opt/padel/yolo/venv/bin/python -m models.yolo11_service
-          Restart=always
-          RestartSec=10
-          Environment="PYTHONPATH=/opt/padel/app/app"
-          [Install]
-          WantedBy=multi-user.target
-          EOL
-          
-          # YOLOv8 service
-          sudo tee /etc/systemd/system/yolov8-service.service > /dev/null << 'EOL'
-          [Unit]
-          Description=YOLOv8 Object Detection Service
-          After=network.target
-          [Service]
-          User=Towers
-          Group=Towers
-          WorkingDirectory=/opt/padel/app/app
-          ExecStart=/opt/padel/yolo/venv/bin/python -m models.yolov8_service
-          Restart=always
-          RestartSec=10
-          Environment="PYTHONPATH=/opt/padel/app/app"
-          [Install]
-          WantedBy=multi-user.target
-          EOL
-          
-          # MMPose service
-          sudo tee /etc/systemd/system/mmpose-service.service > /dev/null << 'EOL'
-          [Unit]
-          Description=MMPose Pose Estimation Service
-          After=network.target
-          [Service]
-          User=Towers
-          Group=Towers
-          WorkingDirectory=/opt/padel/app/app
-          ExecStart=/opt/padel/mmpose/venv/bin/python -m models.mmpose_service
-          Restart=always
-          RestartSec=10
-          Environment="PYTHONPATH=/opt/padel/app/app"
-          Environment="CUDA_HOME=/usr/local/cuda-11.8"
-          [Install]
-          WantedBy=multi-user.target
-          EOL
-          
-          # YOLO-NAS service
-          sudo tee /etc/systemd/system/yolo-nas-service.service > /dev/null << 'EOL'
-          [Unit]
-          Description=YOLO-NAS Object Detection Service
-          After=network.target
-          [Service]
-          User=Towers
-          Group=Towers
-          WorkingDirectory=/opt/padel/app/app
-          ExecStart=/opt/padel/yolo-nas/venv/bin/python -m models.yolo_nas_service
-          Restart=always
-          RestartSec=10
-          Environment="PYTHONPATH=/opt/padel/app/app"
-          [Install]
-          WantedBy=multi-user.target
-          EOL
-          
-          echo "🔄 Reloading systemd and starting services..."
-          sudo systemctl daemon-reload
-          
-          # Define active services
-          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
-          
-          # Enable and start each service
-          for service in $ACTIVE_SERVICES; do
-            echo "Starting $service..."
-            sudo systemctl enable $service
-            sudo systemctl restart $service
-            sleep 5
-          done
-          
-          # Disable combined service
-          sudo systemctl stop combined-service 2>/dev/null || true
-          sudo systemctl disable combined-service 2>/dev/null || true
-          
-          echo "⏳ Waiting for services to initialize (45 seconds)..."
-          sleep 45
-          
-          echo "🏥 Running health checks..."
-          FAILED_SERVICES=0
-          
           check_service_health 8000 "padel-api" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
           check_service_health 8001 "yolo11-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
           check_service_health 8002 "yolov8-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
           check_service_health 8003 "mmpose-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
           check_service_health 8004 "yolo-nas-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
-          
           echo "📊 Final service status:"
           for service in $ACTIVE_SERVICES; do
             status=$(systemctl is-active $service)
             echo "  $service: $status"
           done
-          
           if [ $FAILED_SERVICES -gt 0 ]; then
             echo "⚠️ $FAILED_SERVICES service(s) failed health checks"
             echo "Check logs with: sudo journalctl -u <service-name> -f"
           else
             echo "🎉 All services healthy! Deployment successful!"
           fi
-          
           echo "🎯 Deployment complete!"

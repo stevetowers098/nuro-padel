@@ -80,7 +80,7 @@ jobs:
           cd /opt/padel
           curl -sL --max-time 120 --retry 3 https://github.com/stevetowers098/nuro-padel/archive/refs/heads/main.tar.gz | tar -xz
           mv nuro-padel-main/* app/
-          rmdir nuro-padel-main
+          rm -rf nuro-padel-main
           echo "Setting up requirements files..."
           if [ -d "app/requirements" ]; then
             cp -r app/requirements /opt/padel/

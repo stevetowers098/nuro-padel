@@ -86,14 +86,17 @@ jobs:
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
-        username: ${{ secrets.VM_USER }}
+        username: Towers
         key: ${{ secrets.VM_SSH_KEY }}
         timeout: 600s
         command_timeout: 900s
         script: |
-          set -euo pipefail
-          cd /opt/padel/app/weights
-          /opt/padel/app/scripts/download_models.sh || echo "WARNING: Model download script failed, continuing."
+          set -euxo pipefail
+          # Ensure weights dir exists and is owned by Towers
+          sudo mkdir -p /opt/padel/app/weights
+          sudo chown -R Towers:Towers /opt/padel/app/weights
+          chmod +x /opt/padel/app/scripts/download_models.sh
+          /opt/padel/app/scripts/download_models.sh
 
     - name: Deploy Application Code and Setup Environments
       uses: appleboy/ssh-action@v0.1.7

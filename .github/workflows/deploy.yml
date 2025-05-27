@@ -1,4 +1,52 @@
-name: Prepare VM for Deployment
+name: Deploy NuroPadel to VM
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Start VM Instance if Stopped
+      run: |
+        echo "Checking VM instance status..."
+        STATUS=$(gcloud compute instances describe padel-ai --zone=australia-southeast1-a --project=surf-coach --format="value(status)" 2>/dev/null || echo "ERROR")
+        echo "Current VM status: $STATUS"
+        if [ "$STATUS" = "TERMINATED" ] || [ "$STATUS" = "STOPPED" ]; then
+          echo "VM is stopped. Starting instance..."
+          gcloud compute instances start padel-ai --zone=australia-southeast1-a --project=surf-coach
+          echo "Waiting for VM to boot..."
+          sleep 90
+          echo "Testing SSH connection..."
+          for i in {1..20}; do
+            if timeout 15 gcloud compute ssh padel-ai --zone=australia-southeast1-a --project=surf-coach --command="echo 'SSH Ready'" --ssh-flag="-o ConnectTimeout=10" --ssh-flag="-o StrictHostKeyChecking=no" 2>/dev/null; then
+              echo "SSH connection ready!"
+              break
+            fi
+            echo "SSH attempt $i/20..."
+            sleep 15
+          done
+        elif [ "$STATUS" = "RUNNING" ]; then
+          echo "VM is already running"
+        else
+          echo "Unknown VM status: $STATUS, attempting to start..."
+          gcloud compute instances start padel-ai --zone=australia-southeast1-a --project=surf-coach || true
+          sleep 60
+        fi
+
+    - name: Prepare VM for Deployment
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
@@ -8,20 +56,17 @@ name: Prepare VM for Deployment
         command_timeout: 120s
         script: |
           set -e
-          echo "🛑 Stopping existing services first..."
+          echo "Stopping existing services..."
           sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service combined-service 2>/dev/null || true
-          
-          echo "📁 Creating base directories..."
+          echo "Creating base directories..."
           sudo mkdir -p /opt/padel/{app,shared,yolo,mmpose,yolo-nas}
           sudo mkdir -p /opt/padel/app/{configs/body_2d_keypoint/rtmpose/coco,weights,scripts}
           sudo chown -R Towers:Towers /opt/padel
-          
-          echo "🗑️ Cleaning old code..."
+          echo "Cleaning old code..."
           rm -rf /opt/padel/app/*
-          
-          echo "✅ VM prepared for code transfer"
+          echo "VM prepared for code transfer"
 
-    - name: Transfer Code to VM (No GitHub Download on VM)
+    - name: Transfer Code to VM
       uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
@@ -32,33 +77,140 @@ name: Prepare VM for Deployment
         overwrite: true
         rm: true
 
-    - name: Complete Deployment Setup
+    - name: Setup Virtual Environments
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
         username: Towers
         key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 120s
-        command_timeout: 120s
+        timeout: 1200s
+        command_timeout: 1200s
         script: |
           set -e
-          echo "📋 Verifying deployed code:"
-          ls -la /opt/padel/app/
-          
-          echo "📄 Setting up requirements files..."
+          setup_venv() {
+            local venv_path=$1
+            local venv_name=$2
+            local req_file=$3
+            echo "Setting up $venv_name environment..."
+            cd $venv_path
+            if [ -d "venv" ]; then
+              rm -rf venv
+            fi
+            python3 -m venv venv
+            source venv/bin/activate
+            pip install --upgrade pip setuptools wheel --quiet --no-cache-dir
+            if [ -f "$req_file" ]; then
+              pip install -r "$req_file" --quiet --no-cache-dir
+            else
+              echo "Warning: $req_file not found, using fallback packages"
+              case $venv_name in
+                "shared")
+                  pip install fastapi==0.104.1 uvicorn==0.24.0 pydantic==2.5.0 httpx python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir
+                  ;;
+                "yolo")
+                  pip install fastapi==0.99.1 pydantic==1.10.13 ultralytics torch torchvision --quiet --no-cache-dir
+                  ;;
+                "yolo-nas")
+                  pip install fastapi==0.99.1 pydantic==1.10.13 super-gradients torch==1.13 --quiet --no-cache-dir
+                  ;;
+              esac
+            fi
+            deactivate
+            echo "$venv_name environment ready"
+          }
+          echo "Setting up requirements files..."
           cd /opt/padel
           if [ -d "app/requirements" ]; then
             cp -r app/requirements /opt/padel/
-            echo "✅ Requirements directory copied"
+            echo "Requirements directory copied"
           else
-            echo "⚠️ No requirements directory found"
+            echo "No requirements directory found"
           fi
-          
           if [ -f "app/requirements.txt" ]; then
             cp app/requirements.txt /opt/padel/
-            echo "✅ Requirements.txt copied"
+            echo "Requirements.txt copied"
           else
-            echo "⚠️ No requirements.txt found"
+            echo "No requirements.txt found"
           fi
-          
-          echo "🎯 Code deployment complete!"
+          echo "Setting up virtual environments..."
+          setup_venv "/opt/padel/shared" "shared" "/opt/padel/requirements.txt"
+          setup_venv "/opt/padel/yolo" "yolo" "/opt/padel/requirements/yolo.txt"
+          setup_venv "/opt/padel/yolo-nas" "yolo-nas" "/opt/padel/requirements/yolo-nas.txt"
+          echo "Setting up MMPose environment..."
+          cd /opt/padel/mmpose
+          if [ -d "venv" ]; then rm -rf venv; fi
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip setuptools==60.2.0 --quiet --no-cache-dir
+          pip uninstall openxlab torch torchvision torchaudio triton -y --quiet 2>/dev/null || true
+          pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet --no-cache-dir
+          pip install openmim --quiet --no-cache-dir
+          mim install mmcv==2.0.1 --quiet
+          if [ -f "/opt/padel/requirements/mmpose.txt" ]; then
+            pip install -r /opt/padel/requirements/mmpose.txt --quiet --no-cache-dir
+          else
+            pip install fastapi==0.99.1 pydantic==1.10.13 mmpose==1.0.0 --quiet --no-cache-dir
+          fi
+          deactivate
+          echo "All environments ready"
+
+    - name: Start Services
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: Towers
+        key: ${{ secrets.VM_SSH_KEY }}
+        timeout: 600s
+        command_timeout: 600s
+        script: |
+          set -e
+          check_service_health() {
+            local port=$1
+            local service_name=$2
+            local max_retries=20
+            local retry_count=0
+            while [ $retry_count -lt $max_retries ]; do
+              if curl -s -f --max-time 5 http://localhost:$port/healthz > /dev/null 2>&1; then
+                echo "$service_name (port $port): healthy"
+                return 0
+              fi
+              retry_count=$((retry_count + 1))
+              echo "Waiting for $service_name (attempt $retry_count/$max_retries)..."
+              sleep 3
+            done
+            echo "$service_name (port $port): failed health check"
+            sudo journalctl -u $service_name -n 5 --no-pager || true
+            return 1
+          done
+          echo "Reloading systemd and starting services..."
+          sudo systemctl daemon-reload
+          ACTIVE_SERVICES="padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service"
+          for service in $ACTIVE_SERVICES; do
+            echo "Starting $service..."
+            sudo systemctl enable $service
+            sudo systemctl restart $service
+            sleep 5
+          done
+          sudo systemctl stop combined-service 2>/dev/null || true
+          sudo systemctl disable combined-service 2>/dev/null || true
+          echo "Waiting for services to initialize (45 seconds)..."
+          sleep 45
+          echo "Running health checks..."
+          FAILED_SERVICES=0
+          check_service_health 8000 "padel-api" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          check_service_health 8001 "yolo11-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          check_service_health 8002 "yolov8-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          check_service_health 8003 "mmpose-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          check_service_health 8004 "yolo-nas-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
+          echo "Final service status:"
+          for service in $ACTIVE_SERVICES; do
+            status=$(systemctl is-active $service)
+            echo "  $service: $status"
+          done
+          if [ $FAILED_SERVICES -gt 0 ]; then
+            echo "$FAILED_SERVICES service(s) failed health checks"
+            echo "Check logs with: sudo journalctl -u <service-name> -f"
+          else
+            echo "All services healthy! Deployment successful!"
+          fi
+          echo "Deployment complete!"

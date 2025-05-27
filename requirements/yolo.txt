@@ -5,7 +5,8 @@ torch==2.0.1 --index-url https://download.pytorch.org/whl/cu118
 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
 # torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 # Add if yolov8 or its utils need it
 
-ultralytics # For YOLOv8 models
+ultralytics # For YOLOv8, YOLO11, and YOLO-NAS models
+super-gradients # For advanced YOLO-NAS training (optional)
 
 # --- FastAPI and Pydantic (Updated for Pydantic v2 compatibility) ---
 fastapi==0.104.1 # Matches main requirements.txt

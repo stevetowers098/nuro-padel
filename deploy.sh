@@ -64,20 +64,83 @@ check_prerequisites() {
         echo "Place your model weights in ./weights/ directory" > ./weights/README.md
     fi
     
+    # Enable BuildKit for better caching
+    export DOCKER_BUILDKIT=1
+    export COMPOSE_DOCKER_CLI_BUILD=1
+    
     success "Prerequisites check completed"
+}
+
+# Check if service needs rebuilding
+needs_rebuild() {
+    local service=$1
+    local service_dir="${service}-service"
+    
+    # Check if image exists
+    if ! docker images "${REGISTRY}/${service}:latest" --format "table {{.Repository}}" | grep -q "${REGISTRY}/${service}"; then
+        log "${service}: No existing image found - build required"
+        return 0
+    fi
+    
+    # Check for file changes since last build
+    local dockerfile_path="${service_dir}/Dockerfile"
+    local requirements_path="${service_dir}/requirements.txt"
+    local main_path="${service_dir}/main.py"
+    local utils_path="${service_dir}/utils/"
+    
+    # Get image creation time
+    local image_created=$(docker inspect "${REGISTRY}/${service}:latest" --format '{{.Created}}' 2>/dev/null)
+    if [ -z "$image_created" ]; then
+        log "${service}: Could not get image creation time - build required"
+        return 0
+    fi
+    
+    local image_timestamp=$(date -d "$image_created" +%s 2>/dev/null || echo "0")
+    
+    # Check if any source files are newer than the image
+    for file_path in "$dockerfile_path" "$requirements_path" "$main_path"; do
+        if [ -f "$file_path" ]; then
+            local file_timestamp=$(stat -c %Y "$file_path" 2>/dev/null || echo "999999999")
+            if [ "$file_timestamp" -gt "$image_timestamp" ]; then
+                log "${service}: ${file_path} modified since last build - rebuild required"
+                return 0
+            fi
+        fi
+    done
+    
+    # Check utils directory
+    if [ -d "$utils_path" ]; then
+        local newest_util=$(find "$utils_path" -type f -name "*.py" -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
+        if [ -n "$newest_util" ] && [ "${newest_util%.*}" -gt "$image_timestamp" ]; then
+            log "${service}: Utils directory modified since last build - rebuild required"
+            return 0
+        fi
+    fi
+    
+    log "${service}: No changes detected - using cached image"
+    return 1
 }
 
 # Build individual service
 build_service() {
     local service=$1
+    
+    # Check if rebuild is needed
+    if ! needs_rebuild "$service"; then
+        success "${service} service: Using cached image (no changes detected)"
+        return 0
+    fi
+    
     log "Building ${service} service..."
     
     cd "${service}-service"
     
-    # Build with BuildKit for faster builds
+    # Build with BuildKit and advanced caching
     DOCKER_BUILDKIT=1 docker build \
         --tag "${REGISTRY}/${service}:latest" \
         --tag "${REGISTRY}/${service}:$(date +%Y%m%d-%H%M%S)" \
+        --cache-from "${REGISTRY}/${service}:latest" \
+        --build-arg BUILDKIT_INLINE_CACHE=1 \
         --progress=plain \
         .
     
@@ -85,15 +148,77 @@ build_service() {
     success "${service} service built successfully"
 }
 
-# Build all services
+# Build all services with smart caching
+build_all_optimized() {
+    log "Building Docker services with smart change detection..."
+    
+    local build_count=0
+    local cache_count=0
+    
+    for service in "${SERVICES[@]}"; do
+        if needs_rebuild "$service"; then
+            build_service "$service"
+            ((build_count++))
+        else
+            success "${service} service: Using cached image"
+            ((cache_count++))
+        fi
+    done
+    
+    log "Build summary: ${build_count} rebuilt, ${cache_count} cached"
+    success "All services processed successfully"
+}
+
+# Build all services (legacy method)
 build_all() {
-    log "Building all Docker services..."
+    log "Building all Docker services (force rebuild)..."
     
     for service in "${SERVICES[@]}"; do
         build_service "$service"
     done
     
     success "All services built successfully"
+}
+
+# Deploy with smart updates
+deploy_smart() {
+    log "Deploying with smart change detection..."
+    
+    # Check if docker-compose.yml changed
+    local compose_changed=false
+    if [ -f "docker-compose.yml" ]; then
+        local compose_running=$(docker-compose ps -q 2>/dev/null | wc -l)
+        if [ "$compose_running" -eq 0 ]; then
+            log "No running containers detected - full deployment required"
+            compose_changed=true
+        else
+            # Check if compose file was modified
+            local running_services=$(docker-compose ps --services)
+            for service in $running_services; do
+                local container_created=$(docker inspect "nuro-padel-${service}" --format '{{.Created}}' 2>/dev/null)
+                if [ -n "$container_created" ]; then
+                    local container_timestamp=$(date -d "$container_created" +%s 2>/dev/null || echo "0")
+                    local compose_timestamp=$(stat -c %Y "docker-compose.yml" 2>/dev/null || echo "999999999")
+                    if [ "$compose_timestamp" -gt "$container_timestamp" ]; then
+                        log "docker-compose.yml modified - deployment update required"
+                        compose_changed=true
+                        break
+                    fi
+                fi
+            done
+        fi
+    else
+        compose_changed=true
+    fi
+    
+    if [ "$compose_changed" = true ]; then
+        deploy_production
+    else
+        # Rolling update for changed services only
+        log "Performing rolling update for changed services..."
+        docker-compose up -d --remove-orphans
+        success "Smart deployment completed"
+    fi
 }
 
 # Test service health
@@ -196,13 +321,31 @@ deploy_vm() {
     # Create VM directory if it doesn't exist
     ssh "$VM_HOST" "mkdir -p $VM_PATH"
     
-    # Sync project files to VM
-    rsync -avz --delete \
+    # Clean previous deployment safely (only project files)
+    ssh "$VM_HOST" "cd $VM_PATH && find . -maxdepth 1 -name '*.md' -o -name '*.yml' -o -name '*.sh' -o -name '*.conf' -o -name '*-service' | xargs rm -rf 2>/dev/null || true"
+    
+    # Sync only project files to VM (no --delete to avoid system file conflicts)
+    rsync -avz \
         --exclude='*.git*' \
         --exclude='__pycache__' \
         --exclude='*.pyc' \
         --exclude='node_modules' \
+        --exclude='.pytest_cache' \
+        --include='*/' \
+        --include='*.md' \
+        --include='*.yml' \
+        --include='*.yaml' \
+        --include='*.sh' \
+        --include='*.conf' \
+        --include='*.py' \
+        --include='*.txt' \
+        --include='*.json' \
+        --include='Dockerfile' \
+        --exclude='*' \
         ./ "$VM_HOST:$VM_PATH/"
+    
+    # Make deploy script executable
+    ssh "$VM_HOST" "chmod +x $VM_PATH/deploy.sh"
     
     # Run deployment on VM
     ssh "$VM_HOST" "cd $VM_PATH && bash deploy.sh --production"
@@ -221,26 +364,38 @@ cleanup() {
 usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Options:"
-    echo "  --build              Build all Docker services"
+    echo "Smart Options (with change detection):"
+    echo "  --build              Build services (skip unchanged)"
+    echo "  --deploy             Deploy with smart updates"
+    echo "  --all                Smart build, test, and deploy"
+    echo ""
+    echo "Force Options (rebuild everything):"
+    echo "  --build-force        Force rebuild all services"
+    echo "  --deploy-force       Force full redeployment"
+    echo "  --all-force          Force rebuild and redeploy"
+    echo ""
+    echo "Other Options:"
     echo "  --test               Test all services locally"
-    echo "  --deploy             Deploy to production (local)"
     echo "  --vm                 Deploy to VM"
-    echo "  --all                Build, test, and deploy"
     echo "  --cleanup            Clean up test containers and images"
     echo "  --help               Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0 --build"
-    echo "  $0 --test"
-    echo "  $0 --all"
-    echo "  $0 --vm"
+    echo "  $0 --build            # Smart build (detects changes)"
+    echo "  $0 --build-force      # Force rebuild all"
+    echo "  $0 --all              # Smart full deployment"
+    echo "  $0 --all-force        # Force full deployment"
+    echo "  $0 --vm               # Deploy to VM"
 }
 
 # Main execution
 main() {
     case "${1:-}" in
         --build)
+            check_prerequisites
+            build_all_optimized
+            ;;
+        --build-force)
             check_prerequisites
             build_all
             ;;
@@ -250,12 +405,22 @@ main() {
             ;;
         --deploy|--production)
             check_prerequisites
+            deploy_smart
+            ;;
+        --deploy-force)
+            check_prerequisites
             deploy_production
             ;;
         --vm)
             deploy_vm
             ;;
         --all)
+            check_prerequisites
+            build_all_optimized
+            test_all
+            deploy_smart
+            ;;
+        --all-force)
             check_prerequisites
             build_all
             test_all

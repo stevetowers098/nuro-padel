@@ -46,7 +46,9 @@ jobs:
           sleep 60
         fi
 
-    - name: Test SSH Connectivity
+    - name: Test SSH Connectivity (Direct)
+      id: ssh_test
+      continue-on-error: true
       uses: appleboy/ssh-action@v0.1.7
       with:
         host: ${{ secrets.VM_HOST }}
@@ -60,11 +62,38 @@ jobs:
           echo "User: $(whoami)"
           echo "Host: $(hostname)"
           echo "Date: $(date)"
-          echo "SSH client version: $(ssh -V 2>&1)"
-          echo "Current directory: $(pwd)"
-          echo "Home directory: $HOME"
-          echo "User ID: $(id)"
           echo "=== Connection Successful ==="
+
+    - name: SSH Key Diagnosis
+      if: steps.ssh_test.outcome == 'failure'
+      run: |
+        echo "❌ Direct SSH failed. Diagnosing SSH key issues..."
+        echo "🔍 VM_SSH_KEY first/last lines check:"
+        echo "First line: $(echo '${{ secrets.VM_SSH_KEY }}' | head -1)"
+        echo "Last line: $(echo '${{ secrets.VM_SSH_KEY }}' | tail -1)"
+        echo "Key length: $(echo '${{ secrets.VM_SSH_KEY }}' | wc -c) characters"
+        echo ""
+        echo "💡 Common issues:"
+        echo "1. VM_SSH_KEY should start with '-----BEGIN OPENSSH PRIVATE KEY-----'"
+        echo "2. VM_SSH_KEY should end with '-----END OPENSSH PRIVATE KEY-----'"
+        echo "3. Public key might not be in /home/Towers/.ssh/authorized_keys on VM"
+        echo "4. File permissions might be wrong on VM"
+        echo ""
+        echo "📋 Next steps:"
+        echo "1. Check GitHub secrets VM_SSH_KEY format"
+        echo "2. Verify public key is on VM: cat ~/.ssh/authorized_keys"
+        echo "3. Fix permissions: chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+
+    - name: Fallback - Test with gcloud SSH
+      if: steps.ssh_test.outcome == 'failure'
+      run: |
+        echo "🔄 Attempting fallback gcloud SSH connection..."
+        gcloud compute ssh padel-ai \
+          --zone=australia-southeast1-a \
+          --project=surf-coach \
+          --ssh-flag="-o ConnectTimeout=10" \
+          --ssh-flag="-o StrictHostKeyChecking=no" \
+          --command="echo '✅ gcloud SSH works! VM is accessible via GCP SSH keys'"
 
     - name: Prepare VM for Deployment
       uses: appleboy/ssh-action@v0.1.7

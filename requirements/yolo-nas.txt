@@ -1,9 +1,11 @@
 torch==1.13.1
 torchvision
 super-gradients
-fastapi
-uvicorn
-pydantic
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
 httpx
 python-multipart
 google-cloud-storage
+numpy
+opencv-python-headless

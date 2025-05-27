@@ -7,9 +7,9 @@ torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
 
 ultralytics # For YOLOv8 models
 
-# --- FastAPI and Pydantic (Pinned for Pydantic v1 compatibility) ---
-fastapi<=0.100.0,>=0.95.0 # Example: 0.99.1 is a safe bet with Pydantic v1
-pydantic<2.0.0,>=1.10.0    # Example: 1.10.13 is the last Pydantic v1
+# --- FastAPI and Pydantic (Updated for Pydantic v2 compatibility) ---
+fastapi==0.104.1 # Matches main requirements.txt
+pydantic==2.5.0    # Matches main requirements.txt
 
 # --- Other necessary packages ---
 uvicorn[standard]          # ASGI server

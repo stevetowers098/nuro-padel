@@ -64,7 +64,7 @@ logger.info("--- YOLOv8 SERVICE SCRIPT STARTED (URL-Only, FFMPEG, Detailed Loggi
 app = FastAPI(title="YOLOv8 Object Detection Service (URL Input Only)", version="1.2.2") # Incremented version
 logger.info("FastAPI app object created for YOLOv8 service.")
 
-PADEL_CLASSES = {0: "person", 32: "sports ball", 39: "tennis racket"}
+PADEL_CLASSES = {0: "person", 32: "sports ball", 38: "tennis racket"}
 logger.info(f"PADEL_CLASSES defined as: {PADEL_CLASSES}")
 
 GCS_BUCKET_NAME = "padel-ai"
@@ -118,7 +118,7 @@ except Exception as e:
 
 def draw_objects_on_frame(frame: np.ndarray, objects: List[Dict[str, Any]]) -> np.ndarray:
     annotated_frame = frame.copy()
-    colors = { PADEL_CLASSES[0]: (0, 255, 0), PADEL_CLASSES[32]: (0, 0, 255), PADEL_CLASSES[39]: (255, 0, 0) }
+    colors = { PADEL_CLASSES[0]: (0, 255, 0), PADEL_CLASSES[32]: (0, 0, 255), PADEL_CLASSES[38]: (255, 0, 0) }
     for obj in objects:
         x1, y1, x2, y2 = int(obj["bbox"]["x1"]), int(obj["bbox"]["y1"]), int(obj["bbox"]["x2"]), int(obj["bbox"]["y2"])
         class_name, conf = obj["class"], obj["confidence"]

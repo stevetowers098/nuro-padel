@@ -41,20 +41,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     dbus \
     && mkdir -p /var/run/dbus \
-    && service dbus start \
-    && rm -f /etc/resolv.conf \
-    && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || true \
+    && dbus-daemon --system \
+    && ln -sf /lib/systemd/system/systemd-resolved.service /etc/systemd/system/dbus-org.freedesktop.resolve1.service \
+    && ln -sf /lib/systemd/system/systemd-resolved.service /etc/systemd/system/multi-user.target.wants/systemd-resolved.service \
+    && [ ! -e /etc/resolv.conf ] || rm /etc/resolv.conf \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
 # Create virtual environment with enhanced error handling to avoid pip root warnings
-RUN echo "🔧 Creating Python virtual environment..." && \
-    python3 -m venv /opt/venv && \
-    echo "✅ Virtual environment created successfully" && \
-    /opt/venv/bin/python -m ensurepip --upgrade && \
-    echo "✅ Virtual environment pip ensured and upgraded"
+RUN echo "🔧 Creating Python virtual environment..." \
+    && python3 -m venv /opt/venv \
+    && echo "✅ Virtual environment created successfully" \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && echo "✅ Virtual environment pip ensured and upgraded"
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Set working directory

@@ -1,0 +1,265 @@
+name: Resilient NuroPadel Deployment
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - yolo-combined
+          - mmpose
+          - yolo-nas
+          - nginx
+      deploy_to_vm:
+        description: 'Deploy to VM after building'
+        required: false
+        default: false
+        type: boolean
+      cleanup_after:
+        description: 'Cleanup Docker images after deployment'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: nuro-padel
+
+jobs:
+  resilient-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Free Disk Space
+      run: |
+        echo "=== Initial Disk Usage ==="
+        df -h
+        echo "=== Cleaning up disk space ==="
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/share/swift
+        sudo rm -rf /opt/hostedtoolcache
+        sudo docker system prune -af
+        echo "=== After cleanup ==="
+        df -h
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Make deploy-resilient.sh executable
+      run: chmod +x ./deploy-resilient.sh
+
+    - name: Determine Services to Deploy
+      id: services
+      run: |
+        SERVICE="${{ github.event.inputs.service || 'all' }}"
+        echo "Selected service: $SERVICE"
+        echo "service=$SERVICE" >> $GITHUB_OUTPUT
+        
+        # Set services list for building
+        if [ "$SERVICE" = "all" ]; then
+          echo "build_services=[\"yolo-combined\", \"mmpose\", \"yolo-nas\"]" >> $GITHUB_OUTPUT
+        else
+          case "$SERVICE" in
+            "yolo-combined"|"mmpose"|"yolo-nas")
+              echo "build_services=[\"$SERVICE\"]" >> $GITHUB_OUTPUT
+              ;;
+            "nginx")
+              echo "build_services=[]" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "build_services=[\"yolo-combined\", \"mmpose\", \"yolo-nas\"]" >> $GITHUB_OUTPUT
+              ;;
+          esac
+        fi
+
+    - name: Build and Push Docker Images
+      if: steps.services.outputs.build_services != '[]'
+      run: |
+        services='${{ steps.services.outputs.build_services }}'
+        echo "Building services: $services"
+        
+        # Parse JSON array
+        for service in $(echo "$services" | jq -r '.[]'); do
+          echo "🔨 Building $service service..."
+          
+          # Build and push with resilient approach
+          if docker build -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}/$service:latest ./${service}-service/; then
+            echo "✅ Built $service successfully"
+            if [ "${{ github.event_name }}" != "pull_request" ]; then
+              docker push ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}/$service:latest
+              echo "📤 Pushed $service to registry"
+            fi
+          else
+            echo "❌ Failed to build $service - will skip in deployment"
+          fi
+        done
+
+    - name: Update Docker Compose for Registry Images
+      run: |
+        # Create a modified docker-compose.resilient.yml that uses registry images
+        cp docker-compose.resilient.yml docker-compose.resilient-ci.yml
+        
+        # Replace build contexts with registry images for successful builds
+        services='${{ steps.services.outputs.build_services }}'
+        for service in $(echo "$services" | jq -r '.[]' 2>/dev/null || echo ""); do
+          if docker image inspect ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}/$service:latest >/dev/null 2>&1; then
+            echo "📝 Updating $service to use registry image"
+            # Use sed to replace build context with image for this service
+            sed -i "/${service}:/,/image:/ { s|build:|#build:|; s|context:.*|#context: ./${service}-service|; s|dockerfile:.*|#dockerfile: Dockerfile|; s|image:.*|image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}/$service:latest|; }" docker-compose.resilient-ci.yml
+          fi
+        done
+
+    - name: Install Docker Compose
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y docker-compose
+
+    - name: Run Resilient Deployment
+      run: |
+        SERVICE="${{ steps.services.outputs.service }}"
+        echo "🚀 Starting resilient deployment for: $SERVICE"
+        
+        # Export environment variables for docker-compose
+        export COMPOSE_FILE=docker-compose.resilient-ci.yml
+        
+        # Run the resilient deployment
+        if [ "$SERVICE" = "all" ]; then
+          echo "🌟 Deploying all services with resilient approach..."
+          ./deploy-resilient.sh all
+        else
+          echo "🎯 Deploying specific service: $SERVICE"
+          ./deploy-resilient.sh "$SERVICE"
+        fi
+
+    - name: Test Deployed Services
+      run: |
+        echo "🧪 Testing deployed services..."
+        sleep 30  # Wait for services to stabilize
+        
+        # Use the status command from deploy-resilient.sh
+        ./deploy-resilient.sh status
+        
+        # Additional health checks
+        echo "🔍 Performing detailed health checks..."
+        
+        # Check nginx
+        if curl -f -s http://localhost:8080/health >/dev/null 2>&1; then
+          echo "✅ Nginx is healthy"
+          # Test service discovery
+          curl -s http://localhost:8080/ | jq . || echo "Service discovery endpoint available"
+        else
+          echo "⚠️ Nginx not responding"
+        fi
+        
+        # Check individual services
+        for service_port in "yolo-combined:8001" "mmpose:8003" "yolo-nas:8004"; do
+          IFS=':' read -r service port <<< "$service_port"
+          if curl -f -s http://localhost:$port/healthz >/dev/null 2>&1; then
+            echo "✅ $service is healthy on port $port"
+          else
+            echo "ℹ️ $service not available on port $port (may not be deployed)"
+          fi
+        done
+
+    - name: Deployment Summary
+      if: always()
+      run: |
+        echo "📊 === RESILIENT DEPLOYMENT SUMMARY ==="
+        echo "Service requested: ${{ steps.services.outputs.service }}"
+        echo "Event: ${{ github.event_name }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo ""
+        echo "🏥 Final Service Status:"
+        ./deploy-resilient.sh status || echo "Status check failed"
+        echo ""
+        echo "💾 Final Disk Usage:"
+        df -h
+
+    - name: Cleanup Local Images
+      if: github.event.inputs.cleanup_after == 'true' || github.event.inputs.cleanup_after == ''
+      run: |
+        echo "🧹 Cleaning up local Docker images..."
+        docker system prune -af
+        docker image prune -af
+
+  # VM Deployment Job (Optional)
+  deploy-to-vm:
+    runs-on: ubuntu-latest
+    needs: resilient-deploy
+    if: |
+      (github.event.inputs.deploy_to_vm == 'true') &&
+      (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Deploy to VM with Resilient Approach
+      run: |
+        echo "🚀 Deploying to VM with resilient approach..."
+        
+        # Sync files to VM (excluding .git and build artifacts)
+        rsync -avz --delete \
+          --exclude='.git' \
+          --exclude='node_modules' \
+          --exclude='__pycache__' \
+          --exclude='*.pyc' \
+          --exclude='.github' \
+          ./ ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:${{ secrets.VM_PATH }}/
+
+        # Run resilient deployment on VM
+        ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+          cd ${{ secrets.VM_PATH }}
+          
+          echo "🔧 Setting up VM environment..."
+          
+          # Make scripts executable
+          chmod +x deploy-resilient.sh
+          
+          # Update images from registry if available
+          if command -v docker-compose >/dev/null 2>&1; then
+            export REGISTRY=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}
+            docker-compose -f docker-compose.resilient.yml pull || echo "Registry pull failed, will build locally"
+          fi
+          
+          # Run resilient deployment
+          SERVICE="${{ github.event.inputs.service || 'all' }}"
+          echo "🌟 Running resilient deployment for: $SERVICE"
+          ./deploy-resilient.sh "$SERVICE"
+          
+          echo "✅ VM deployment completed"
+        EOF
+
+    - name: VM Deployment Status
+      if: always()
+      run: |
+        echo "📊 Checking VM deployment status..."
+        ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+          cd ${{ secrets.VM_PATH }}
+          echo "🏥 VM Service Status:"
+          ./deploy-resilient.sh status || echo "Status check failed"
+        EOF

@@ -15,11 +15,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Install system dependencies in single optimized layer
+# Fix potential resolv.conf symbolic link issue in Docker
+RUN rm -f /etc/resolv.conf 2>/dev/null || true
+
+# Install system dependencies with PPA fallback handling
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && (add-apt-repository ppa:deadsnakes/ppa || true) \
+    && apt-get update || apt-get update \
+    && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
     python3.10-distutils \
@@ -52,8 +56,9 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install compatible versions that satisfy all requirements
+# Fix dependency conflicts: super-gradients requires numpy<=1.23 and docutils<0.19
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir "numpy>=1.24.4" "docutils>=0.18,<0.19" "requests>=2.31.0"
+    pip install --no-cache-dir "numpy<=1.23" "docutils<0.19" "requests>=2.31.0"
 RUN pip install --no-cache-dir super-gradients==3.7.1
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -66,13 +71,13 @@ COPY . .
 # Set proper permissions
 RUN chmod +x /app/main.py
 
+# Verify super-gradients installation before switching users - fail fast if broken
+RUN python -c "from super_gradients.training import models; print('✅ super-gradients imported successfully')"
+
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
 USER appuser
-
-# Verify super-gradients installation - fail fast if broken
-RUN python -c "from super_gradients.training import models; print('✅ super-gradients imported successfully')"
 
 # Health check (longer start period due to potential model download)
 HEALTHCHECK --interval=30s --timeout=30s --start-period=180s --retries=3 \

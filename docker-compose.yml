@@ -1,6 +1,8 @@
 # NuroPadel Docker Compose - Production Deployment
 # 3 Isolated AI Services: YOLO Combined, MMPose, YOLO-NAS
 
+version: '3.8'
+
 services:
   # === YOLO Combined Service (YOLO11 + YOLOv8) ===
   yolo-combined:
@@ -21,13 +23,9 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    runtime: nvidia
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
       interval: 30s
@@ -56,13 +54,9 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    runtime: nvidia
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/healthz"]
       interval: 30s
@@ -91,13 +85,9 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    runtime: nvidia
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/healthz"]
       interval: 30s

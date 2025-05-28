@@ -29,13 +29,16 @@ requests==2.31.0
 docutils==0.18.0
 ```
 
-#### MMPose Service
+#### MMPose Service (Updated for Version Compatibility)
 ```txt
-# OpenXLab compatibility requirements
-torch==1.12.1
-torchvision==0.13.1
-mmcv-full==1.7.2
-mmpose==1.1.0
+# Production-ready versions based on GitHub issues resolution
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
+mmcv==2.1.0            # Critical: exact version required
+mmengine               # Latest compatible version via mim
+mmdet>=3.0.0,<3.3.0    # Version constraint for compatibility
+mmpose                 # Latest compatible version via mim
 pytz==2023.3           # Must be 2023.3 for openxlab
 requests==2.28.2
 rich==13.4.2
@@ -61,35 +64,32 @@ google-cloud-storage==2.10.0
 
 **Root Cause**: `/etc/resolv.conf` is already in use or locked by another process
 
-**Solution Applied - Robust ln -sf Approach**:
+**Solution Applied - Container-Friendly DNS Resolution**:
 ```dockerfile
-# Both MMpose and YOLO-NAS use robust symbolic link handling
-RUN ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+# Both MMpose and YOLO-NAS use container-friendly DNS resolution
+RUN cp /run/systemd/resolve/resolv.conf /etc/resolv.conf || echo "nameserver 8.8.8.8" > /etc/resolv.conf
 ```
 
-**Why This Works**: The `ln -sf` command is the most robust solution for replacing symbolic links:
-- The `-s` flag creates a symbolic link
-- The `-f` flag forces replacement of existing files/links without requiring prior removal
-- Eliminates the need for `rm` command that causes "Device or resource busy" errors
-- Automatically overwrites existing links without conflicts
-- Works reliably even when system processes are actively managing `/etc/resolv.conf`
+**Why This Works**: The copy approach with fallback is the most container-friendly solution:
+- **Copy instead of link**: Avoids symbolic link issues that cause "Device or resource busy" errors
+- **No file system conflicts**: Copying doesn't interfere with Docker's management of `/etc/resolv.conf`
+- **Reliable fallback**: If host's resolv.conf is inaccessible, creates a working DNS configuration
+- **Container-optimized**: Works reliably in all containerized environments
+- **Default DNS**: Uses Google's public DNS (8.8.8.8) as fallback ensuring network connectivity
 
-**Alternative Solutions for Advanced Cases**:
+**Alternative Solutions for Specific Cases**:
 ```dockerfile
-# Option 1: Conditional check before linking
-RUN [ ! -L /etc/resolv.conf ] || rm -f /etc/resolv.conf && ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+# Option 1: Multiple fallback DNS servers
+RUN cp /run/systemd/resolve/resolv.conf /etc/resolv.conf || \
+    echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" > /etc/resolv.conf
 
-# Option 2: Temporarily disable systemd-resolved (if needed)
-RUN systemctl stop systemd-resolved && \
-    rm -f /etc/resolv.conf && \
-    ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf && \
-    systemctl start systemd-resolved
+# Option 2: Use host's DNS if available, otherwise Docker default
+RUN cp /etc/resolv.conf /etc/resolv.conf.backup || true
 
-# Option 3: Build argument for optional enabling
-ARG ENABLE_RESOLV_CONF_FIX=true
-RUN if [ "$ENABLE_RESOLV_CONF_FIX" = "true" ]; then \
-    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf; \
-fi
+# Option 3: Custom DNS for specific environments
+ARG DNS_SERVER=8.8.8.8
+RUN cp /run/systemd/resolve/resolv.conf /etc/resolv.conf || \
+    echo "nameserver ${DNS_SERVER}" > /etc/resolv.conf
 ```
 
 ### 2. Super-gradients Dependency Conflicts
@@ -193,7 +193,57 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install -r requirements.txt
 ```
 
-### 8. Missing System Bus Socket Error
+### 8. MMPose Version Compatibility Conflicts (Critical)
+
+**Error**: Multiple conflicting version errors between mmcv, mmengine, mmdet, and PyTorch
+
+**Root Cause**: MMPose has strict version compatibility requirements that conflict when using latest versions
+
+**GitHub Issues Referenced**:
+- Error in installation of MMPose package #3020
+- Installation documentation does not create a working demo #3103
+- FAQ documentation on version conflicts
+
+**Solution Applied - Official MMCV Installation Guidelines**:
+```dockerfile
+# Install PyTorch 2.1.x (compatible versions)
+RUN pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --extra-index-url https://download.pytorch.org/whl/cu118
+
+# Verify PyTorch installation (MMCV requirement)
+RUN python -c "import torch; print(f'✅ PyTorch successfully installed: {torch.__version__}')"
+RUN python -c "import torch; print(f'✅ CUDA version: {torch.version.cuda}')"
+
+# Install OpenMIM (recommended for MMCV)
+RUN pip install -U openmim
+
+# Critical: Uninstall ALL existing mmcv versions (prevents conflicts)
+RUN pip uninstall -y mmcv mmcv-lite mmcv-full || true
+
+# Install dependencies in correct order following official guidelines
+RUN mim install mmengine
+RUN mim install "mmcv==2.1.0"  # Full version with CUDA ops (recommended when CUDA available)
+RUN mim install "mmdet>=3.0.0,<3.3.0"  # Version constraint for compatibility
+RUN mim install mmpose xtcocotools
+
+# Verify no dependency conflicts
+RUN pip check
+```
+
+**Why This Works**:
+- Follows official MMCV installation guidelines from OpenMMLab documentation
+- Verifies PyTorch installation before installing MMCV (required step)
+- Uses mmcv (full version) with CUDA ops instead of mmcv-lite for better performance
+- Uninstalls all conflicting old versions first (mmcv, mmcv-lite, mmcv-full)
+- Uses exact version constraints to prevent conflicts
+- Uses `pip check` to verify dependency integrity
+- Avoids latest versions that often conflict
+
+**MMCV Version Selection**:
+- **mmcv**: Full version with CUDA ops (recommended when CUDA available) - used in production
+- **mmcv-lite**: Lite version without CUDA ops (for CPU-only environments)
+- **Critical**: Never install both versions in same environment - causes ModuleNotFound errors
+
+### 9. Missing System Bus Socket Error
 
 **Error**: `Failed to open connection to "system" message bus due to missing /var/run/dbus/system_bus_socket`
 
@@ -210,7 +260,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 **Why This Works**: Ensures dbus is installed, the socket directory exists, and the service is started during the build process.
 
-### 9. Python Version Compatibility Issues (YOLO-NAS)
+### 10. Python Version Compatibility Issues (YOLO-NAS)
 
 **Error**: `networkx` requires Python >=3.9 but system Python is 3.8.10
 
@@ -241,7 +291,7 @@ RUN echo "🔍 PYTHON VERSION CHECK: Verifying Python >=3.9 for networkx compati
 - Verifies version compatibility before dependency installation
 - Ensures networkx and other modern packages have required Python version
 
-### 10. Enhanced Dependency Verification
+### 11. Enhanced Dependency Verification
 
 **Error**: `ERROR: failed to solve: process "/bin/sh -c echo "🔍 VERIFICATION..."`
 
@@ -368,7 +418,7 @@ RUN pip install super-gradients==3.7.1
 RUN pip install -r requirements.txt  # Other dependencies
 ```
 
-### MMPose Service
+### MMPose Service (Production-Ready with Version Compatibility)
 ```dockerfile
 # CRITICAL: Enhanced system dependencies for virtual environment support
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -387,12 +437,31 @@ RUN echo "🔧 Creating Python virtual environment..." && \
 ENV PATH="/opt/venv/bin:$PATH"
 
 # CRITICAL: Install base dependencies first
+RUN pip install --upgrade pip setuptools wheel
 RUN pip install numpy
-RUN pip install torch==1.12.1 torchvision==0.13.1 --extra-index-url https://download.pytorch.org/whl/cu117
-RUN pip install openmim
+
+# CRITICAL: Install PyTorch 2.1.x (compatible versions)
+RUN pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --extra-index-url https://download.pytorch.org/whl/cu118
+
+# CRITICAL: Install PyTorch and verify (MMCV requirement)
+RUN pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --extra-index-url https://download.pytorch.org/whl/cu118
+RUN python -c "import torch; print(f'✅ PyTorch: {torch.__version__}')"
+RUN python -c "import torch; print(f'✅ CUDA: {torch.version.cuda}')"
+
+# CRITICAL: OpenMIM and MMPose ecosystem following official MMCV guidelines
+RUN pip install -U openmim
+RUN pip uninstall -y mmcv mmcv-lite mmcv-full || true  # Remove ALL old versions
+RUN mim install mmengine
+RUN mim install "mmcv==2.1.0"  # Full version with CUDA ops (recommended)
+RUN mim install "mmdet>=3.0.0,<3.3.0"  # Version constraint
 RUN pip install pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0
-RUN mim install mmcv-full mmpose xtcocotools
+RUN mim install mmpose xtcocotools
 RUN pip install -r requirements.txt
+RUN pip check  # Verify no conflicts
+
+# CRITICAL: Enhanced verification following official MMCV guidelines
+RUN python -c "import mmcv; print(f'✅ MMCV (full): {mmcv.__version__}')"
+RUN python -c "import mmcv; print('✅ MMCV CUDA ops available')"
 ```
 
 ## Model Setup

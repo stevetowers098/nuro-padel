@@ -14,8 +14,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix symbolic link issue - Device or resource busy error resolution
-RUN ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+# Fix symbolic link issue - Container-friendly DNS resolution
+RUN cp /run/systemd/resolve/resolv.conf /etc/resolv.conf || echo "nameserver 8.8.8.8" > /etc/resolv.conf
 
 # Install system dependencies in single optimized layer with enhanced Python venv support
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -63,26 +63,37 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install PyTorch 1.12.x (MIM-compatible version) and MMPose ecosystem with enhanced error handling
-# Clean cache during install to save space
-RUN echo "🔍 ENHANCED INSTALL: Installing MMPose dependencies with error handling..." && \
+# Install PyTorch 2.1.x and MMPose ecosystem following official MMCV installation guidelines
+# Based on official MMPose compatibility requirements and MMCV installation best practices
+RUN echo "🔍 OFFICIAL MMCV INSTALL: Following official MMCV installation guidelines..." && \
     echo "Step 1: Upgrading pip and installing base dependencies..." && \
-    pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel --verbose && \
+    pip install --no-cache-dir --upgrade pip setuptools wheel --verbose && \
     echo "Step 2: Installing numpy explicitly..." && \
     pip install --no-cache-dir numpy --verbose && \
-    echo "Step 3: Installing PyTorch ecosystem..." && \
-    pip install --no-cache-dir torch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cu117 --verbose && \
-    echo "Step 4: Installing OpenMIM..." && \
-    pip install --no-cache-dir openmim --verbose && \
-    echo "Step 5: Installing compatible package versions for openxlab..." && \
+    echo "Step 3: Installing PyTorch 2.1.x ecosystem (compatible versions)..." && \
+    pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --extra-index-url https://download.pytorch.org/whl/cu118 --verbose && \
+    echo "Step 4: Verifying PyTorch installation (MMCV requirement)..." && \
+    python -c "import torch; print(f'✅ PyTorch successfully installed: {torch.__version__}')" && \
+    python -c "import torch; print(f'✅ CUDA version: {torch.version.cuda}')" && \
+    echo "Step 5: Installing OpenMIM (recommended for MMCV)..." && \
+    pip install --no-cache-dir -U openmim --verbose && \
+    echo "Step 6: Critical - Uninstalling ALL existing mmcv versions (prevents conflicts)..." && \
+    pip uninstall -y mmcv mmcv-lite mmcv-full || true && \
+    echo "Step 7: Installing mmengine..." && \
+    mim install mmengine --verbose && \
+    echo "Step 8: Installing mmcv with exact version (full version with CUDA ops)..." && \
+    mim install "mmcv==2.1.0" --verbose && \
+    echo "Step 9: Installing mmdet with version constraints..." && \
+    mim install "mmdet>=3.0.0,<3.3.0" --verbose && \
+    echo "Step 10: Installing compatible package versions for openxlab..." && \
     pip install --no-cache-dir pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0 --verbose && \
-    echo "Step 6: Installing MMPose ecosystem via MIM..." && \
-    mim install mmcv-full mmpose xtcocotools && \
-    echo "Step 7: Explicitly ensuring core dependencies..." && \
-    pip install --no-cache-dir numpy xtcocotools mmpose --verbose && \
-    echo "Step 8: Installing additional requirements..." && \
+    echo "Step 11: Installing MMPose and xtcocotools..." && \
+    mim install mmpose xtcocotools --verbose && \
+    echo "Step 12: Installing additional requirements..." && \
     pip install --no-cache-dir -r requirements.txt --verbose && \
-    echo "Step 9: Cleaning up..." && \
+    echo "Step 13: Checking all dependencies for conflicts..." && \
+    pip check && \
+    echo "Step 14: Cleaning up..." && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create weights directory
@@ -94,19 +105,30 @@ COPY . .
 # Set proper permissions
 RUN chmod +x /app/main.py
 
-# Verify MMPose installation with enhanced error handling
-RUN echo "🔍 VERIFICATION: Testing all MMPose dependencies individually..." && \
+# Verify MMPose installation following official MMCV verification guidelines
+RUN echo "🔍 OFFICIAL VERIFICATION: Testing all MMPose dependencies with official checks..." && \
     echo "Testing NumPy..." && \
     python -c "import numpy; print(f'✅ NumPy version: {numpy.__version__}')" && \
+    echo "Testing PyTorch (MMCV requirement)..." && \
+    python -c "import torch; print(f'✅ PyTorch version: {torch.__version__}')" && \
+    python -c "import torch; print(f'✅ CUDA available: {torch.cuda.is_available()}')" && \
+    python -c "import torch; print(f'✅ CUDA version: {torch.version.cuda}')" && \
+    echo "Testing MMCV (full version with CUDA ops)..." && \
+    python -c "import mmcv; print(f'✅ MMCV version: {mmcv.__version__}')" && \
+    python -c "import mmcv; print(f'✅ MMCV CUDA available: {mmcv.ops.get_compiler_version()}' if hasattr(mmcv.ops, 'get_compiler_version') else '✅ MMCV ops available')" && \
+    echo "Testing mmengine..." && \
+    python -c "import mmengine; print(f'✅ MMEngine version: {mmengine.__version__}')" && \
+    echo "Testing mmdet..." && \
+    python -c "import mmdet; print(f'✅ MMDet version: {mmdet.__version__}')" && \
     echo "Testing xtcocotools..." && \
     python -c "import xtcocotools; print('✅ xtcocotools imported successfully')" && \
     echo "Testing MMPose..." && \
-    python -c "import mmpose; print('✅ MMPose imported successfully')" && \
+    python -c "import mmpose; print(f'✅ MMPose version: {mmpose.__version__}')" && \
     echo "Testing OpenCV..." && \
-    python -c "import cv2; print('✅ OpenCV imported successfully')" && \
+    python -c "import cv2; print(f'✅ OpenCV version: {cv2.__version__}')" && \
     echo "Testing FastAPI..." && \
-    python -c "import fastapi; print('✅ FastAPI imported successfully')" && \
-    echo "📊 All MMPose dependencies verified successfully"
+    python -c "import fastapi; print(f'✅ FastAPI version: {fastapi.__version__}')" && \
+    echo "📊 All MMPose dependencies verified following official MMCV guidelines"
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser

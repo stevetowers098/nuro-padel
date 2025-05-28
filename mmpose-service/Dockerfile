@@ -15,9 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     YOLO_TELEMETRY=False
 
 # Fix potential resolv.conf symbolic link issue in Docker
-RUN if [ ! -L /etc/resolv.conf ]; then \
-        rm -f /etc/resolv.conf 2>/dev/null || true; \
-    fi
+RUN ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || echo "Skipping resolv.conf symlink"
 
 # Install system dependencies in single optimized layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -42,7 +40,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     git \
     dbus \
+    && mkdir -p /var/run/dbus \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -52,11 +52,13 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install exact openxlab dependency versions first, then MMPose
+# Install PyTorch 1.12.x (MIM-compatible version) and MMPose ecosystem
 # Clean cache during install to save space
 RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
+    pip install --no-cache-dir torch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cu117 && \
+    pip install --no-cache-dir openmim && \
+    mim install mmcv-full mmpose xtcocotools && \
     pip install --no-cache-dir pytz==2023.3 requests==2.28.2 "rich>=13.7.1" tqdm==4.65.0 && \
-    pip install --no-cache-dir "numpy>=1.21.0,<2.0" xtcocotools mmpose && \
     pip install --no-cache-dir -r requirements.txt && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 

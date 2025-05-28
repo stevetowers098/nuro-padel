@@ -16,7 +16,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     YOLO_TELEMETRY=False
 
 # Properly fix resolv.conf symlink
-RUN ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
+RUN rm -f /etc/resolv.conf && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
 
 # Install system dependencies with PPA fallback handling
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -57,7 +57,7 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install dependencies - let super-gradients handle its own requirements (Bible approach)
+# Install dependencies - let super-gradients handle its own requirements first, then override with pinned versions
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
     pip install --no-cache-dir super-gradients==3.7.1 && \
     pip install --no-cache-dir -r requirements.txt

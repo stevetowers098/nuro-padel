@@ -2,6 +2,13 @@
 # super-gradients installed first in Dockerfile - manages PyTorch, numpy, protobuf versions
 # gsutil CLI handles GCS uploads - no Python dependency conflicts
 
+# --- Core Dependencies with Version Compatibility Fixes ---
+requests>=2.31.0
+numpy>=1.24.4
+docutils>=0.18,<0.22
+sphinx>=6,<9
+sphinx-rtd-theme==3.0.2
+
 # --- Computer Vision ---
 opencv-python-headless==4.10.0.84
 pillow==10.4.0

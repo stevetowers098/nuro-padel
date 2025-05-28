@@ -47,6 +47,15 @@
 - **Compatible Versions**: `mmcv==2.1.0`, `mmdet==3.2.0`, `pycocotools==2.0.7`
 - **Tested Combinations**: All pinned versions verified to work together
 
+### Issue 5: Deprecated pip Arguments (FIXED ✅)
+**Error**: `no such option: --use-feature`
+
+**Root Cause**: `--use-feature=2020-resolver` argument deprecated in newer pip versions
+
+**Solution Applied**: Remove deprecated arguments from all Dockerfiles
+- **Removed**: `--use-feature=2020-resolver` from pip install commands
+- **Result**: Clean pip installations without deprecated warnings
+
 ### 2. Production-Grade Service Configuration
 
 #### YOLO-NAS Service ✅ (PRODUCTION SOLUTION)
@@ -201,10 +210,31 @@ mmpose-service/main.py        ✅ Enabled: Full GCS functionality via Python lib
 
 ### Dockerfile Changes
 ```
-yolo-nas-service/Dockerfile   ✅ UPDATED: Google Cloud SDK + gsutil, super-gradients first, --use-feature=2020-resolver
-mmpose-service/Dockerfile     ✅ UPDATED: PyTorch 1.13.1, mmcv==2.1.0, mmdet==3.2.0, --use-feature=2020-resolver
+yolo-nas-service/Dockerfile   ✅ FINAL: Google Cloud SDK + gsutil, super-gradients first, clean pip installs
+mmpose-service/Dockerfile     ✅ FINAL: PyTorch 1.13.1, mmcv==2.1.0, mmdet==3.2.0, clean pip installs
 yolo-combined-service/Dockerfile ✅ setuptools==65.7.0 (InvalidVersion fix only)
 ```
+
+## 🚨 Additional Production Considerations
+
+### CI/CD Environment Issues
+```bash
+# Handle busy /etc/resolv.conf in CI environments
+if ! ln -sf /lib/systemd/system/systemd-resolved.service /etc/resolv.conf; then
+    echo "Warning: /etc/resolv.conf is busy or locked. Skipping symbolic link creation."
+fi
+
+# Clean Docker cache between builds
+docker builder prune -f
+
+# Ensure proper pip upgrade before dependency installation
+pip install --upgrade pip setuptools wheel
+```
+
+### Modern pip Best Practices
+- ✅ **Removed**: Deprecated `--use-feature=2020-resolver` arguments
+- ✅ **Standard**: Use current pip dependency resolution (default in modern pip)
+- ✅ **Clean**: No deprecated warnings in build logs
 
 ## 🧪 Testing
 

@@ -15,6 +15,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
+# Fix policy-rc.d denied execution error
+RUN echo '#!/bin/sh\nexit 0' > /usr/sbin/policy-rc.d
+
 # Install system dependencies in single optimized layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
@@ -55,7 +58,7 @@ COPY requirements.txt .
 # Fail fast - no silent failures with fallbacks
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
     pip install --no-cache-dir super-gradients && \
-    pip install --no-cache-dir --use-feature=2020-resolver -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory
 RUN mkdir -p /app/weights

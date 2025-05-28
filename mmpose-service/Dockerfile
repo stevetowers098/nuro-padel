@@ -55,7 +55,7 @@ RUN pip install --no-cache-dir --upgrade pip==23.1.2 setuptools==60.2.0 wheel &&
     mim install "mmcv==2.1.0" && \
     mim install "mmdet==3.2.0" && \
     mim install "mmpose>=1.1.0" && \
-    pip install --no-cache-dir --use-feature=2020-resolver -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory
 RUN mkdir -p /app/weights

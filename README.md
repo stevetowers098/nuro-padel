@@ -57,31 +57,31 @@ curl -X POST http://localhost:8001/yolo11/pose \
 
 ### Critical Issues Resolved ✅
 
-#### 1. MMPose numpy Binary Incompatibility (PRIMARY FIX)
-**Problem**: `ValueError: numpy.ndarray size changed, may indicate binary incompatibility` with xtcocotools
-- numpy 2.0+ breaks binary compatibility with xtcocotools
-- MMPose installation fails during Docker build
-- Related to numpy and Cython version conflicts
+#### 1. YOLO-NAS Dependency Installation Order Issue
+**Problem**: super-gradients installs incompatible old versions of core dependencies
+- super-gradients installs numpy 1.23.0, but albumentations requires >=1.24.4
+- super-gradients installs requests 2.22.0, but pyhanko requires >=2.31.0
+- super-gradients installs docutils 0.17.1, but sphinx-rtd-theme requires >0.18,<0.22
+- super-gradients installs sphinx 4.0.3, but sphinx-rtd-theme requires >=6,<9
 
 **Solution Applied**:
 ```dockerfile
-# Critical: Install numpy<2.0 first to prevent xtcocotools binary incompatibility
-RUN pip uninstall -y numpy || true && \
-    pip install --no-cache-dir "numpy>=1.21.0,<2.0" && \
-    pip install --no-cache-dir cython && \
-    pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2
+# Install compatible dependencies FIRST to prevent super-gradients from installing old versions
+RUN pip install --no-cache-dir "numpy>=1.24.4" "requests>=2.31.0" "docutils>=0.18,<0.22" "sphinx>=6,<9" && \
+    pip install --no-cache-dir super-gradients==3.7.1 && \
+    pip install --no-cache-dir -r requirements.txt
 ```
 
-#### 2. YOLO-NAS super-gradients Version Issue
-**Problem**: Installation fails due to broken super-gradients version
-- Version 3.1.0 has known import issues and dependency conflicts
-- `No module named 'super_gradients'` errors during installation
-- Dependency conflicts often caused by using outdated super-gradients versions
+#### 2. MMPose Dependency Version Conflicts
+**Problem**: MMPose installs incompatible dependency versions causing build failures
+- numpy 2.0+ breaks binary compatibility with xtcocotools
+- pytz version conflicts with openxlab compatibility requirements
 
 **Solution Applied**:
 ```dockerfile
-# Use latest stable super-gradients (3.7.1) with bug fixes
-RUN pip install --no-cache-dir super-gradients==3.7.1
+# Install compatible versions first to prevent MMPose from installing incompatible dependencies
+RUN pip install --no-cache-dir "pytz==2023.3" "numpy>=1.21.0,<2.0" && \
+    mim install mmpose
 ```
 
 #### 3. Removed Deprecated Pip Options

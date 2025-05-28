@@ -54,9 +54,9 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install super-gradients FIRST - use latest stable version (avoid 3.1.0 issues)
-# Version 3.7.1+ includes critical bug fixes and import fixes
+# Install compatible dependencies FIRST to prevent super-gradients from installing old versions
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
+    pip install --no-cache-dir "numpy>=1.24.4" "requests>=2.31.0" "docutils>=0.18,<0.22" "sphinx>=6,<9" && \
     pip install --no-cache-dir super-gradients==3.7.1 && \
     pip install --no-cache-dir -r requirements.txt
 

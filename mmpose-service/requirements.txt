@@ -1,20 +1,5 @@
-# MMPose Service Requirements - Compatible versions for production
-# PyTorch 1.13.1 required for MMPose - installed in Dockerfile
-
-# --- Pinned Dependencies (resolves conflicts) ---
-pytz==2023.3                    # openxlab compatibility
-requests==2.28.2               # Stable version
-rich==13.4.2                   # Compatible with other packages
-tqdm==4.65.0                   # Stable version
-
-# --- COCO Tools (fixed version) ---
-pycocotools==2.0.7             # Available version (not 2.0.8)
-xtcocotools>=1.14
-
-# --- Core Dependencies (numpy<2.0 critical for xtcocotools compatibility) ---
-numpy>=1.21.0,<2.0             # Critical: numpy 2.0+ breaks xtcocotools binary compatibility
-cython>=3.0.0
-protobuf>=5.26.1,<6.0.0
+# MMPose Service Requirements
+# Compatible dependencies installed first in Dockerfile (pytz==2023.3, numpy<2.0)
 
 # --- Computer Vision ---
 opencv-python-headless==4.10.0.84
@@ -31,5 +16,5 @@ httpx==0.27.0
 # --- Cloud & Storage ---
 google-cloud-storage==2.18.0
 
-# Note: PyTorch 1.13.1, mmcv==2.1.0, mmdet==3.2.0 installed via Dockerfile
-# openmim and MIM packages handled in Dockerfile installation order
+# Core dependencies (pytz, numpy) installed first in Dockerfile
+# MMPose and mmcv installed via MIM in Dockerfile

@@ -35,27 +35,71 @@ The Docker builds for MMPose and YOLO-NAS services required multiple iterations 
 - NVIDIA Docker runtime (for GPU support)
 - Google Cloud SDK (for GCS uploads)
 
+## Version Consistency & Deployment Issues
+
+### Critical Version Conflicts Resolved
+
+This section addresses serious production issues that were identified and resolved to ensure consistent deployment across Docker and VM environments.
+
+#### MMPose Service Issues Fixed
+
+**Issue**: mmcv version conflict between Docker (mmcv==2.1.0) and potential VM deployment inconsistencies.
+**Solution Applied**: Created [`requirements/mmpose.txt`](requirements/mmpose.txt) with exact Docker version matching.
+
+**Issue**: Potential numpy>=2.0 conflicts with mmcv 2.1.0 (developed against numpy 1.x).
+**Solution Applied**: Explicitly constrained numpy in [`mmpose-service/Dockerfile`](mmpose-service/Dockerfile:72) to `numpy>=1.21.0,<2.0`.
+
+**Issue**: PyTorch CUDA version mismatch (cu118 vs CUDA 12.2.0 base image).
+**Solution Applied**: Documented as acceptable due to forward compatibility, but flagged for future optimization.
+
+#### YOLO-NAS Service Issues Fixed
+
+**Issue**: Long-term risk from super-gradients==3.7.1 due to Deci AI operational changes.
+**Solution Applied**: Documented migration recommendation to Ultralytics or MMYOLO in future roadmap.
+
+**Issue**: Documentation tools (sphinx, docutils) in runtime requirements causing bloat and security risk.
+**Solution Applied**: Removed from [`yolo-nas-service/requirements.txt`](yolo-nas-service/requirements.txt) - only needed for builds.
+
+**Issue**: Inconsistent PyTorch installation between Docker and VM deployment.
+**Solution Applied**: Created [`requirements/yolo-nas.txt`](requirements/yolo-nas.txt) with explicit PyTorch management strategy.
+
+#### Deployment Consistency Fixes
+
+**Issue**: Outdated dependency versions in README.md causing confusion.
+**Solution Applied**: Updated [`README.md`](README.md:89) with accurate per-service version information.
+
+**Issue**: Missing VM deployment requirements files.
+**Solution Applied**: Created standardized requirements files in [`requirements/`](requirements/) directory.
+
+### Version Management Strategy
+
+**Docker-First Approach**: Docker configurations are considered authoritative for version specifications.
+**VM Parity**: VM deployment files mirror Docker versions exactly for core ML dependencies.
+**Service Isolation**: Different services use different PyTorch versions as required by their ML frameworks.
+
+---
+
 ## Exact Version Requirements
 
 ### Critical Dependency Versions
 
-#### YOLO-NAS Service
+#### YOLO-NAS Service (Optimized Runtime)
 ```txt
-# Super-gradients compatibility requirements
+# Super-gradients compatibility requirements (runtime optimized)
 numpy==1.23.0          # Must be ≤1.23 for super-gradients
-sphinx==4.0.2          # Must be ~4.0.2 for super-gradients
 super-gradients==3.7.1
 requests==2.31.0
-docutils==0.18.0
+# Note: sphinx and docutils removed (build-time only, not runtime)
 ```
 
-#### MMPose Service (Updated for Version Compatibility)
+#### MMPose Service (Production-Ready with Version Consistency)
 ```txt
-# Production-ready versions based on GitHub issues resolution
+# Production-ready versions with Docker-VM consistency
 torch==2.1.2
 torchvision==0.16.2
 torchaudio==2.1.2
-mmcv==2.1.0            # Critical: exact version required
+numpy>=1.21.0,<2.0     # Critical: constrained for mmcv compatibility
+mmcv==2.1.0            # Critical: exact version required, matches Docker
 mmengine               # Latest compatible version via mim
 mmdet>=3.0.0,<3.3.0    # Version constraint for compatibility
 mmpose                 # Latest compatible version via mim
@@ -84,39 +128,39 @@ google-cloud-storage==2.10.0
 
 **Root Cause**: `/etc/resolv.conf` is already in use or locked by another process
 
-**Solution Applied - Robust Temporary File Approach**:
+**Solution Applied - Append Approach (Final Fix)**:
 ```dockerfile
-# Both MMpose and YOLO-NAS use robust temporary file approach
-RUN echo "nameserver 8.8.8.8" > /tmp/resolv.conf && mv /tmp/resolv.conf /etc/resolv.conf
+# Both MMpose and YOLO-NAS use append approach
+RUN echo "nameserver 8.8.8.8" >> /etc/resolv.conf
 ```
 
-**Why This Works**: The temporary file approach is the most reliable solution for Docker environments:
-- **No dependency on system files**: Doesn't rely on `/run/systemd/resolve/resolv.conf` which may not exist
-- **Bypasses read-only filesystem**: Uses temporary file then moves to bypass read-only `/etc/resolv.conf`
-- **Always succeeds**: Creates reliable DNS configuration regardless of host system setup
-- **Container-optimized**: Works in all Docker environments including minimal base images
-- **Predictable DNS**: Uses Google's reliable public DNS (8.8.8.8) ensuring network connectivity
+**Why This Works**: The append approach is the most reliable solution for Docker environments:
+- **No File Replacement**: Appends to existing `/etc/resolv.conf` instead of overwriting/replacing
+- **Avoids Lock Issues**: No attempt to move, copy, or replace files that may be managed by Docker
+- **Preserves Existing Config**: Keeps any existing DNS configuration while adding backup
+- **Simple and Reliable**: Single operation that works consistently across all Docker environments
+- **No Fallback Needed**: Append operation rarely fails unless filesystem is read-only
 
 **Root Cause Addressed**:
-- **File not found**: `/run/systemd/resolve/resolv.conf` doesn't exist in many Docker environments
-- **Read-only filesystem**: `/etc/resolv.conf` is often read-only and managed by Docker
-- **System dependencies**: Avoids relying on host system DNS configuration
+- **Device Busy Errors**: Eliminates all file replacement operations that cause "Device or resource busy"
+- **Docker File Management**: Works with Docker's management of `/etc/resolv.conf` without conflicts
+- **Build Reliability**: Ensures DNS configuration never blocks Docker builds
 
-**Alternative Solutions for Specific Cases**:
+**Alternative Solutions for Advanced Cases**:
 ```dockerfile
-# Option 1: Multiple DNS servers for redundancy
-RUN echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" > /tmp/resolv.conf && \
-    mv /tmp/resolv.conf /etc/resolv.conf
+# Option 1: Multiple DNS servers
+RUN echo "nameserver 8.8.8.8" >> /etc/resolv.conf && \
+    echo "nameserver 8.8.4.4" >> /etc/resolv.conf
 
-# Option 2: Custom DNS for specific environments
+# Option 2: Build argument for dynamic DNS
 ARG DNS_SERVER=8.8.8.8
-RUN echo "nameserver ${DNS_SERVER}" > /tmp/resolv.conf && \
-    mv /tmp/resolv.conf /etc/resolv.conf
+RUN echo "nameserver ${DNS_SERVER}" >> /etc/resolv.conf
 
-# Option 3: Enterprise DNS with search domains
-RUN echo -e "nameserver 8.8.8.8\nsearch company.local" > /tmp/resolv.conf && \
-    mv /tmp/resolv.conf /etc/resolv.conf
+# Option 3: Runtime DNS via Docker flags (recommended for production)
+# docker run --dns=8.8.8.8 <image>
 ```
+
+**Best Practice**: For production deployments, use Docker's `--dns` flag instead of modifying `/etc/resolv.conf` in Dockerfile.
 
 ### 2. Super-gradients Dependency Conflicts
 

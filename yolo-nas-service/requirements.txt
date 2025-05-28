@@ -3,9 +3,8 @@
 
 # --- Super-gradients compatible versions (numpy<=1.23 constraint) ---
 numpy==1.23.0
-sphinx==4.0.2
 requests==2.31.0
-docutils==0.19.0
+# Note: sphinx and docutils removed - only needed for documentation builds, not runtime
 
 # --- Computer Vision ---
 opencv-python-headless==4.10.0.84

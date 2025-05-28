@@ -88,17 +88,41 @@ nuro-padel/
 
 ## Core Dependencies
 
-```txt
-# ML Stack
-torch==2.3.1
-ultralytics==8.2.97
-mmcv-full==1.7.2
-super-gradients==3.7.1
+**Important**: Versions vary by service to ensure compatibility
 
-# API & Cloud
+### MMPose Service
+```txt
+torch==2.1.2
+torchvision==0.16.2
+mmcv==2.1.0  # Full version with CUDA ops
+mmengine (latest compatible)
+mmdet>=3.0.0,<3.3.0
+mmpose (latest compatible)
+numpy>=1.21.0,<2.0  # Constrained for mmcv compatibility
+```
+
+### YOLO-NAS Service
+```txt
+super-gradients==3.7.1
+numpy==1.23.0  # Required by super-gradients
+torch (managed by super-gradients for cu118)
+```
+
+### YOLO Combined Service
+```txt
+torch==2.3.1
+torchvision==0.18.1
+ultralytics==8.2.97
+```
+
+### Common Dependencies
+```txt
 fastapi==0.111.0
 google-cloud-storage==2.18.0
+opencv-python-headless==4.10.0.84
 ```
+
+**Note**: Different PyTorch versions across services ensure compatibility with respective ML frameworks. See [`DEPLOYMENT.md`](DEPLOYMENT.md) for detailed version management.
 
 ## Performance
 

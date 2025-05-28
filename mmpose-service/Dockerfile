@@ -14,8 +14,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix DNS resolution - Robust temporary file approach
-RUN echo "nameserver 8.8.8.8" > /tmp/resolv.conf && mv /tmp/resolv.conf /etc/resolv.conf
+# Fix DNS resolution - Append approach to avoid file lock issues
+RUN echo "nameserver 8.8.8.8" >> /etc/resolv.conf
 
 # Install system dependencies in single optimized layer with enhanced Python venv support
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -68,8 +68,8 @@ COPY requirements.txt .
 RUN echo "🔍 OFFICIAL MMCV INSTALL: Following official MMCV installation guidelines..." && \
     echo "Step 1: Upgrading pip and installing base dependencies..." && \
     pip install --no-cache-dir --upgrade pip setuptools wheel --verbose && \
-    echo "Step 2: Installing numpy explicitly..." && \
-    pip install --no-cache-dir numpy --verbose && \
+    echo "Step 2: Installing numpy explicitly (constrained for mmcv compatibility)..." && \
+    pip install --no-cache-dir "numpy>=1.21.0,<2.0" --verbose && \
     echo "Step 3: Installing PyTorch 2.1.x ecosystem (compatible versions)..." && \
     pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --extra-index-url https://download.pytorch.org/whl/cu118 --verbose && \
     echo "Step 4: Verifying PyTorch installation (MMCV requirement)..." && \

@@ -18,6 +18,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
+    && add-apt-repository universe \
     && apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
@@ -34,17 +35,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libgtk-3-0 \
     libglib2.0-dev \
-    libcrc32c-dev \
     build-essential \
     curl \
     wget \
     git \
     dbus \
+    && (apt-get install -y libcrc32c-dev || echo "libcrc32c-dev not available, continuing...") \
     && mkdir -p /var/run/dbus \
-    && dbus-daemon --system \
-    && ln -sf /lib/systemd/system/systemd-resolved.service /etc/systemd/system/dbus-org.freedesktop.resolve1.service \
-    && ln -sf /lib/systemd/system/systemd-resolved.service /etc/systemd/system/multi-user.target.wants/systemd-resolved.service \
-    && [ ! -e /etc/resolv.conf ] || rm /etc/resolv.conf \
+    && service dbus start \
+    && systemctl stop systemd-resolved || true \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/* \
@@ -88,8 +87,8 @@ RUN echo "🔍 OFFICIAL MMCV INSTALL: Following official MMCV installation guide
     mim install "mmdet>=3.0.0,<3.3.0" --verbose && \
     echo "Step 10: Installing compatible package versions for openxlab..." && \
     pip install --no-cache-dir pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0 --verbose && \
-    echo "Step 11: Installing google_crc32c with --no-deps to avoid conflicts..." && \
-    pip install --no-cache-dir --no-deps google_crc32c --verbose && \
+    echo "Step 11: Installing google_crc32c with fallback handling..." && \
+    (pip install --no-cache-dir --no-deps google_crc32c --verbose || echo "google_crc32c installation failed, continuing without it...") && \
     echo "Step 12: Installing MMPose and xtcocotools..." && \
     mim install mmpose xtcocotools --verbose && \
     echo "Step 13: Installing additional requirements..." && \

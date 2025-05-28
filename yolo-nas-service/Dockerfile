@@ -18,8 +18,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Install system dependencies with enhanced Python 3.10 support and venv dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
-    && (add-apt-repository ppa:deadsnakes/ppa || true) \
-    && apt-get update || apt-get update \
+    && apt-add-repository ppa:deadsnakes/ppa \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
@@ -47,13 +47,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
     && apt-get update && apt-get install -y google-cloud-cli \
     && mkdir -p /var/run/dbus \
-    && rm -f /etc/resolv.conf \
-    && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf \
+    && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || true \
     && service dbus start \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment with enhanced error handling to avoid Python version conflicts
 RUN echo "🔧 Creating Python virtual environment with Python 3.10..." && \

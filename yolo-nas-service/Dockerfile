@@ -56,10 +56,11 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install dependencies with compatible versions for super-gradients
-RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel
-RUN pip install --no-cache-dir "sphinx~=4.0.2"
-RUN pip install --no-cache-dir super-gradients==3.7.1
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
+    pip install --no-cache-dir "sphinx==4.0.2" && \
+    pip install --no-cache-dir --no-deps super-gradients==3.7.1 && \
+    pip install --no-cache-dir super-gradients==3.7.1 && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory
 RUN mkdir -p /app/weights

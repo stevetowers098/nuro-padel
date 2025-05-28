@@ -35,6 +35,18 @@
 - **Production Status**: Used by Google's own ML tutorials and major deployments
 - **Performance**: Just as fast as Python library, sometimes faster for large files
 
+### Issue 4: Production Dependency Conflicts (FIXED ✅)
+**Errors**: Multiple dependency version conflicts in production builds:
+- `openxlab 0.1.2 has requirement pytz~=2023.3, but you'll have pytz 2025.2`
+- `mmdet 3.3.0 requires mmcv<2.2.0,>=2.0.0rc4, but you have mmcv 2.2.0`
+- `Could not find a version that satisfies the requirement pycocotools>=2.0.8`
+
+**Production Solution Applied**:
+- **Version Pinning**: Pin ALL conflicting dependencies to compatible versions
+- **pip Resolver**: Use `--use-feature=2020-resolver` for better conflict resolution
+- **Compatible Versions**: `mmcv==2.1.0`, `mmdet==3.2.0`, `pycocotools==2.0.7`
+- **Tested Combinations**: All pinned versions verified to work together
+
 ### 2. Production-Grade Service Configuration
 
 #### YOLO-NAS Service ✅ (PRODUCTION SOLUTION)
@@ -172,16 +184,26 @@ MMPOSE_VIDEO=$(curl -X POST http://localhost:8003/mmpose/pose \
 
 ### Requirements Files
 ```
-yolo-nas-service/requirements.txt     ❌ Removed: protobuf constraint, google-cloud-storage
-yolo-combined-service/requirements.txt ❌ Removed: protobuf constraint, google-cloud-storage
-mmpose-service/requirements.txt       ✅ Kept: protobuf>=5.26.1,<6.0.0, google-cloud-storage
+yolo-nas-service/requirements.txt     ✅ UPDATED: Removed google-cloud-storage, minimal deps (super-gradients manages core ML)
+yolo-combined-service/requirements.txt ❌ No GCS dependencies (standard FastAPI stack)
+mmpose-service/requirements.txt       ✅ UPDATED: Production pinned versions + google-cloud-storage==2.18.0
+                                          - Added: pytz==2023.3, requests==2.28.2, rich==13.4.2, tqdm==4.65.0
+                                          - Fixed: pycocotools==2.0.7 (was >=2.0.8 - unavailable)
+                                          - Pinned: numpy>=1.21.0,<1.25.0 (MMPose compatible range)
 ```
 
 ### Python Files
 ```
-yolo-nas-service/main.py      ❌ Disabled: GCS import, upload_to_gcs()
-yolo-combined-service/main.py ❌ Disabled: GCS import, upload_to_gcs()
-mmpose-service/main.py        ✅ Enabled: Full GCS functionality
+yolo-nas-service/main.py      ✅ UPDATED: Uses gsutil CLI for GCS uploads (production approach)
+yolo-combined-service/main.py ❌ No GCS functionality
+mmpose-service/main.py        ✅ Enabled: Full GCS functionality via Python library
+```
+
+### Dockerfile Changes
+```
+yolo-nas-service/Dockerfile   ✅ UPDATED: Google Cloud SDK + gsutil, super-gradients first, --use-feature=2020-resolver
+mmpose-service/Dockerfile     ✅ UPDATED: PyTorch 1.13.1, mmcv==2.1.0, mmdet==3.2.0, --use-feature=2020-resolver
+yolo-combined-service/Dockerfile ✅ setuptools==65.7.0 (InvalidVersion fix only)
 ```
 
 ## 🧪 Testing

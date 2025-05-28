@@ -46,19 +46,16 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies - confirmed working configuration for MMPose
+# Install Python dependencies - production-grade with conflict resolution
 # PyTorch 1.13.1 required for MMPose compatibility
 RUN pip install --no-cache-dir --upgrade pip==23.1.2 setuptools==60.2.0 wheel && \
     pip install --no-cache-dir torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 && \
     pip install --no-cache-dir -U openmim && \
     mim install mmengine && \
-    mim install "mmcv>=2.0.1" && \
-    mim install mmdet && \
+    mim install "mmcv==2.1.0" && \
+    mim install "mmdet==3.2.0" && \
     mim install "mmpose>=1.1.0" && \
-    pip install --no-cache-dir cython && \
-    pip install --no-cache-dir pycocotools && \
-    pip install --no-cache-dir --no-deps --force-reinstall xtcocotools && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir --use-feature=2020-resolver -r requirements.txt
 
 # Create weights directory
 RUN mkdir -p /app/weights

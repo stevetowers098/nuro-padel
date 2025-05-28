@@ -55,7 +55,7 @@ COPY requirements.txt .
 # Fail fast - no silent failures with fallbacks
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
     pip install --no-cache-dir super-gradients && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir --use-feature=2020-resolver -r requirements.txt
 
 # Create weights directory
 RUN mkdir -p /app/weights

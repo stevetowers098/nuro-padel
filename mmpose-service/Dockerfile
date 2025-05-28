@@ -14,6 +14,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
+# Fix potential resolv.conf symbolic link issue in Docker
+RUN if [ ! -L /etc/resolv.conf ]; then \
+        rm -f /etc/resolv.conf 2>/dev/null || true; \
+    fi
+
 # Install system dependencies in single optimized layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
@@ -63,13 +68,13 @@ COPY . .
 # Set proper permissions
 RUN chmod +x /app/main.py
 
+# Verify MMPose installation before switching users - fail fast if broken
+RUN python -c "import numpy as np; print(f'NumPy version: {np.__version__}'); import xtcocotools; print('xtcocotools imported successfully'); import mmpose; print('MMPose imported successfully'); print('✅ All MMPose dependencies working correctly')"
+
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
 USER appuser
-
-# Verify MMPose installation - fail fast if broken
-RUN python -c "import numpy as np; print(f'NumPy version: {np.__version__}'); import xtcocotools; print('xtcocotools imported successfully'); import mmpose; print('MMPose imported successfully'); print('✅ All MMPose dependencies working correctly')"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=120s --retries=3 \

@@ -57,12 +57,12 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install dependencies with correct order to resolve super-gradients conflicts
-RUN echo "🔍 RESOLVING DEPENDENCIES: Installing in correct order to prevent conflicts..." && \
+# Install dependencies with globally compatible versions to resolve all conflicts
+RUN echo "🔍 RESOLVING DEPENDENCIES: Installing globally compatible versions..." && \
     echo "Step 1: Upgrading pip tools..." && \
     pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel --verbose && \
-    echo "Step 2: Installing specific versions for super-gradients compatibility..." && \
-    pip install --no-cache-dir numpy==1.23.0 sphinx==4.0.2 --verbose && \
+    echo "Step 2: Installing core dependencies with globally compatible versions..." && \
+    pip install --no-cache-dir "numpy==1.24.4" "requests==2.31.0" "sphinx>=6,<9" "docutils>=0.18,<0.22" --verbose && \
     echo "Step 3: Installing super-gradients..." && \
     pip install --no-cache-dir super-gradients==3.7.1 --verbose && \
     echo "Step 4: Installing remaining requirements..." && \

@@ -1,11 +1,11 @@
 # YOLO-NAS Service Requirements
 # super-gradients==3.7.1 installed first in Dockerfile
 
-# --- Compatible versions for super-gradients 3.7.1 ---
-numpy==1.23.0
-sphinx==4.0.2
+# --- Globally compatible versions for all packages ---
+numpy==1.24.4
+sphinx>=6,<9
 requests==2.31.0
-docutils==0.18.0
+docutils>=0.18,<0.22
 
 # --- Computer Vision ---
 opencv-python-headless==4.10.0.84

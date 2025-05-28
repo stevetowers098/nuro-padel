@@ -14,8 +14,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix potential resolv.conf symbolic link issue in Docker
-RUN ln -sfT /run/systemd/resolve/resolv.conf /etc/resolv.conf || echo "Skipping resolv.conf symlink"
+# Fix potential resolv.conf symbolic link issue in Docker with conditional check
+RUN if [ ! -L /etc/resolv.conf ]; then \
+    ln -sfT /run/systemd/resolve/resolv.conf /etc/resolv.conf; \
+    else echo "Symbolic link already exists"; \
+fi
 
 # Install system dependencies in single optimized layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -27,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10-distutils \
     python3.10-venv \
     python3-pip \
+    python3-dev \
     ffmpeg \
     libglib2.0-0 \
     libsm6 \
@@ -46,30 +50,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
+# Create virtual environment to avoid pip root warnings
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 # Set working directory
 WORKDIR /app
 
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install PyTorch 1.12.x (MIM-compatible version) and MMPose ecosystem with verbose output
+# Install PyTorch 1.12.x (MIM-compatible version) and MMPose ecosystem with enhanced error handling
 # Clean cache during install to save space
-RUN echo "🔍 VERBOSE INSTALL: Installing MMPose dependencies with detailed output..." && \
+RUN echo "🔍 ENHANCED INSTALL: Installing MMPose dependencies with error handling..." && \
     echo "Step 1: Upgrading pip and installing base dependencies..." && \
     pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel --verbose && \
-    echo "Step 2: Installing numpy..." && \
+    echo "Step 2: Installing numpy explicitly..." && \
     pip install --no-cache-dir numpy --verbose && \
     echo "Step 3: Installing PyTorch ecosystem..." && \
     pip install --no-cache-dir torch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cu117 --verbose && \
     echo "Step 4: Installing OpenMIM..." && \
     pip install --no-cache-dir openmim --verbose && \
-    echo "Step 5: Installing compatible package versions..." && \
+    echo "Step 5: Installing compatible package versions for openxlab..." && \
     pip install --no-cache-dir pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0 --verbose && \
     echo "Step 6: Installing MMPose ecosystem via MIM..." && \
     mim install mmcv-full mmpose xtcocotools && \
-    echo "Step 7: Installing additional requirements..." && \
+    echo "Step 7: Explicitly ensuring core dependencies..." && \
+    pip install --no-cache-dir numpy xtcocotools mmpose --verbose && \
+    echo "Step 8: Installing additional requirements..." && \
     pip install --no-cache-dir -r requirements.txt --verbose && \
-    echo "Step 8: Cleaning up..." && \
+    echo "Step 9: Cleaning up..." && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create weights directory
@@ -81,9 +91,19 @@ COPY . .
 # Set proper permissions
 RUN chmod +x /app/main.py
 
-# Verify MMPose installation with comprehensive testing
-RUN echo "🔍 VERIFICATION: Testing all MMPose dependencies..." && \
-    python -c "import numpy; print(f'✅ NumPy version: {numpy.__version__}'); import xtcocotools; print('✅ xtcocotools imported successfully'); import mmpose; print('✅ MMPose imported successfully'); print('📊 All MMPose dependencies working correctly')"
+# Verify MMPose installation with enhanced error handling
+RUN echo "🔍 VERIFICATION: Testing all MMPose dependencies individually..." && \
+    echo "Testing NumPy..." && \
+    python -c "import numpy; print(f'✅ NumPy version: {numpy.__version__}')" && \
+    echo "Testing xtcocotools..." && \
+    python -c "import xtcocotools; print('✅ xtcocotools imported successfully')" && \
+    echo "Testing MMPose..." && \
+    python -c "import mmpose; print('✅ MMPose imported successfully')" && \
+    echo "Testing OpenCV..." && \
+    python -c "import cv2; print('✅ OpenCV imported successfully')" && \
+    echo "Testing FastAPI..." && \
+    python -c "import fastapi; print('✅ FastAPI imported successfully')" && \
+    echo "📊 All MMPose dependencies verified successfully"
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser

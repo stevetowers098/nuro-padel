@@ -47,8 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
     && apt-get update && apt-get install -y google-cloud-cli \
     && mkdir -p /var/run/dbus \
-    && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || true \
-    && service dbus start \
+    && (ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null || echo "resolv.conf already managed, skipping...") \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*

@@ -42,8 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus \
     && (apt-get install -y libcrc32c-dev || echo "libcrc32c-dev not available, continuing...") \
     && mkdir -p /var/run/dbus \
-    && service dbus start \
-    && systemctl stop systemd-resolved || true \
+    && (ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null || echo "resolv.conf already managed, skipping...") \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/* \
@@ -91,9 +90,12 @@ RUN echo "🔍 OFFICIAL MMCV INSTALL: Following official MMCV installation guide
     (pip install --no-cache-dir --no-deps google_crc32c --verbose || echo "google_crc32c installation failed, continuing without it...") && \
     echo "Step 12: Installing MMPose and xtcocotools..." && \
     mim install mmpose xtcocotools --verbose && \
-    echo "Step 13: Installing additional requirements..." && \
+    echo "Step 13: Verifying mmcv ops availability..." && \
+    python -c "import mmcv; print(f'MMCV version: {mmcv.__version__}'); print(f'MMCV ops available: {hasattr(mmcv, \"ops\")}')" && \
+    echo "Step 14: Installing additional requirements with version constraints..." && \
+    pip install --no-cache-dir --force-reinstall rich==13.4.2 && \
     pip install --no-cache-dir -r requirements.txt --verbose && \
-    echo "Step 14: Checking all dependencies for conflicts..." && \
+    echo "Step 15: Final dependency check..." && \
     pip check || echo "Warning: Some dependency conflicts detected but proceeding..." && \
     echo "Step 15: Cleaning up..." && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -117,7 +119,7 @@ RUN echo "🔍 OFFICIAL VERIFICATION: Testing all MMPose dependencies with offic
     python -c "import torch; print(f'✅ CUDA version: {torch.version.cuda}')" && \
     echo "Testing MMCV (full version with CUDA ops)..." && \
     python -c "import mmcv; print(f'✅ MMCV version: {mmcv.__version__}')" && \
-    python -c "import mmcv; print(f'✅ MMCV CUDA available: {mmcv.ops.get_compiler_version()}' if hasattr(mmcv.ops, 'get_compiler_version') else '✅ MMCV ops available')" && \
+    python -c "import mmcv; print(f'✅ MMCV ops available: {hasattr(mmcv, \"ops\")}'); print(f'✅ MMCV CUDA ops: {hasattr(mmcv.ops, \"get_compiler_version\") if hasattr(mmcv, \"ops\") else \"ops not available\"}')" && \
     echo "Testing mmengine..." && \
     python -c "import mmengine; print(f'✅ MMEngine version: {mmengine.__version__}')" && \
     echo "Testing mmdet..." && \

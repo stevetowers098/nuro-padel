@@ -47,6 +47,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
     && apt-get update && apt-get install -y google-cloud-cli \
     && mkdir -p /var/run/dbus \
+    && rm -f /etc/resolv.conf \
+    && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf \
     && service dbus start \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
@@ -81,12 +83,24 @@ RUN echo "🔍 RESOLVING DEPENDENCIES: Installing with conflict resolution..." &
     echo "Step 2: Installing super-gradients compatible versions first..." && \
     pip install --no-cache-dir "numpy==1.23.0" "requests==2.31.0" --verbose && \
     echo "Step 3: Installing super-gradients with conflicting packages excluded..." && \
-    pip install --no-cache-dir super-gradients==3.7.1 --no-deps --verbose && \
+    echo "Step 3a: DIAGNOSTIC - Checking super-gradients dependencies before install..." && \
+    pip show super-gradients || echo "super-gradients not yet installed" && \
+    echo "Step 3b: Installing super-gradients without --no-deps to include required dependencies..." && \
+    pip install --no-cache-dir super-gradients==3.7.1 --verbose && \
+    echo "Step 3c: DIAGNOSTIC - Verifying super-gradients dependencies were installed..." && \
+    pip show albumentations boto3 psutil || echo "Some dependencies missing - this confirms the issue" && \
     echo "Step 4: Installing super-gradients core dependencies manually..." && \
     pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 --verbose && \
     echo "Step 5: Installing remaining requirements..." && \
     pip install --no-cache-dir -r requirements.txt --verbose && \
-    echo "Step 6: Listing installed packages for verification..." && \
+    echo "Step 6: Installing super-gradients missing dependencies explicitly..." && \
+    pip install --no-cache-dir \
+        "albumentations~=1.3" \
+        "boto3>=1.17.15" \
+        psutil --verbose && \
+    echo "Step 7: DIAGNOSTIC - Final verification of all dependencies..." && \
+    pip show albumentations boto3 psutil super-gradients && \
+    echo "Step 8: Listing installed packages for verification..." && \
     pip list
 
 # Create weights directory
@@ -98,8 +112,15 @@ COPY . .
 # Set proper permissions
 RUN chmod +x /app/main.py
 
-# Verify super-gradients installation - fail fast if broken
-RUN echo "🔍 VERIFICATION: Testing super-gradients import..." && \
+# Verify super-gradients installation and all required dependencies
+RUN echo "🔍 VERIFICATION: Testing super-gradients and its dependencies..." && \
+    echo "Checking albumentations..." && \
+    python -c "import albumentations; print(f'✅ albumentations version: {albumentations.__version__}')" && \
+    echo "Checking boto3..." && \
+    python -c "import boto3; print(f'✅ boto3 version: {boto3.__version__}')" && \
+    echo "Checking psutil..." && \
+    python -c "import psutil; print(f'✅ psutil version: {psutil.__version__}')" && \
+    echo "Testing super-gradients import..." && \
     python -c "from super_gradients.training import models; print('✅ super-gradients imported successfully')"
 
 # Additional verification for debugging (non-critical imports)

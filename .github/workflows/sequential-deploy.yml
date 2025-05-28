@@ -1,0 +1,200 @@
+name: 🚀 Sequential VM Deployment (Space Optimized)
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy (yolo-combined, mmpose, yolo-nas, or all)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - yolo-combined
+        - mmpose
+        - yolo-nas
+      cleanup_after:
+        description: 'Cleanup local images after deployment'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: nuro-padel
+
+jobs:
+  # === SEQUENTIAL SERVICE DEPLOYMENT ===
+  deploy-sequential:
+    name: 🔄 Sequential VM Deployment
+    runs-on: ubuntu-latest
+    if: github.event.inputs.service != ''
+    
+    strategy:
+      matrix:
+        service: ${{ github.event.inputs.service == 'all' && fromJson('["yolo-combined", "mmpose", "yolo-nas"]') || fromJson(format('["{0}"]', github.event.inputs.service)) }}
+      max-parallel: 1  # Critical: Deploy one at a time
+      fail-fast: false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Free Disk Space (Aggressive)
+      run: |
+        echo "🧹 Aggressive disk cleanup for ${{ matrix.service }}..."
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/share/powershell
+        sudo rm -rf /usr/share/swift
+        sudo rm -rf /opt/microsoft
+        sudo rm -rf /usr/local/share/chromium
+        sudo rm -rf /opt/google
+        
+        # Clean Docker completely
+        sudo docker system prune -af --volumes
+        sudo docker builder prune -af
+        
+        echo "📊 Disk space after cleanup:"
+        df -h
+        
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          network=host
+          
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata for ${{ matrix.service }}
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}
+        tags: |
+          type=ref,event=branch
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: Build ${{ matrix.service }} with space optimization
+      uses: docker/build-push-action@v5
+      with:
+        context: ./${{ matrix.service }}-service
+        platforms: linux/amd64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=${{ matrix.service }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+          
+    - name: Setup SSH for VM deployment
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+        
+    - name: Add VM to known hosts
+      run: |
+        ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+        
+    - name: Deploy ${{ matrix.service }} to VM
+      run: |
+        echo "🚀 Deploying ${{ matrix.service }} to VM..."
+        
+        # Deploy single service to VM
+        ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+          cd ${{ secrets.VM_PATH }}
+          
+          # Pull only this service's image
+          export REGISTRY=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}
+          docker pull $REGISTRY/${{ matrix.service }}:latest
+          
+          # Stop and remove old container for this service
+          docker-compose stop ${{ matrix.service }} || true
+          docker-compose rm -f ${{ matrix.service }} || true
+          
+          # Remove old image to save space
+          docker images --filter "reference=$REGISTRY/${{ matrix.service }}" --format "table {{.ID}}" | tail -n +2 | head -n -1 | xargs -r docker rmi || true
+          
+          # Start only this service
+          docker-compose up -d ${{ matrix.service }}
+          
+          # Wait for service to be healthy
+          echo "⏳ Waiting for ${{ matrix.service }} to be healthy..."
+          timeout 300 bash -c 'until docker-compose ps ${{ matrix.service }} | grep -q "healthy\|running"; do sleep 10; done'
+          
+          # Test service endpoint
+          case "${{ matrix.service }}" in
+            "yolo-combined") PORT=8001 ;;
+            "mmpose") PORT=8003 ;;
+            "yolo-nas") PORT=8004 ;;
+          esac
+          
+          curl -f http://localhost:$PORT/healthz || exit 1
+          
+          echo "✅ ${{ matrix.service }} deployed successfully!"
+          
+          # Show disk usage
+          df -h
+        EOF
+        
+    - name: Cleanup local images (optional)
+      if: github.event.inputs.cleanup_after == 'true'
+      run: |
+        echo "🧹 Cleaning up local images for ${{ matrix.service }}..."
+        docker system prune -af
+        docker builder prune -af
+        
+    - name: Report deployment status
+      run: |
+        echo "✅ ${{ matrix.service }} deployment completed successfully!"
+        echo "📊 Final disk usage:"
+        df -h
+
+  # === POST-DEPLOYMENT VERIFICATION ===
+  verify-deployment:
+    name: 🔍 Verify All Services
+    runs-on: ubuntu-latest
+    needs: deploy-sequential
+    if: always() && github.event.inputs.service == 'all'
+    
+    steps:
+    - name: Setup SSH for verification
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+        
+    - name: Add VM to known hosts
+      run: |
+        ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+        
+    - name: Verify all services on VM
+      run: |
+        echo "🔍 Verifying all services are running..."
+        
+        ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+          cd ${{ secrets.VM_PATH }}
+          
+          echo "📋 Service status:"
+          docker-compose ps
+          
+          echo "🏥 Health checks:"
+          curl -f http://localhost:8001/healthz && echo "✅ YOLO Combined: Healthy"
+          curl -f http://localhost:8003/healthz && echo "✅ MMPose: Healthy"  
+          curl -f http://localhost:8004/healthz && echo "✅ YOLO-NAS: Healthy"
+          curl -f http://localhost/healthz && echo "✅ Load Balancer: Healthy"
+          
+          echo "💾 Final disk usage:"
+          df -h
+          
+          echo "🎉 Sequential deployment verification complete!"
+        EOF

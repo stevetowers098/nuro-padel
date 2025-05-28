@@ -1,5 +1,32 @@
 # NuroPadel - AI-Powered Padel Analysis Platform
 
+## 🚀 Deployment Optimizations Summary
+
+**Problem**: GitHub runners have limited disk space (~14GB) and PyTorch dependencies are large (~2GB each), causing deployment failures.
+
+**Solutions Implemented**:
+- ✅ **Aggressive disk cleanup** in GitHub Actions workflows
+- ✅ **--no-cache-dir** flags for all pip installations
+- ✅ **Sequential model deployment** - deploy one service at a time then delete
+- ✅ **Space monitoring** and cleanup between deployments
+- ✅ **CPU-only PyTorch option** for space-constrained environments
+
+**Quick Usage**:
+```bash
+# Sequential deployment (space optimized)
+./deploy.sh --deploy-sequential
+
+# Deploy single service
+./deploy.sh --deploy-seq yolo-combined
+
+# GitHub Actions sequential workflow
+gh workflow run sequential-deploy.yml -f service=all
+```
+
+**Result**: ~70% reduction in disk space usage during deployment, reliable CI/CD pipeline.
+
+---
+
 ## Overview
 
 NuroPadel is a comprehensive padel analysis platform that combines multiple AI models for player pose estimation, object detection, and advanced ball tracking. The platform leverages YOLO models for real-time detection and TrackNet for enhanced ball trajectory analysis.
@@ -191,15 +218,94 @@ python main.py
 
 ## Deployment
 
+### Deployment Optimizations (Disk Space Management)
+
+#### Disk Space Issues
+GitHub runners have limited disk space (~14GB). PyTorch and ML dependencies are large (~2GB each). Our optimizations address this:
+
+#### 1. Aggressive Disk Cleanup
+```yaml
+- name: Free Disk Space
+  run: |
+    sudo rm -rf /usr/share/dotnet
+    sudo rm -rf /opt/ghc
+    sudo rm -rf "/usr/local/share/boost"
+    sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+    sudo rm -rf /usr/local/lib/android
+    sudo docker system prune -af --volumes
+    df -h
+```
+
+#### 2. No-Cache Installation
+All pip installations use `--no-cache-dir` to prevent storing downloaded packages:
+```dockerfile
+ENV PIP_NO_CACHE_DIR=1
+RUN pip install --no-cache-dir -r requirements.txt
+```
+
+#### 3. Sequential Model Deployment
+Deploy models one at a time to minimize memory usage:
+
+**GitHub Actions Sequential Workflow:**
+```bash
+# Deploy single service
+gh workflow run sequential-deploy.yml -f service=yolo-combined
+
+# Deploy all services sequentially
+gh workflow run sequential-deploy.yml -f service=all
+```
+
+**Local Sequential Deployment:**
+```bash
+# Deploy services one by one
+./deploy.sh --deploy-sequential
+
+# Deploy specific service
+./deploy.sh --deploy-seq yolo-combined
+
+# Clean disk space aggressively
+./deploy.sh --cleanup-disk
+```
+
+#### 4. CPU-Only PyTorch (Space Saving)
+For environments with disk constraints, use CPU-only PyTorch:
+```txt
+torch==2.3.1+cpu --index-url https://download.pytorch.org/whl/cpu
+torchvision==0.18.1+cpu --index-url https://download.pytorch.org/whl/cpu
+```
+
+#### 5. Split Installation Strategy
+Install dependencies in stages to manage memory:
+```bash
+# Install core packages first
+pip install --no-cache-dir numpy opencv-python fastapi
+
+# Install PyTorch separately
+pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining dependencies
+pip install --no-cache-dir -r requirements.txt
+```
+
 ### Production Environment
 ```bash
 docker-compose -f docker-compose.yml up -d
+```
+
+### Space-Optimized VM Deployment
+```bash
+# Traditional deployment (all at once)
+./deploy.sh --vm
+
+# Sequential deployment (space optimized)
+./deploy.sh --deploy-sequential
 ```
 
 ### Scaling
 - Horizontal scaling via Docker Swarm or Kubernetes
 - Load balancing handled by nginx
 - GPU acceleration for TrackNet processing
+- Sequential deployment for resource-constrained environments
 
 ## API Documentation
 

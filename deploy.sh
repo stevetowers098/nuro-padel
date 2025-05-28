@@ -442,6 +442,119 @@ cleanup() {
     docker images --filter "dangling=true" -q | xargs -r docker rmi
 }
 
+# Sequential deployment (space optimized)
+deploy_sequential() {
+    local services_to_deploy=("${@:-${SERVICES[@]}}")
+    
+    log "🔄 Sequential deployment for disk space optimization..."
+    log "Services to deploy: ${services_to_deploy[*]}"
+    
+    for service in "${services_to_deploy[@]}"; do
+        log "🚀 Deploying ${service} service..."
+        
+        # Free up space before each service
+        log "🧹 Cleaning up before ${service} deployment..."
+        docker system prune -f --volumes >/dev/null 2>&1 || true
+        docker builder prune -f >/dev/null 2>&1 || true
+        
+        # Build only this service
+        build_service "$service"
+        
+        # Deploy only this service
+        log "Starting ${service} service..."
+        $DOCKER_COMPOSE up -d "$service"
+        
+        # Wait for service to be healthy
+        local max_wait=120
+        local wait_time=0
+        log "⏳ Waiting for ${service} to be healthy (max ${max_wait}s)..."
+        
+        while [ $wait_time -lt $max_wait ]; do
+            if $DOCKER_COMPOSE ps "$service" | grep -q "healthy\|running"; then
+                success "${service} is healthy!"
+                break
+            fi
+            sleep 10
+            wait_time=$((wait_time + 10))
+        done
+        
+        if [ $wait_time -ge $max_wait ]; then
+            error "${service} failed to become healthy within ${max_wait}s"
+            $DOCKER_COMPOSE logs "$service"
+            return 1
+        fi
+        
+        # Test service endpoint
+        case "$service" in
+            "yolo-combined") test_service_endpoint "localhost:8001" ;;
+            "mmpose") test_service_endpoint "localhost:8003" ;;
+            "yolo-nas") test_service_endpoint "localhost:8004" ;;
+        esac
+        
+        # Clean up after successful deployment
+        log "🧹 Cleaning up after ${service} deployment..."
+        docker image prune -f >/dev/null 2>&1 || true
+        
+        success "${service} deployed successfully!"
+    done
+    
+    # Start nginx load balancer last
+    log "🔄 Starting nginx load balancer..."
+    $DOCKER_COMPOSE up -d nginx
+    
+    success "Sequential deployment completed!"
+}
+
+# Test service endpoint
+test_service_endpoint() {
+    local endpoint=$1
+    local max_attempts=6
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl -f "http://${endpoint}/healthz" &> /dev/null; then
+            success "Health check passed for ${endpoint}"
+            return 0
+        fi
+        
+        log "Health check attempt ${attempt}/${max_attempts} failed for ${endpoint}, retrying..."
+        sleep 10
+        ((attempt++))
+    done
+    
+    error "Health check failed for ${endpoint} after ${max_attempts} attempts"
+    return 1
+}
+
+# Free disk space aggressively
+free_disk_space() {
+    log "🧹 Freeing disk space aggressively..."
+    
+    # Clean Docker
+    docker system prune -af --volumes 2>/dev/null || true
+    docker builder prune -af 2>/dev/null || true
+    docker volume prune -f 2>/dev/null || true
+    
+    # Clean package caches
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get clean 2>/dev/null || true
+        sudo apt-get autoremove -y 2>/dev/null || true
+    fi
+    
+    # Clean pip cache
+    pip cache purge 2>/dev/null || true
+    
+    # Clean temporary files
+    sudo rm -rf /tmp/* 2>/dev/null || true
+    sudo rm -rf /var/tmp/* 2>/dev/null || true
+    
+    # Show disk usage
+    log "📊 Current disk usage:"
+    df -h | head -5
+    
+    success "Disk cleanup completed"
+}
+
 # Show usage
 usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -456,6 +569,11 @@ usage() {
     echo "  --deploy-force       Force full redeployment"
     echo "  --all-force          Force rebuild and redeploy"
     echo ""
+    echo "Sequential Options (space optimized):"
+    echo "  --deploy-sequential  Deploy services one by one (saves disk space)"
+    echo "  --deploy-seq SERVICE Deploy single service sequentially"
+    echo "  --cleanup-disk       Aggressive disk space cleanup"
+    echo ""
     echo "Other Options:"
     echo "  --test               Test all services locally"
     echo "  --vm                 Deploy to VM"
@@ -467,6 +585,9 @@ usage() {
     echo "  $0 --build-force      # Force rebuild all"
     echo "  $0 --all              # Smart full deployment"
     echo "  $0 --all-force        # Force full deployment"
+    echo "  $0 --deploy-sequential # Deploy one service at a time"
+    echo "  $0 --deploy-seq yolo-combined # Deploy only YOLO Combined"
+    echo "  $0 --cleanup-disk     # Free up disk space"
     echo "  $0 --vm               # Deploy to VM"
 }
 
@@ -492,6 +613,22 @@ main() {
         --deploy-force)
             check_prerequisites
             deploy_production
+            ;;
+        --deploy-sequential)
+            check_prerequisites
+            deploy_sequential
+            ;;
+        --deploy-seq)
+            if [ -z "${2:-}" ]; then
+                error "Service name required for --deploy-seq"
+                echo "Available services: ${SERVICES[*]}"
+                exit 1
+            fi
+            check_prerequisites
+            deploy_sequential "$2"
+            ;;
+        --cleanup-disk)
+            free_disk_space
             ;;
         --vm)
             deploy_vm

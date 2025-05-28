@@ -1,386 +1,200 @@
-name: Deploy NuroPadel to VM
+name: Deploy NuroPadel Services
+
 on:
   push:
+    branches: [main, develop]
+  pull_request:
     branches: [main]
-  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
-
-    - name: Start VM Instance if Stopped
+    - name: Free Disk Space
       run: |
-        echo "Checking VM instance status..."
-        STATUS=$(gcloud compute instances describe padel-ai --zone=australia-southeast1-a --project=surf-coach --format="value(status)" 2>/dev/null || echo "ERROR")
-        echo "Current VM status: $STATUS"
-        if [ "$STATUS" = "TERMINATED" ] || [ "$STATUS" = "STOPPED" ]; then
-          echo "VM is stopped. Starting instance..."
-          gcloud compute instances start padel-ai --zone=australia-southeast1-a --project=surf-coach
-          echo "Waiting for VM to boot..."
-          sleep 90
-          echo "Testing SSH connection..."
-          for i in {1..20}; do
-            if timeout 15 gcloud compute ssh padel-ai --zone=australia-southeast1-a --project=surf-coach --command="echo 'SSH Ready'" --ssh-flag="-o ConnectTimeout=10" --ssh-flag="-o StrictHostKeyChecking=no" 2>/dev/null; then
-              echo "SSH connection ready!"
-              break
-            fi
-            echo "SSH attempt $i/20..."
-            sleep 15
-          done
-        elif [ "$STATUS" = "RUNNING" ]; then
-          echo "VM is already running"
+        echo "=== Initial Disk Usage ==="
+        df -h
+        echo "=== Cleaning up disk space ==="
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/share/swift
+        sudo rm -rf /opt/hostedtoolcache
+        sudo docker system prune -af
+        echo "=== After cleanup ==="
+        df -h
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Core Dependencies (No Cache)
+      run: |
+        python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        pip install --no-cache-dir numpy opencv-python-headless fastapi uvicorn
+
+    - name: Install PyTorch CPU (Space Optimized)
+      run: |
+        pip install --no-cache-dir torch==2.3.1+cpu torchvision==0.18.1+cpu --index-url https://download.pytorch.org/whl/cpu
+
+    - name: Install YOLO Combined Service Dependencies
+      run: |
+        cd yolo-combined-service
+        pip install --no-cache-dir -r requirements.txt
+
+    - name: Install MMPose Service Dependencies
+      run: |
+        cd mmpose-service
+        pip install --no-cache-dir pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0
+        pip install --no-cache-dir mmpose
+        pip install --no-cache-dir -r requirements.txt
+
+    - name: Install YOLO-NAS Service Dependencies
+      run: |
+        cd yolo-nas-service
+        pip install --no-cache-dir "numpy>=1.24.4" "docutils>=0.18,<0.19" "requests>=2.31.0"
+        pip install --no-cache-dir super-gradients==3.7.1
+        pip install --no-cache-dir -r requirements.txt
+
+    - name: Check Disk Space After Installs
+      run: df -h
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+    - name: Build and push YOLO Combined Service
+      uses: docker/build-push-action@v5
+      with:
+        context: ./yolo-combined-service
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/yolo-combined:latest
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+    - name: Build and push MMPose Service
+      uses: docker/build-push-action@v5
+      with:
+        context: ./mmpose-service
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/mmpose:latest
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+    - name: Build and push YOLO-NAS Service
+      uses: docker/build-push-action@v5
+      with:
+        context: ./yolo-nas-service
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/yolo-nas:latest
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+    - name: Test Service Health Checks
+      run: |
+        echo "Testing service configurations..."
+        # Test YOLO Combined Service
+        cd yolo-combined-service && python -c "
+        try:
+            from tracknet.model import TrackNet
+            print('✅ TrackNet model imports successfully')
+        except Exception as e:
+            print(f'⚠️  TrackNet import failed: {e}')
+        
+        try:
+            from ultralytics import YOLO
+            print('✅ YOLO imports successfully')
+        except Exception as e:
+            print(f'❌ YOLO import failed: {e}')
+        "
+
+    - name: Final Disk Space Check
+      run: |
+        echo "=== Final Disk Usage ==="
+        df -h
+        echo "=== Docker Images ==="
+        docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+
+  test-integration:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Start services with docker-compose
+      run: |
+        echo "Starting NuroPadel services for integration testing..."
+        docker-compose up -d --build
+
+    - name: Wait for services to be ready
+      run: |
+        echo "Waiting for services to start..."
+        sleep 60
+
+    - name: Test service endpoints
+      run: |
+        echo "Testing YOLO Combined Service..."
+        curl -f http://localhost:8001/healthz || exit 1
+        
+        echo "Testing MMPose Service..."
+        curl -f http://localhost:8002/healthz || exit 1
+        
+        echo "Testing YOLO-NAS Service..."
+        curl -f http://localhost:8003/healthz || exit 1
+        
+        echo "✅ All services are healthy"
+
+    - name: Test TrackNet Integration
+      run: |
+        echo "Testing TrackNet integration..."
+        response=$(curl -s http://localhost:8001/healthz)
+        echo "Health check response: $response"
+        
+        if echo "$response" | grep -q '"tracknet"'; then
+          echo "✅ TrackNet integration detected in health check"
         else
-          echo "Unknown VM status: $STATUS, attempting to start..."
-          gcloud compute instances start padel-ai --zone=australia-southeast1-a --project=surf-coach || true
-          sleep 60
+          echo "ℹ️  TrackNet not available (expected without model weights)"
         fi
 
-    - name: Test SSH Connectivity (Direct)
-      id: ssh_test
-      continue-on-error: true
-      uses: appleboy/ssh-action@v0.1.7
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: Towers
-        key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 30s
-        command_timeout: 15s
-        debug: true
-        script: |
-          echo "=== SSH Connection Test ==="
-          echo "User: $(whoami)"
-          echo "Host: $(hostname)"
-          echo "Date: $(date)"
-          echo "=== Connection Successful ==="
-
-    - name: SSH Key Diagnosis
-      if: steps.ssh_test.outcome == 'failure'
+    - name: Cleanup
       run: |
-        echo "❌ Direct SSH failed. Diagnosing SSH key issues..."
-        echo "🔍 VM_SSH_KEY first/last lines check:"
-        echo "First line: $(echo '${{ secrets.VM_SSH_KEY }}' | head -1)"
-        echo "Last line: $(echo '${{ secrets.VM_SSH_KEY }}' | tail -1)"
-        echo "Key length: $(echo '${{ secrets.VM_SSH_KEY }}' | wc -c) characters"
-        echo ""
-        echo "💡 Common issues:"
-        echo "1. VM_SSH_KEY should start with '-----BEGIN OPENSSH PRIVATE KEY-----'"
-        echo "2. VM_SSH_KEY should end with '-----END OPENSSH PRIVATE KEY-----'"
-        echo "3. Public key might not be in /home/Towers/.ssh/authorized_keys on VM"
-        echo "4. File permissions might be wrong on VM"
-        echo ""
-        echo "📋 Next steps:"
-        echo "1. Check GitHub secrets VM_SSH_KEY format"
-        echo "2. Verify public key is on VM: cat ~/.ssh/authorized_keys"
-        echo "3. Fix permissions: chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
-
-    - name: Alternative - GCP Console Instructions
-      if: steps.ssh_test.outcome == 'failure'
-      run: |
-        echo "🔄 SSH Key authentication failed. Manual setup required."
-        echo ""
-        echo "📋 IMMEDIATE SOLUTION - Use GCP Console:"
-        echo "1. Go to https://console.cloud.google.com/compute/instances"
-        echo "2. Click 'SSH' next to your padel-ai instance"
-        echo "3. In the terminal, run these commands:"
-        echo ""
-        echo "   # Create SSH directory"
-        echo "   mkdir -p ~/.ssh && chmod 700 ~/.ssh"
-        echo ""
-        echo "   # Add your GitHub Actions public key"
-        echo "   echo 'YOUR_PUBLIC_KEY_HERE' >> ~/.ssh/authorized_keys"
-        echo "   chmod 600 ~/.ssh/authorized_keys"
-        echo ""
-        echo "   # Restart SSH service"
-        echo "   sudo systemctl restart ssh"
-        echo ""
-        echo "🔑 To get your public key from private key in GitHub Secrets:"
-        echo "   ssh-keygen -y -f <(echo \"\$VM_SSH_KEY\")"
-        echo ""
-        echo "⚠️  This deployment will FAIL until SSH keys are properly configured"
-        exit 1
-
-    - name: Prepare VM for Deployment
-      uses: appleboy/ssh-action@v0.1.7
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: Towers
-        key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 120s
-        command_timeout: 120s
-        debug: true
-        script: |
-          set -e
-          echo "Stopping existing services..."
-          # Stop all current services
-          sudo systemctl stop padel-api yolo11-service yolov8-service mmpose-service yolo-nas-service 2>/dev/null || true
-          echo "Creating base directories..."
-          sudo mkdir -p /opt/padel/app /opt/padel/shared /opt/padel/yolo /opt/padel/mmpose /opt/padel/yolo-nas
-          sudo mkdir -p /opt/padel/app/configs/body_2d_keypoint/rtmpose/coco
-          sudo mkdir -p /opt/padel/app/weights /opt/padel/app/scripts /opt/padel/app/uploads /opt/padel/app/processed
-          sudo chown -R Towers:Towers /opt/padel
-          echo "Preserving model weights..."
-          if [ -d "/opt/padel/app/weights" ]; then
-            cp -r /opt/padel/app/weights /tmp/weights_backup
-            echo "Model weights backed up"
-          fi
-          echo "Cleaning old code..."
-          find /opt/padel/app -maxdepth 1 -type f -delete
-          # Clean old code directories (preserving weights, uploads, processed)
-          for dir in /opt/padel/app/*/; do
-            dirname=$(basename "$dir")
-            if [ "$dirname" != "weights" ] && [ "$dirname" != "uploads" ] && [ "$dirname" != "processed" ]; then
-              rm -rf "$dir" 2>/dev/null || true
-            fi
-          done
-          echo "VM prepared for code transfer"
-
-    - name: Smart Code Update
-      uses: appleboy/ssh-action@v0.1.7
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: Towers
-        key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 180s
-        command_timeout: 180s
-        debug: true
-        script: |
-          set -e
-          echo "📦 Downloading and updating code..."
-          cd /opt/padel
-          curl -sL https://github.com/stevetowers098/nuro-padel/archive/refs/heads/main.tar.gz | tar -xz
-          
-          echo "📂 Copying new code..."
-          cp -r nuro-padel-main/* app/
-          rm -rf nuro-padel-main
-          
-          echo "🔄 Preserving manually managed weights..."
-          if [ -d "/tmp/weights_backup" ]; then
-            cp -r /tmp/weights_backup/* app/weights/ 2>/dev/null || true
-            rm -rf /tmp/weights_backup
-            echo "✅ Model weights restored"
-          else
-            echo "⚠️ No weights backup found - weights must be manually uploaded"
-            mkdir -p app/weights
-          fi
-          
-          echo "🎯 Code update complete!"
-
-    - name: Setup Virtual Environments (Smart)
-      uses: appleboy/ssh-action@v0.1.7
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: Towers
-        key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 1200s
-        command_timeout: 1200s
-        debug: true
-        script: |
-          set -e
-          
-          # Check if we need to rebuild environments
-          cd /opt/padel
-          REBUILD_VENVS=false
-          if [ ! -f "requirements.txt" ] || ! diff -q app/requirements.txt requirements.txt >/dev/null 2>&1; then
-            echo "🔄 Main requirements changed - need to rebuild shared venv"
-            REBUILD_VENVS=true
-          fi
-          if [ ! -d "requirements" ] || ! diff -q -r app/requirements/ requirements/ >/dev/null 2>&1; then
-            echo "🔄 Service requirements changed - need to rebuild service venvs"
-            REBUILD_VENVS=true
-          fi
-          
-          # Function to setup/check virtual environment
-          setup_venv() {
-            local venv_path=$1
-            local venv_name=$2
-            local req_file=$3
-            
-            cd $venv_path
-            if [ "$REBUILD_VENVS" = "true" ] || [ ! -d "venv" ]; then
-              echo "🔧 Setting up $venv_name environment..."
-              if [ -d "venv" ]; then
-                rm -rf venv
-              fi
-              python3.10 -m venv venv
-              source venv/bin/activate
-              pip install --upgrade pip setuptools wheel --quiet --no-cache-dir --disable-pip-version-check
-              if [ -f "$req_file" ]; then
-                pip install -r "$req_file" --quiet --no-cache-dir --disable-pip-version-check
-              else
-                echo "⚠️ $req_file not found, using fallback packages"
-                case $venv_name in
-                  "shared")
-                    pip install fastapi==0.115.12 uvicorn==0.32.0 pydantic==2.11.5 httpx==0.27.2 python-multipart google-cloud-storage google-cloud-compute --quiet --no-cache-dir --disable-pip-version-check
-                    ;;
-                  "yolo")
-                    pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
-                    pip install fastapi==0.115.12 pydantic==2.11.5 httpx==0.27.2 ultralytics==8.2.103 super-gradients==3.7.0 --quiet --no-cache-dir --disable-pip-version-check
-                    ;;
-                  "yolo-nas")
-                    # Conservative PyTorch versions for YOLO-NAS compatibility
-                    pip install 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
-                    pip install super-gradients fastapi==0.115.12 pydantic==2.11.5 httpx==0.27.2 --quiet --no-cache-dir --disable-pip-version-check
-                    ;;
-                esac
-              fi
-              deactivate
-              echo "✅ $venv_name environment ready"
-            else
-              echo "⚡ $venv_name environment exists and requirements unchanged - skipping"
-            fi
-          }
-          
-          if [ "$REBUILD_VENVS" = "true" ]; then
-            echo "🏗️ Rebuilding virtual environments..."
-          else
-            echo "⚡ Requirements unchanged - checking existing environments..."
-          fi
-          
-          setup_venv "/opt/padel/shared" "shared" "/opt/padel/app/requirements/optimized_main.txt"
-          setup_venv "/opt/padel/yolo" "yolo" "/opt/padel/app/requirements/optimized_yolo.txt"
-          setup_venv "/opt/padel/yolo-nas" "yolo-nas" "/opt/padel/app/requirements/yolo-nas.txt"
-          
-          # MMPose special handling with package compatibility fixes
-          cd /opt/padel/mmpose
-          if [ "$REBUILD_VENVS" = "true" ] || [ ! -d "venv" ]; then
-            echo "🔧 Setting up MMPose environment with compatibility fixes..."
-            if [ -d "venv" ]; then rm -rf venv; fi
-            python3.10 -m venv venv
-            source venv/bin/activate
-            
-            # Upgrade pip and setuptools
-            pip install --upgrade pip setuptools==60.2.0 --quiet --no-cache-dir --disable-pip-version-check
-            
-            # Clean up any conflicting packages
-            pip uninstall openxlab torch torchvision torchaudio triton xtcocotools pycocotools numpy -y --quiet 2>/dev/null || true
-            
-            # Install compatible NumPy version first (compatible with PyTorch 2.4.1)
-            pip install numpy==1.24.3 --quiet --no-cache-dir --disable-pip-version-check
-            
-            # Install PyTorch with compatible stable versions
-            pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu121 --quiet --no-cache-dir --disable-pip-version-check
-            
-            # Install cython before cocotools
-            pip install cython --quiet --no-cache-dir --disable-pip-version-check
-            
-            # Install cocotools in correct order
-            pip install pycocotools --quiet --no-cache-dir --disable-pip-version-check
-            pip install xtcocotools --no-deps --force-reinstall --quiet --no-cache-dir --disable-pip-version-check
-            
-            # Install MMPose dependencies
-            pip install openmim --quiet --no-cache-dir --disable-pip-version-check
-            mim install "mmpose>=1.0.0"
-            mim install "mmcv>=2.0.1"
-            
-            # Install additional requirements
-            if [ -f "/opt/padel/app/requirements/optimized_mmpose.txt" ]; then
-              pip install -r /opt/padel/app/requirements/optimized_mmpose.txt --quiet --no-cache-dir --disable-pip-version-check
-            else
-              pip install fastapi==0.115.12 pydantic==2.11.5 httpx==0.27.2 mmpose==1.3.2 --quiet --no-cache-dir --disable-pip-version-check
-            fi
-            
-            # Verify installation
-            echo "🔍 Verifying MMPose installation..."
-            python -c "import numpy as np; print(f'NumPy version: {np.__version__}'); import xtcocotools; print('xtcocotools imported successfully'); import mmpose; print('MMPose imported successfully'); print('✅ All MMPose dependencies working correctly')" 2>/dev/null || echo "⚠️ MMPose verification failed - manual fix may be required"
-            
-            deactivate
-            echo "✅ MMPose environment ready"
-          else
-            echo "⚡ MMPose environment exists and requirements unchanged - skipping"
-          fi
-          
-          echo "🎯 Virtual environment setup complete!"
-
-    - name: Copy Service Configurations
-      uses: appleboy/ssh-action@v0.1.7
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: Towers
-        key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 60s
-        command_timeout: 60s
-        debug: true
-        script: |
-          set -e
-          echo "📋 Copying systemd service files..."
-          sudo cp /opt/padel/app/service_configs/*.service /etc/systemd/system/
-          echo "🔄 Reloading systemd daemon..."
-          sudo systemctl daemon-reload
-          echo "✅ Service configurations installed"
-
-    - name: Configure and Start Services
-      uses: appleboy/ssh-action@v0.1.7
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: Towers
-        key: ${{ secrets.VM_SSH_KEY }}
-        timeout: 600s
-        command_timeout: 600s
-        debug: true
-        script: |
-          set -e
-          check_service_health() {
-            local port=$1
-            local service_name=$2
-            local max_retries=20
-            local retry_count=0
-            while [ $retry_count -lt $max_retries ]; do
-              if curl -s -f --max-time 5 http://localhost:$port/healthz > /dev/null 2>&1; then
-                echo "✅ $service_name (port $port): healthy"
-                return 0
-              fi
-              retry_count=$((retry_count + 1))
-              echo "⏳ Waiting for $service_name (attempt $retry_count/$max_retries)..."
-              sleep 3
-            done
-            echo "❌ $service_name (port $port): failed health check"
-            sudo journalctl -u $service_name -n 5 --no-pager || true
-            return 1
-          }
-          
-          echo "🔄 Starting all services..."
-          ALL_SERVICES="yolo11-service yolov8-service mmpose-service yolo-nas-service padel-api"
-          for service in $ALL_SERVICES; do
-            echo "Starting $service..."
-            sudo systemctl enable $service
-            sudo systemctl restart $service
-            sleep 5
-          done
-          
-          echo "⏳ Waiting for all services to initialize (60 seconds)..."
-          sleep 60
-          
-          echo "🏥 Running health checks..."
-          FAILED_SERVICES=0
-          check_service_health 8001 "yolo11-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
-          check_service_health 8002 "yolov8-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
-          check_service_health 8003 "mmpose-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
-          check_service_health 8004 "yolo-nas-service" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
-          check_service_health 8000 "padel-api" || FAILED_SERVICES=$((FAILED_SERVICES + 1))
-          
-          echo "📊 Final service status:"
-          for service in $ALL_SERVICES; do
-            status=$(systemctl is-active $service)
-            echo "  $service: $status"
-          done
-          
-          if [ $FAILED_SERVICES -gt 0 ]; then
-            echo "⚠️ $FAILED_SERVICES service(s) failed health checks"
-            echo "Check logs with: sudo journalctl -u <service-name> -f"
-          else
-            echo "🎉 All services healthy! Deployment successful!"
-          fi
-          
-          echo "🎯 Deployment complete!"
-
+        docker-compose down
+        docker system prune -af

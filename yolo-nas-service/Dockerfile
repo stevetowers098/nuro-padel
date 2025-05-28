@@ -57,10 +57,18 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install dependencies - let super-gradients handle its own requirements first, then override with pinned versions
-RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir super-gradients==3.7.1 && \
-    pip install --no-cache-dir -r requirements.txt
+# Install dependencies with correct order to resolve super-gradients conflicts
+RUN echo "🔍 RESOLVING DEPENDENCIES: Installing in correct order to prevent conflicts..." && \
+    echo "Step 1: Upgrading pip tools..." && \
+    pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel --verbose && \
+    echo "Step 2: Installing specific versions for super-gradients compatibility..." && \
+    pip install --no-cache-dir numpy==1.23.0 sphinx==4.0.2 --verbose && \
+    echo "Step 3: Installing super-gradients..." && \
+    pip install --no-cache-dir super-gradients==3.7.1 --verbose && \
+    echo "Step 4: Installing remaining requirements..." && \
+    pip install --no-cache-dir -r requirements.txt --verbose && \
+    echo "Step 5: Listing installed packages for verification..." && \
+    pip list
 
 # Create weights directory
 RUN mkdir -p /app/weights
@@ -71,8 +79,17 @@ COPY . .
 # Set proper permissions
 RUN chmod +x /app/main.py
 
-# Verify super-gradients installation before switching users - fail fast if broken
-RUN python -c "from super_gradients.training import models; print('✅ super-gradients imported successfully')"
+# Verify super-gradients installation - fail fast if broken
+RUN echo "🔍 VERIFICATION: Testing super-gradients import..." && \
+    python -c "from super_gradients.training import models; print('✅ super-gradients imported successfully')"
+
+# Additional verification for debugging (non-critical imports)
+RUN echo "🔍 ADDITIONAL CHECKS: Testing other key imports for debugging..." && \
+    python -c "import cv2; print('✅ opencv imported successfully')" && \
+    python -c "import fastapi; print('✅ fastapi imported successfully')" && \
+    python -c "import numpy; print('✅ numpy imported successfully')" && \
+    python -c "import requests; print('✅ requests imported successfully')" && \
+    echo "📊 All imports verified successfully"
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser

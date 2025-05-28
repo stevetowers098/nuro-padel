@@ -1,0 +1,43 @@
+# Docker Compose Override for Code-Only Changes
+# Use this for instant code deployment without rebuilds
+# Usage: docker-compose -f docker-compose.dev.yml -f docker-compose.code.yml up -d
+
+services:
+  yolo-combined:
+    volumes:
+      # Mount source code for instant changes (no rebuild needed)
+      - ./yolo-combined-service:/app:rw
+      # Override the command to use auto-reload
+      - ./yolo-combined-service/main.py:/app/main.py:rw
+      - ./yolo-combined-service/tracknet:/app/tracknet:rw
+      - ./yolo-combined-service/utils:/app/utils:rw
+    environment:
+      # Enable auto-reload for development
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      # Hot reload for FastAPI
+      - RELOAD=1
+    # Override command for hot reload (if your main.py supports it)
+    # command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+
+  mmpose:
+    volumes:
+      # Mount source code for instant changes
+      - ./mmpose-service:/app:rw
+      - ./mmpose-service/main.py:/app/main.py:rw
+      - ./mmpose-service/utils:/app/utils:rw
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - RELOAD=1
+
+  yolo-nas:
+    volumes:
+      # Mount source code for instant changes
+      - ./yolo-nas-service:/app:rw
+      - ./yolo-nas-service/main.py:/app/main.py:rw
+      - ./yolo-nas-service/utils:/app/utils:rw
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - RELOAD=1

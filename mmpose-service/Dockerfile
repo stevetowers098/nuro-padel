@@ -14,11 +14,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix potential resolv.conf symbolic link issue in Docker with conditional check
-RUN if [ ! -L /etc/resolv.conf ]; then \
-    ln -sfT /run/systemd/resolve/resolv.conf /etc/resolv.conf; \
-    else echo "Symbolic link already exists"; \
-fi
+# Fix potential resolv.conf symbolic link issue in Docker - force removal approach
+RUN rm -f /etc/resolv.conf && ln -sfT /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
 
 # Install system dependencies in single optimized layer
 RUN apt-get update && apt-get install -y --no-install-recommends \

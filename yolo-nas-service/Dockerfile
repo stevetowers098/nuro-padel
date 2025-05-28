@@ -57,17 +57,19 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install dependencies with globally compatible versions to resolve all conflicts
-RUN echo "🔍 RESOLVING DEPENDENCIES: Installing globally compatible versions..." && \
+# Install dependencies with conflict resolution - exclude problematic packages
+RUN echo "🔍 RESOLVING DEPENDENCIES: Installing with conflict resolution..." && \
     echo "Step 1: Upgrading pip tools..." && \
     pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel --verbose && \
-    echo "Step 2: Installing core dependencies with globally compatible versions..." && \
-    pip install --no-cache-dir "numpy==1.24.4" "requests==2.31.0" "sphinx>=6,<9" "docutils>=0.18,<0.22" --verbose && \
-    echo "Step 3: Installing super-gradients..." && \
-    pip install --no-cache-dir super-gradients==3.7.1 --verbose && \
-    echo "Step 4: Installing remaining requirements..." && \
+    echo "Step 2: Installing super-gradients compatible versions first..." && \
+    pip install --no-cache-dir "numpy==1.23.0" "requests==2.31.0" --verbose && \
+    echo "Step 3: Installing super-gradients with conflicting packages excluded..." && \
+    pip install --no-cache-dir super-gradients==3.7.1 --no-deps --verbose && \
+    echo "Step 4: Installing super-gradients core dependencies manually..." && \
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 --verbose && \
+    echo "Step 5: Installing remaining requirements..." && \
     pip install --no-cache-dir -r requirements.txt --verbose && \
-    echo "Step 5: Listing installed packages for verification..." && \
+    echo "Step 6: Listing installed packages for verification..." && \
     pip list
 
 # Create weights directory

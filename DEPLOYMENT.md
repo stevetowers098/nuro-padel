@@ -61,36 +61,34 @@ google-cloud-storage==2.10.0
 
 **Root Cause**: `/etc/resolv.conf` is already in use or locked by another process
 
-**Solution Applied in Dockerfiles**:
+**Solution Applied - Force Removal Approach**:
 ```dockerfile
-# Enhanced conditional check for MMPose
-RUN if [ ! -L /etc/resolv.conf ]; then \
-    ln -sfT /run/systemd/resolve/resolv.conf /etc/resolv.conf; \
-    else echo "Symbolic link already exists"; \
-fi
-
-# YOLO-NAS force removal approach
-RUN rm -f /etc/resolv.conf && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
+# Both MMPose and YOLO-NAS now use the reliable force removal approach
+RUN rm -f /etc/resolv.conf && ln -sfT /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
 ```
+
+**Why This Works**: Forcibly removes any existing file/link before creating the new symlink, avoiding "resource busy" errors. The `|| true` ensures build continues even if the operation fails.
 
 ### 2. Super-gradients Dependency Conflicts
 
 **Error**: `ModuleNotFoundError: No module named 'super_gradients'`
 
-**Root Cause**: Multiple packages require different versions:
-- `albumentations 1.4.18` requires `numpy>=1.24.4`
-- `sphinx-rtd-theme 3.0.2` requires `sphinx>=6,<9`
-- `pyhanko 0.27.1` requires `requests>=2.31.0`
+**Root Cause**: Impossible dependency conflict within super-gradients itself:
+- `super-gradients 3.7.1` requires `numpy<=1.23`
+- `albumentations/albucore` (dependencies of super-gradients) require `numpy>=1.24.4`
 
-**Solution Applied - Use Globally Compatible Versions**:
+**Solution Applied - Install with Dependency Exclusion**:
 ```dockerfile
-# Install globally compatible versions that satisfy ALL packages
-RUN pip install "numpy==1.24.4" "requests==2.31.0" "sphinx>=6,<9" "docutils>=0.18,<0.22"
-RUN pip install super-gradients==3.7.1
+# Install super-gradients compatible versions first
+RUN pip install "numpy==1.23.0" "requests==2.31.0"
+# Install super-gradients without automatic dependency resolution
+RUN pip install super-gradients==3.7.1 --no-deps
+# Manually install essential dependencies (PyTorch, etc.)
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 RUN pip install -r requirements.txt
 ```
 
-**Key Insight**: Instead of downgrading to super-gradients' preferred versions, upgrade to versions that satisfy all packages.
+**Key Insight**: Use `--no-deps` to avoid conflicting sub-dependencies, then manually install only the essential ones.
 
 ### 3. MMPose OpenXLab Conflicts
 

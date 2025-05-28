@@ -1,8 +1,6 @@
 # NuroPadel Docker Compose - Production Deployment
 # 3 Isolated AI Services: YOLO Combined, MMPose, YOLO-NAS
 
-version: '3.8'
-
 services:
   # === YOLO Combined Service (YOLO11 + YOLOv8) ===
   yolo-combined:

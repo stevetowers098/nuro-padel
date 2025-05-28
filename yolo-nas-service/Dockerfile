@@ -15,8 +15,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix potential resolv.conf symbolic link issue in Docker
-RUN rm -f /etc/resolv.conf 2>/dev/null || true
+# Properly fix resolv.conf symlink
+RUN ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
 
 # Install system dependencies with PPA fallback handling
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -42,9 +42,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-transport-https \
     ca-certificates \
     gnupg \
+    dbus \
     && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list \
     && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
     && apt-get update && apt-get install -y google-cloud-cli \
+    && mkdir -p /var/run/dbus \
     && ln -s /usr/bin/python3.10 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
@@ -55,10 +57,8 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install dependencies with compatible versions for super-gradients
+# Install dependencies - let super-gradients handle its own requirements (Bible approach)
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir "sphinx==4.0.2" && \
-    pip install --no-cache-dir --no-deps super-gradients==3.7.1 && \
     pip install --no-cache-dir super-gradients==3.7.1 && \
     pip install --no-cache-dir -r requirements.txt
 

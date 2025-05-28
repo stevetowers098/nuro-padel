@@ -46,10 +46,13 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies - production-grade with conflict resolution
-# PyTorch 1.13.1 required for MMPose compatibility
+# Install Python dependencies with numpy compatibility fix
+# Critical: Install numpy<2.0 first to prevent xtcocotools binary incompatibility
 RUN pip install --no-cache-dir --upgrade pip==23.1.2 setuptools==60.2.0 wheel && \
-    pip install --no-cache-dir torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 && \
+    pip uninstall -y numpy || true && \
+    pip install --no-cache-dir "numpy>=1.21.0,<2.0" && \
+    pip install --no-cache-dir cython && \
+    pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 && \
     pip install --no-cache-dir -U openmim && \
     mim install mmengine && \
     mim install "mmcv==2.1.0" && \

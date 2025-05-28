@@ -57,30 +57,41 @@ curl -X POST http://localhost:8001/yolo11/pose \
 
 ### Critical Issues Resolved ✅
 
-#### 1. YOLO-NAS Dependency Compatibility
-**Problem**: Package version conflicts between core dependencies
-- `sphinx-rtd-theme` requires `docutils<0.22, >0.18` and `sphinx>=6, <9`
-- `pyhanko` packages require `requests>=2.31.0` but `2.22.0` was installed
-- `albumentations` requires `numpy>=1.24.4` but `1.23.0` was installed
+#### 1. MMPose numpy Binary Incompatibility (PRIMARY FIX)
+**Problem**: `ValueError: numpy.ndarray size changed, may indicate binary incompatibility` with xtcocotools
+- numpy 2.0+ breaks binary compatibility with xtcocotools
+- MMPose installation fails during Docker build
+- Related to numpy and Cython version conflicts
 
 **Solution Applied**:
-```txt
-# Updated yolo-nas-service/requirements.txt
-requests>=2.31.0
-numpy>=1.24.4
-docutils>=0.18,<0.22
-sphinx>=6,<9
-sphinx-rtd-theme==3.0.2
+```dockerfile
+# Critical: Install numpy<2.0 first to prevent xtcocotools binary incompatibility
+RUN pip uninstall -y numpy || true && \
+    pip install --no-cache-dir "numpy>=1.21.0,<2.0" && \
+    pip install --no-cache-dir cython && \
+    pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2
 ```
 
-#### 2. Removed Deprecated Pip Options
+#### 2. YOLO-NAS super-gradients Version Issue
+**Problem**: Installation fails due to broken super-gradients version
+- Version 3.1.0 has known import issues and dependency conflicts
+- `No module named 'super_gradients'` errors during installation
+- Dependency conflicts often caused by using outdated super-gradients versions
+
+**Solution Applied**:
+```dockerfile
+# Use latest stable super-gradients (3.7.1) with bug fixes
+RUN pip install --no-cache-dir super-gradients==3.7.1
+```
+
+#### 3. Removed Deprecated Pip Options
 **Problem**: `--use-feature=2020-resolver` option not recognized by recent pip versions
 
-**Solution Applied**: 
+**Solution Applied**:
 - Removed deprecated pip flags from all Dockerfiles
 - Modern pip uses advanced dependency resolution by default
 
-#### 3. Fixed policy-rc.d Execution Errors
+#### 4. Fixed policy-rc.d Execution Errors
 **Problem**: System-level package installation denied during Docker builds
 
 **Solution Applied**:

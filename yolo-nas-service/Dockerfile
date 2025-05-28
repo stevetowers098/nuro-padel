@@ -54,10 +54,10 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install super-gradients FIRST - it manages PyTorch versions correctly
-# Fail fast - no silent failures with fallbacks
+# Install super-gradients FIRST - use latest stable version (avoid 3.1.0 issues)
+# Version 3.7.1+ includes critical bug fixes and import fixes
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir super-gradients && \
+    pip install --no-cache-dir super-gradients==3.7.1 && \
     pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory

@@ -11,8 +11,8 @@ tqdm==4.65.0                   # Stable version
 pycocotools==2.0.7             # Available version (not 2.0.8)
 xtcocotools>=1.14
 
-# --- Core Dependencies ---
-numpy>=1.21.0,<1.25.0          # MMPose compatible range
+# --- Core Dependencies (numpy<2.0 critical for xtcocotools compatibility) ---
+numpy>=1.21.0,<2.0             # Critical: numpy 2.0+ breaks xtcocotools binary compatibility
 cython>=3.0.0
 protobuf>=5.26.1,<6.0.0
 

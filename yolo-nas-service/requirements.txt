@@ -1,13 +1,6 @@
 # YOLO-NAS Service Requirements
-# super-gradients installed first in Dockerfile - manages PyTorch, numpy, protobuf versions
+# super-gradients==3.7.1 installed first in Dockerfile - manages ALL core dependencies
 # gsutil CLI handles GCS uploads - no Python dependency conflicts
-
-# --- Core Dependencies with Version Compatibility Fixes ---
-requests>=2.31.0
-numpy>=1.24.4
-docutils>=0.18,<0.22
-sphinx>=6,<9
-sphinx-rtd-theme==3.0.2
 
 # --- Computer Vision ---
 opencv-python-headless==4.10.0.84
@@ -21,5 +14,5 @@ uvicorn[standard]==0.30.1
 # --- Additional Dependencies ---
 httpx==0.27.0
 
-# Core ML dependencies (PyTorch, numpy, protobuf) managed by super-gradients
+# Core ML dependencies (PyTorch, numpy, protobuf, etc.) managed by super-gradients==3.7.1
 # GCS uploads handled by gsutil CLI (Google Cloud SDK)

@@ -126,11 +126,11 @@ POST /yolo-nas/object  # Maximum accuracy object detection
 
 ### Prerequisites
 - **Docker 20.10+** with Docker Compose v2 (recommended)
-- **NVIDIA GPU** with 8GB+ VRAM
+- **NVIDIA GPU** with 8GB+ VRAM (Tesla T4 optimized)
 - **NVIDIA Container Runtime**
 - **32GB+ RAM** recommended
 
-> **✅ Docker Compose v2.36.2 Optimized**: Our deployment automatically detects and uses Docker Compose v2 features for better performance. Falls back gracefully to v1 if needed. The [`docker-compose.yml`](docker-compose.yml) uses modern syntax compatible with both versions.
+> **✅ CUDA 11.8 + Ubuntu 20.04**: Production-proven stack optimized for VM compatibility and Tesla T4 GPUs. Docker Compose v2.36.2 auto-detection with BuildKit optimizations for maximum speed and reliability.
 
 ### 1. Quick Setup
 ```bash
@@ -332,7 +332,7 @@ curl http://localhost:8080/healthz
 #### GPU Not Available
 ```bash
 # Test NVIDIA Docker
-docker run --rm --gpus all nvidia/cuda:12.1-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu20.04 nvidia-smi
 
 # Fix: Reinstall NVIDIA runtime
 sudo apt-get install -y nvidia-container-runtime

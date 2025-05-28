@@ -1,7 +1,7 @@
 # YOLO Combined Service Dockerfile (YOLO11 + YOLOv8)
 # Optimized for fast builds while maintaining complete service isolation
 
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8-runtime-ubuntu20.04
 
 # Set environment variables for speed and stability
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -16,8 +16,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install system dependencies in single layer for better caching
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
+    python3.10-distutils \
     python3-pip \
     ffmpeg \
     libglib2.0-0 \

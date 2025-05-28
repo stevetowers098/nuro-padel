@@ -2,7 +2,7 @@
 # Optimized for fast builds with super-gradients compatibility - Complete isolation
 # ⚠️ RISKY: Deci AI dissolved - super-gradients may have compatibility issues
 
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8-runtime-ubuntu20.04
 
 # Set environment variables for speed and stability
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -17,8 +17,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install system dependencies in single optimized layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
+    python3.10-distutils \
     python3-pip \
     ffmpeg \
     libglib2.0-0 \

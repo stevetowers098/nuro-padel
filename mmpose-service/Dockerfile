@@ -1,7 +1,7 @@
 # MMPose Service Dockerfile
 # Optimized for fast builds with complex MMPose dependencies - Complete isolation
 
-FROM nvidia/cuda:12.1-devel-ubuntu22.04
+FROM nvidia/cuda:11.8-devel-ubuntu20.04
 
 # Set environment variables for speed and stability
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -16,10 +16,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install system dependencies in single optimized layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
-    python3-pip \
+    python3.10-distutils \
     python3.10-venv \
+    python3-pip \
     ffmpeg \
     libglib2.0-0 \
     libsm6 \

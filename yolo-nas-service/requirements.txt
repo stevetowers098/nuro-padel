@@ -7,6 +7,7 @@ torchvision==0.18.1
 
 # --- Core Dependencies (Compatible with super-gradients) ---
 numpy>=1.21.0,<=1.23.5
+protobuf>=5.26.1,<6.0.0
 
 # --- YOLO-NAS ---
 super-gradients>=3.7.0

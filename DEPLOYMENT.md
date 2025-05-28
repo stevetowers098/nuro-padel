@@ -61,13 +61,36 @@ google-cloud-storage==2.10.0
 
 **Root Cause**: `/etc/resolv.conf` is already in use or locked by another process
 
-**Solution Applied - MMpose Enhanced Approach**:
+**Solution Applied - Robust ln -sf Approach**:
 ```dockerfile
-# MMpose uses the enhanced symlink creation approach
-RUN rm -f /etc/resolv.conf && ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+# Both MMpose and YOLO-NAS use robust symbolic link handling
+RUN ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 ```
 
-**Why This Works**: Forcibly removes any existing file/link before creating the new symlink using a cleaner approach without temporary flags, avoiding "resource busy" errors completely.
+**Why This Works**: The `ln -sf` command is the most robust solution for replacing symbolic links:
+- The `-s` flag creates a symbolic link
+- The `-f` flag forces replacement of existing files/links without requiring prior removal
+- Eliminates the need for `rm` command that causes "Device or resource busy" errors
+- Automatically overwrites existing links without conflicts
+- Works reliably even when system processes are actively managing `/etc/resolv.conf`
+
+**Alternative Solutions for Advanced Cases**:
+```dockerfile
+# Option 1: Conditional check before linking
+RUN [ ! -L /etc/resolv.conf ] || rm -f /etc/resolv.conf && ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+
+# Option 2: Temporarily disable systemd-resolved (if needed)
+RUN systemctl stop systemd-resolved && \
+    rm -f /etc/resolv.conf && \
+    ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf && \
+    systemctl start systemd-resolved
+
+# Option 3: Build argument for optional enabling
+ARG ENABLE_RESOLV_CONF_FIX=true
+RUN if [ "$ENABLE_RESOLV_CONF_FIX" = "true" ]; then \
+    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf; \
+fi
+```
 
 ### 2. Super-gradients Dependency Conflicts
 

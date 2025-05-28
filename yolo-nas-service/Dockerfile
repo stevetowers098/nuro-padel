@@ -16,7 +16,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     YOLO_TELEMETRY=False
 
 # Fix symbolic link issue - Device or resource busy error resolution
-RUN rm -f /etc/resolv.conf && ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+RUN ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
 # Install system dependencies with enhanced Python 3.10 support and venv dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

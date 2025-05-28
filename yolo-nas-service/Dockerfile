@@ -15,9 +15,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix policy-rc.d denied execution error
-RUN echo '#!/bin/sh\nexit 0' > /usr/sbin/policy-rc.d
-
 # Install system dependencies in single optimized layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
@@ -54,9 +51,9 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install compatible dependencies FIRST to prevent super-gradients from installing old versions
+# Install compatible versions first to prevent dependency conflicts
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir "numpy>=1.24.4" "requests>=2.31.0" "docutils>=0.18,<0.22" "sphinx>=6,<9" && \
+    pip install --no-cache-dir "numpy>=1.24.4" "requests>=2.31.0" "docutils>=0.18,<0.22" && \
     pip install --no-cache-dir super-gradients==3.7.1 && \
     pip install --no-cache-dir -r requirements.txt
 

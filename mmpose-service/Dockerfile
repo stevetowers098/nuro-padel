@@ -46,14 +46,11 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install compatible versions first to prevent MMPose from installing incompatible dependencies
+# Install PyTorch first (required by mim), then MMPose stack
 RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
-    pip install --no-cache-dir "pytz==2023.3" "numpy>=1.21.0,<2.0" && \
+    pip install --no-cache-dir torch torchvision && \
     pip install --no-cache-dir -U openmim && \
-    mim install mmengine && \
-    mim install "mmcv>=2.0.1" && \
-    mim install mmdet && \
-    mim install "mmpose>=1.1.0" && \
+    mim install mmengine mmcv mmpose && \
     pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory

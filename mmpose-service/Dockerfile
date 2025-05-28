@@ -8,11 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    YOLO_OFFLINE=1 \
-    ULTRALYTICS_OFFLINE=1 \
-    ONLINE=False \
-    YOLO_TELEMETRY=False
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies in single optimized layer with enhanced Python venv support
 RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
@@ -102,6 +98,22 @@ RUN echo "🔍 OFFICIAL MMCV INSTALL: Following official MMCV installation guide
 
 # Create weights directory
 RUN mkdir -p /app/weights
+
+# Download RTMPose model (before offline mode)
+RUN echo "📥 Downloading RTMPose model..." && \
+    wget -O /app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth \
+    "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth" && \
+    echo "✅ RTMPose model downloaded successfully" && \
+    ls -la /app/weights/
+
+# Now set offline mode for runtime
+ENV YOLO_OFFLINE=1 \
+    ULTRALYTICS_OFFLINE=1 \
+    ONLINE=False \
+    YOLO_TELEMETRY=False
+
+# Copy configs first (needed for model loading)
+COPY configs/ /app/configs/
 
 # Copy application code
 COPY . .

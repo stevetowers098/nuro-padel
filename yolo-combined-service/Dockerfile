@@ -8,11 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    YOLO_OFFLINE=1 \
-    ULTRALYTICS_OFFLINE=1 \
-    ONLINE=False \
-    YOLO_TELEMETRY=False
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies in single layer for better caching
 RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
@@ -46,8 +42,30 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
     pip install --no-cache-dir -r requirements.txt
 
-# Create weights directory
+# Create weights directory and download models BEFORE setting YOLO_OFFLINE
 RUN mkdir -p /app/weights
+
+# Download required YOLO models (before offline mode)
+RUN python -c "\
+from ultralytics import YOLO; \
+print('Downloading YOLO11 Pose model...'); \
+model = YOLO('yolo11n-pose.pt'); \
+print('Downloading YOLOv8 Medium Object model...'); \
+model = YOLO('yolov8m.pt'); \
+print('Downloading YOLOv8 Nano Pose model...'); \
+model = YOLO('yolov8n-pose.pt'); \
+print('All models downloaded successfully!');"
+
+# Move downloaded models to weights directory
+RUN find /root/.config/Ultralytics -name "*.pt" -exec cp {} /app/weights/ \; 2>/dev/null || true && \
+    find . -maxdepth 1 -name "*.pt" -exec mv {} /app/weights/ \; 2>/dev/null || true && \
+    ls -la /app/weights/
+
+# Now set offline mode for runtime (after downloads)
+ENV YOLO_OFFLINE=1 \
+    ULTRALYTICS_OFFLINE=1 \
+    ONLINE=False \
+    YOLO_TELEMETRY=False
 
 # Copy application code
 COPY . .

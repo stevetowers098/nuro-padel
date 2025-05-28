@@ -92,18 +92,39 @@ if MMPOSE_AVAILABLE:
         model_device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         logger.info(f"Initializing MMPose model on device: {model_device}")
 
-        # Try Method 1: Use local checkpoint with MMPose's built-in config
-        local_checkpoint = '/app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
+        # DIAGNOSTIC: Check file system state
+        logger.info("=== DIAGNOSTIC: File System Check ===")
+        logger.info(f"Checking /app/weights/: {os.listdir('/app/weights') if os.path.exists('/app/weights') else 'Directory not found'}")
+        logger.info(f"Checking /app/configs/: {os.listdir('/app/configs') if os.path.exists('/app/configs') else 'Directory not found'}")
+        logger.info(f"Current working directory: {os.getcwd()}")
+        logger.info(f"Contents of /app/: {os.listdir('/app') if os.path.exists('/app') else 'Directory not found'}")
         
-        if os.path.exists(local_checkpoint):
-            logger.info(f"Loading RTMPose with local checkpoint: {local_checkpoint}")
+        # Method 1: Use local config and checkpoint files (PREFERRED)
+        config_path = '/app/configs/rtmpose-m_8xb256-420e_coco-256x192.py'  # Config first
+        checkpoint_path = '/app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'  # Weights second
+        
+        logger.info(f"DIAGNOSTIC: Checking local config: {os.path.exists(config_path)}")
+        logger.info(f"DIAGNOSTIC: Checking local checkpoint: {os.path.exists(checkpoint_path)}")
+        
+        if os.path.exists(config_path) and os.path.exists(checkpoint_path):
+            logger.info(f"Loading RTMPose with local config and checkpoint: {config_path}, {checkpoint_path}")
+            try:
+                mmpose_model = init_model(config_path, checkpoint_path, device=model_device)
+                model_info = {"name": "rtmpose-m", "source": "local_config_local_weights"}
+                logger.info("Successfully loaded RTMPose model with local config and weights")
+            except Exception as e_local:
+                logger.warning(f"Failed to load with local config and weights: {e_local}")
+                raise e_local
+        elif os.path.exists(checkpoint_path):
+            logger.info(f"Loading RTMPose with local checkpoint, built-in config: {checkpoint_path}")
             try:
                 config_name = 'projects/rtmpose/rtmpose/body_2d_keypoint/rtmpose-m_8xb256-420e_coco-256x192.py'
-                mmpose_model = init_model(config_name, local_checkpoint, device=model_device)
-                model_info = {"name": "rtmpose-m", "source": "local_weights_builtin_config"}
-                logger.info("Successfully loaded RTMPose model with local weights")
+                logger.info(f"DIAGNOSTIC: Using built-in config: {config_name}")
+                mmpose_model = init_model(config_name, checkpoint_path, device=model_device)
+                model_info = {"name": "rtmpose-m", "source": "builtin_config_local_weights"}
+                logger.info("Successfully loaded RTMPose model with built-in config and local weights")
             except Exception as e_local:
-                logger.warning(f"Failed to load with local weights: {e_local}")
+                logger.warning(f"Failed to load with built-in config and local weights: {e_local}")
                 raise e_local
         else:
             logger.info("Local RTMPose checkpoint not found, trying automatic download")
@@ -126,13 +147,20 @@ if MMPOSE_AVAILABLE:
             logger.warning(f"Automatic RTMPose download failed: {e_auto}. Trying HRNet fallback.")
             
             try:
-                # Method 3: HRNet fallback
+                # Method 3: HRNet fallback - try local config first
                 logger.info("Loading HRNet as fallback...")
-                config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
-                checkpoint_url = 'https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth'
+                hrnet_config_path = '/app/configs/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py'
+                hrnet_checkpoint_url = 'https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth'
                 
-                mmpose_model = init_model(config_name, checkpoint_url, device=model_device)
-                model_info = {"name": "hrnet-w48", "source": "fallback_download"}
+                if os.path.exists(hrnet_config_path):
+                    logger.info(f"Using local HRNet config: {hrnet_config_path}")
+                    mmpose_model = init_model(hrnet_config_path, hrnet_checkpoint_url, device=model_device)
+                    model_info = {"name": "hrnet-w48", "source": "local_config_fallback_download"}
+                else:
+                    logger.info("Using built-in HRNet config")
+                    config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
+                    mmpose_model = init_model(config_name, hrnet_checkpoint_url, device=model_device)
+                    model_info = {"name": "hrnet-w48", "source": "builtin_config_fallback_download"}
                 logger.info("Successfully loaded HRNet fallback model")
                 
             except Exception as e_hrnet:

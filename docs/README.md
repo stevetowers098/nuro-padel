@@ -26,40 +26,136 @@ NuroPadel is a comprehensive padel analysis platform that combines multiple AI m
 - 8GB+ RAM
 - Google Cloud SDK (for GCS uploads)
 
-### Start Services
+### Smart Development Workflow
 ```bash
-# Start all services
+# Code in VS Code, push to GitHub - deployment is automatic!
+git add .
+git commit -m "Update pose detection algorithm"
+git push origin docker-containers
+
+# GitHub Actions automatically:
+# 1. Detects which services changed
+# 2. Builds only changed services
+# 3. Deploys to VM at 35.189.53.46
+# 4. Health checks all services
+# 5. Completes in ~5 minutes vs 30+ minutes
+```
+
+### Local Development
+```bash
+# Start all services locally
 docker-compose up --build
 
 # Health check
-curl http://localhost/api/healthz
+curl http://localhost:8080/healthz
+```
 
-# Test ball tracking
-curl -X POST "http://localhost/api/track-ball" \
+## 🌐 External API Endpoints
+
+**Base URL**: `http://35.189.53.46:8080` (Production VM)
+**Alternative**: `http://padel-ai.com` (if DNS configured)
+
+### JSON Request Format
+All endpoints accept the same JSON format:
+
+```json
+{
+  "video_url": "https://storage.googleapis.com/bucket/video.mp4",
+  "video": false,
+  "data": true,
+  "confidence": 0.3
+}
+```
+
+### 🎯 Pose Detection Endpoints
+
+#### YOLO Combined Service
+- **YOLO11 Pose**: `POST http://35.189.53.46:8080/yolo11/pose`
+- **YOLOv8 Pose**: `POST http://35.189.53.46:8080/yolov8/pose`
+
+#### MMPose Biomechanics Service
+- **MMPose Analysis**: `POST http://35.189.53.46:8080/mmpose/pose`
+
+#### YOLO-NAS High-Accuracy Service
+- **YOLO-NAS Pose**: `POST http://35.189.53.46:8080/yolo-nas/pose`
+
+### 🎯 Object Detection Endpoints
+
+#### YOLO Combined Service
+- **YOLO11 Object**: `POST http://35.189.53.46:8080/yolo11/object`
+- **YOLOv8 Object**: `POST http://35.189.53.46:8080/yolov8/object`
+
+#### YOLO-NAS High-Accuracy Service
+- **YOLO-NAS Object**: `POST http://35.189.53.46:8080/yolo-nas/object`
+
+### 🎾 Enhanced Ball Tracking
+- **TrackNet Enhanced**: `POST http://35.189.53.46:8080/track-ball`
+
+### 🩺 Health Check Endpoints
+- **Global Health**: `GET http://35.189.53.46:8080/healthz`
+- **Service Discovery**: `GET http://35.189.53.46:8080/`
+- **Individual Services**:
+  - `GET http://35.189.53.46:8080/yolo-combined/healthz`
+  - `GET http://35.189.53.46:8080/mmpose/healthz`
+  - `GET http://35.189.53.46:8080/yolo-nas/healthz`
+
+## 📋 Request Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `video_url` | string (URL) | ✅ Yes | - | **Public URL to your video file** |
+| `video` | boolean | ❌ No | `false` | **Return annotated video?** `true` = get processed video back |
+| `data` | boolean | ❌ No | `true` | **Return JSON data?** `true` = get detection/pose data |
+| `confidence` | float | ❌ No | `0.3` | **Detection threshold** (0.0-1.0) - only for YOLO services |
+
+## 🚀 API Usage Examples
+
+### Pose Detection Example
+```bash
+curl -X POST http://35.189.53.46:8080/yolo11/pose \
   -H "Content-Type: application/json" \
   -d '{
-    "video_url": "https://example.com/padel-video.mp4",
+    "video_url": "https://storage.googleapis.com/my-bucket/padel-video.mp4",
     "video": true,
+    "data": true,
+    "confidence": 0.5
+  }'
+```
+
+### MMPose Biomechanical Analysis
+```bash
+curl -X POST http://35.189.53.46:8080/mmpose/pose \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_url": "https://storage.googleapis.com/my-bucket/padel-video.mp4",
+    "video": true,
+    "data": true
+  }'
+```
+
+### Object Detection Example
+```bash
+curl -X POST http://35.189.53.46:8080/yolo11/object \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_url": "https://storage.googleapis.com/my-bucket/padel-video.mp4",
+    "video": false,
     "data": true,
     "confidence": 0.3
   }'
 ```
 
-## API Endpoints
-
-### YOLO Combined Service
-- `POST /yolo11/pose` - YOLO11 pose estimation
-- `POST /yolo11/object` - YOLO11 object detection
-- `POST /yolov8/pose` - YOLOv8 pose estimation  
-- `POST /yolov8/object` - YOLOv8 object detection
-- `POST /track-ball` - Enhanced ball tracking (YOLO + TrackNet)
-
-### MMPose Service
-- `POST /mmpose/pose` - High-precision pose estimation
-
-### YOLO-NAS Service  
-- `POST /yolo-nas/pose` - YOLO-NAS pose detection
-- `POST /yolo-nas/object` - YOLO-NAS object detection
+### Enhanced Ball Tracking
+```bash
+curl -X POST http://35.189.53.46:8080/track-ball \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_url": "https://storage.googleapis.com/my-bucket/padel-video.mp4",
+    "video": true,
+    "data": true,
+    "confidence": 0.4
+  }'
+```
 
 ## Project Structure
 

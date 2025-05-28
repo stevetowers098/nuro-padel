@@ -42,8 +42,8 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies in optimized order
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+# Install Python dependencies with setuptools <66 to avoid InvalidVersion errors
+RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
     pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory

@@ -315,6 +315,26 @@ docker compose up --scale yolo-combined=2 --scale mmpose=1  # v2 preferred
 
 ### Common Issues
 
+#### Docker InvalidVersion Error (setuptools 66+ issue)
+```bash
+# Error: "packaging.version.InvalidVersion: Invalid version: '0.4.src'"
+# This is a known issue with setuptools 66+ and Ubuntu/Debian packages
+
+# ✅ SOLUTION: Already implemented in all Dockerfiles
+# We pin setuptools to version <66 to avoid PEP 440 compliance issues:
+# - yolo-combined-service: setuptools==65.7.0
+# - mmpose-service: setuptools==60.2.0
+# - yolo-nas-service: setuptools==65.7.0
+
+# If you encounter this error in custom builds:
+RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel
+
+# Alternative solutions:
+# 1. Use setuptools==65.7.0 (recommended)
+# 2. Use setup-tools-scm<7.0.0
+# 3. Remove problematic packages: apt-get remove python3-distro-info
+```
+
 #### Port Conflicts (Most Common)
 ```bash
 # Error: "bind: address already in use"

@@ -35,6 +35,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     git \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list \
+    && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
+    && apt-get update && apt-get install -y google-cloud-cli \
     && ln -s /usr/bin/python3.10 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
@@ -45,8 +51,8 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies in optimized single-layer approach with error handling
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+# Install Python dependencies - gsutil handles GCS, no protobuf conflicts
+RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
     pip install --no-cache-dir 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' 'torchaudio>=2.0.0,<2.6.0' && \
     pip install --no-cache-dir numpy scipy && \
     (pip install --no-cache-dir super-gradients || echo "⚠️ super-gradients installation failed - service will run in fallback mode") && \

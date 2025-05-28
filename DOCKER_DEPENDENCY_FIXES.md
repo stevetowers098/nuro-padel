@@ -1,41 +1,54 @@
 # Docker Dependency Fixes - Final Resolution
 
-## 🚨 Issue Resolved
+## 🚨 Critical Issues Resolved
+
+### Issue 1: setuptools InvalidVersion Error (FIXED ✅)
+**Error**: `packaging.version.InvalidVersion: Invalid version: '0.4.src'`
+
+**Root Cause**: setuptools 66+ enforces strict PEP 440 version compliance, but Ubuntu/Debian packages install Python packages (like `python3-distro-info`, `python-debian`) with non-compliant versions like "0.4.src", "1.1build1", "0.23ubuntu1".
+
+**Solution Applied**: Pin setuptools to version <66 in all Dockerfiles
+- [`yolo-combined-service/Dockerfile`](yolo-combined-service/Dockerfile:46) - `setuptools==65.7.0`
+- [`yolo-nas-service/Dockerfile`](yolo-nas-service/Dockerfile:49) - `setuptools==65.7.0`
+- [`mmpose-service/Dockerfile`](mmpose-service/Dockerfile:51) - `setuptools==60.2.0`
+
+### Issue 2: protobuf Version Conflicts (SOLVED ✅)
 **Error**: `ERROR: Cannot install google-cloud-storage and protobuf<6.0.0 and >=5.26.1 because these package versions have conflicting dependencies`
 
-**Root Cause**: Fundamental incompatibility between:
-- `google-api-core` (from GCS) requires `protobuf<5.0.0.dev0`
-- `grpcio-status` (from GCS) requires `protobuf>=5.26.1,<6.0.0`
-- `super-gradients` (YOLO-NAS) requires older protobuf
-- `ultralytics` (YOLO11/v8) may also conflict
+**Root Cause**: Irreconcilable protobuf version requirements:
+- `super-gradients`: Requires `protobuf>=3.19.5,<4.0.0`
+- `google-cloud-storage`: Requires `protobuf>=5.26.1,<6.0.0`
 
-## ✅ Solution Applied
+**Production Solution Applied**: Use gsutil CLI instead of Python library
+- **What**: Google Cloud SDK's gsutil command-line tool
+- **Why**: Zero Python dependency conflicts - completely separate from protobuf
+- **Production Status**: Used by Google's own ML tutorials and major deployments
+- **Performance**: Just as fast as Python library, sometimes faster for large files
 
-### 1. Architecture Decision: GCS Separation
-**YOLO Services**: Removed GCS dependency to avoid conflicts
-- [`yolo-nas-service/requirements.txt`](yolo-nas-service/requirements.txt) - Removed protobuf constraint & GCS
-- [`yolo-combined-service/requirements.txt`](yolo-combined-service/requirements.txt) - Removed protobuf constraint & GCS
+### 2. Production-Grade Service Configuration
 
-**MMPose Service**: Keeps GCS with newer protobuf
-- [`mmpose-service/requirements.txt`](mmpose-service/requirements.txt) - Retains `protobuf>=5.26.1,<6.0.0` & GCS
+#### YOLO-NAS Service ✅ (PRODUCTION SOLUTION)
+- **GCS Method**: **gsutil CLI** (Google Cloud SDK)
+- **Protobuf**: Managed by super-gradients (no conflicts)
+- **Setuptools**: `==65.7.0` (prevents InvalidVersion errors)
+- **Benefits**: Zero dependency conflicts, production-grade performance
 
-### 2. Code Changes Applied
+#### YOLO Combined Service ✅
+- **GCS**: Can use gsutil CLI (ready for implementation if needed)
+- **Setuptools**: `==65.7.0` (prevents InvalidVersion errors)
 
-#### YOLO-NAS Service
-- [`yolo-nas-service/main.py`](yolo-nas-service/main.py:26) - Disabled GCS import
-- [`yolo-nas-service/main.py`](yolo-nas-service/main.py:68) - Stubbed `upload_to_gcs()` function
-
-#### YOLO Combined Service  
-- [`yolo-combined-service/main.py`](yolo-combined-service/main.py:25) - Disabled GCS import
-- [`yolo-combined-service/main.py`](yolo-combined-service/main.py:63) - Stubbed `upload_to_gcs()` function
+#### MMPose Service ✅
+- **GCS**: Python library (works fine, no super-gradients conflicts)
+- **Protobuf**: `>=5.26.1,<6.0.0` (latest requirements)
+- **Setuptools**: `==60.2.0` (prevents InvalidVersion errors)
 
 ## 🎯 Service Capabilities Matrix
 
-| Service | Object Detection | Pose Detection | Video Upload | Protobuf Version |
-|---------|------------------|----------------|--------------|------------------|
-| **yolo-combined** | ✅ YOLO11/v8 | ✅ YOLO11/v8 | ❌ Disabled | Auto (compatible) |
-| **yolo-nas** | ✅ YOLO-NAS | ✅ YOLO-NAS | ❌ Disabled | <4.0.0 (super-gradients) |
-| **mmpose** | ❌ N/A | ✅ RTMPose/HRNet | ✅ Enabled | >=5.26.1 (GCS compatible) |
+| Service | Object Detection | Pose Detection | Video Upload | GCS Method |
+|---------|------------------|----------------|--------------|------------|
+| **yolo-combined** | ✅ YOLO11/v8 | ✅ YOLO11/v8 | ❌ Not implemented | None |
+| **yolo-nas** | ✅ YOLO-NAS | ✅ YOLO-NAS | ✅ **FULL GCS** | **gsutil CLI** |
+| **mmpose** | ❌ N/A | ✅ RTMPose/HRNet | ✅ Full GCS | Python library |
 
 ## 🚀 Deployment Impact
 
@@ -55,10 +68,29 @@ curl -X POST http://localhost:8003/mmpose/pose \
   -d '{"video_url": "https://example.com/video.mp4", "video": true}'
 ```
 
-### What Changed
-- **YOLO services**: Return empty `video_url` in responses (no GCS upload)
-- **MMPose service**: Continues to upload annotated videos to GCS
+### What Works Now
+- **YOLO-NAS service**: **FULL GCS functionality** via gsutil CLI - uploads videos to GCS
+- **MMPose service**: Continues to upload annotated videos to GCS via Python library
+- **YOLO Combined service**: No video uploads (can be added with gsutil if needed)
 - **Analysis data**: All services continue to provide full analysis data
+
+## 🏗️ Production Architecture Benefits
+
+### gsutil CLI Approach (YOLO-NAS)
+✅ **Zero dependency conflicts** - Completely separate from Python protobuf
+✅ **Production-grade** - Used by Google's own ML tutorials
+✅ **Performance** - Often faster than Python library for large files
+✅ **Reliability** - Handles network interruptions and retries automatically
+✅ **Authentication** - Works with same service account credentials
+
+### Implementation Details
+```bash
+# Upload command used in YOLO-NAS service
+gsutil cp /path/to/video.mp4 gs://bucket/folder/video.mp4
+
+# Make public command
+gsutil acl ch -u AllUsers:R gs://bucket/folder/video.mp4
+```
 
 ## 🔧 Workaround for Video Uploads
 

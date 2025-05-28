@@ -21,7 +21,8 @@ import torch
 import uuid
 import uvicorn
 from datetime import datetime
-from google.cloud import storage  # Re-enabled with compatible GCS version
+# Using gsutil CLI instead of google-cloud-storage Python library
+# This avoids protobuf conflicts with super-gradients
 import subprocess
 import httpx
 
@@ -67,20 +68,40 @@ class VideoAnalysisURLRequest(BaseModel):
 
 # Helper Functions
 async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> str:
+    """Upload video to GCS using gsutil CLI - avoids protobuf conflicts"""
     if not object_name:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = str(uuid.uuid4())[:8]
         object_name = f"{GCS_FOLDER}/video_{timestamp}_{unique_id}.mp4"
+    
     try:
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(GCS_BUCKET_NAME)
-        blob = bucket.blob(object_name)
-        blob.upload_from_filename(video_path)
-        blob.make_public()
-        logger.info(f"Successfully uploaded {video_path} to GCS as {object_name}")
-        return blob.public_url
+        gcs_path = f"gs://{GCS_BUCKET_NAME}/{object_name}"
+        
+        # Upload file using gsutil
+        upload_cmd = ["gsutil", "cp", video_path, gcs_path]
+        upload_result = subprocess.run(upload_cmd, capture_output=True, text=True, timeout=120)
+        
+        if upload_result.returncode != 0:
+            logger.error(f"gsutil upload failed: {upload_result.stderr}")
+            return ""
+        
+        # Make file public using gsutil
+        public_cmd = ["gsutil", "acl", "ch", "-u", "AllUsers:R", gcs_path]
+        public_result = subprocess.run(public_cmd, capture_output=True, text=True, timeout=60)
+        
+        if public_result.returncode != 0:
+            logger.warning(f"Failed to make file public: {public_result.stderr}")
+            # Return the URL anyway, might work with proper bucket permissions
+        
+        public_url = f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/{object_name}"
+        logger.info(f"Successfully uploaded {video_path} to GCS as {object_name} via gsutil")
+        return public_url
+        
+    except subprocess.TimeoutExpired:
+        logger.error("gsutil command timed out")
+        return ""
     except Exception as e:
-        logger.error(f"Error uploading to GCS: {e}", exc_info=True)
+        logger.error(f"Error uploading to GCS via gsutil: {e}", exc_info=True)
         return ""
 
 # Model Loading

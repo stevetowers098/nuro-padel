@@ -204,7 +204,9 @@ jobs:
     - name: Setup Docker Compose
       run: |
         sudo apt-get update
-        sudo apt-get install -y docker-compose
+        sudo apt-get remove docker-compose || true
+        sudo apt-get install -y docker-compose-plugin
+        docker compose version
         
     - name: Create test environment
       run: |
@@ -215,7 +217,7 @@ jobs:
       run: |
         # Use pre-built images from GitHub Registry
         export REGISTRY=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}
-        docker-compose -f docker-compose.test.yml up -d
+        docker compose -f docker-compose.test.yml up -d
         
     - name: Wait for services
       run: |
@@ -226,13 +228,13 @@ jobs:
       run: |
         # Test health endpoints
         curl -f http://localhost:8001/healthz || exit 1
-        curl -f http://localhost:8003/healthz || exit 1  
+        curl -f http://localhost:8003/healthz || exit 1
         curl -f http://localhost:8004/healthz || exit 1
-        curl -f http://localhost/healthz || exit 1
+        curl -f http://localhost:8080/healthz || exit 1
         
     - name: Cleanup
       if: always()
-      run: docker-compose -f docker-compose.test.yml down -v
+      run: docker compose -f docker-compose.test.yml down -v
 
   # === VM DEPLOYMENT ===
   deploy-vm:
@@ -276,14 +278,14 @@ jobs:
           
           # Update images from registry
           export REGISTRY=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}
-          docker-compose pull
+          docker compose -f docker-compose.resilient.yml pull || echo "Registry pull failed, will build locally"
           
           # Deploy with zero downtime
-          ./deploy.sh --deploy
+          ./deploy-resilient.sh --deploy
           
           # Verify deployment
           sleep 30
-          curl -f http://localhost/healthz || exit 1
+          curl -f http://localhost:8080/healthz || exit 1
           
           echo "✅ Deployment successful!"
         EOF

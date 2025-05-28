@@ -12,6 +12,16 @@
 - [`yolo-nas-service/Dockerfile`](yolo-nas-service/Dockerfile:49) - `setuptools==65.7.0`
 - [`mmpose-service/Dockerfile`](mmpose-service/Dockerfile:51) - `setuptools==60.2.0`
 
+### Issue 3: MMPose PyTorch Version Conflicts (FIXED ✅)
+**Error**: MMPose incompatible with PyTorch 2.x - requires PyTorch 1.13.1
+
+**Root Cause**: PyTorch 2.4.1 doesn't work with MMPose framework
+
+**Solution Applied**: Use confirmed working versions from official docs
+- **PyTorch**: `==1.13.1` (not 2.x)
+- **pip**: `==23.1.2` (specific version required)
+- **Installation order**: PyTorch first, then MIM packages
+
 ### Issue 2: protobuf Version Conflicts (SOLVED ✅)
 **Error**: `ERROR: Cannot install google-cloud-storage and protobuf<6.0.0 and >=5.26.1 because these package versions have conflicting dependencies`
 
@@ -29,18 +39,24 @@
 
 #### YOLO-NAS Service ✅ (PRODUCTION SOLUTION)
 - **GCS Method**: **gsutil CLI** (Google Cloud SDK)
-- **Protobuf**: Managed by super-gradients (no conflicts)
+- **Dependency Strategy**: **super-gradients manages ALL core ML dependencies**
+- **PyTorch**: Managed by super-gradients (no version conflicts)
+- **Protobuf**: Managed by super-gradients (no GCS conflicts)
 - **Setuptools**: `==65.7.0` (prevents InvalidVersion errors)
-- **Benefits**: Zero dependency conflicts, production-grade performance
+- **Installation**: super-gradients installed FIRST, no silent failures
+- **Benefits**: Zero dependency conflicts, fail-fast error handling
 
 #### YOLO Combined Service ✅
 - **GCS**: Can use gsutil CLI (ready for implementation if needed)
 - **Setuptools**: `==65.7.0` (prevents InvalidVersion errors)
 
-#### MMPose Service ✅
+#### MMPose Service ✅ (FIXED PYTORCH VERSION)
 - **GCS**: Python library (works fine, no super-gradients conflicts)
+- **PyTorch**: `==1.13.1` (MMPose requirement - not 2.x compatible)
+- **pip**: `==23.1.2` (specific version required by MMPose)
 - **Protobuf**: `>=5.26.1,<6.0.0` (latest requirements)
 - **Setuptools**: `==60.2.0` (prevents InvalidVersion errors)
+- **Installation**: PyTorch 1.13.1 first, then MIM packages
 
 ## 🎯 Service Capabilities Matrix
 
@@ -76,20 +92,59 @@ curl -X POST http://localhost:8003/mmpose/pose \
 
 ## 🏗️ Production Architecture Benefits
 
+### Critical Dependency Management (YOLO-NAS)
+✅ **super-gradients manages PyTorch** - No version conflicts with torch>=2.0 vs torch<1.14
+✅ **Fail fast installation** - No silent failures or undefined dependency states
+✅ **Correct installation order** - super-gradients installed FIRST
+✅ **Clean requirements** - Only application-specific dependencies in requirements.txt
+
 ### gsutil CLI Approach (YOLO-NAS)
-✅ **Zero dependency conflicts** - Completely separate from Python protobuf
+✅ **Zero protobuf conflicts** - Completely separate from Python protobuf
 ✅ **Production-grade** - Used by Google's own ML tutorials
 ✅ **Performance** - Often faster than Python library for large files
 ✅ **Reliability** - Handles network interruptions and retries automatically
 ✅ **Authentication** - Works with same service account credentials
 
 ### Implementation Details
-```bash
-# Upload command used in YOLO-NAS service
-gsutil cp /path/to/video.mp4 gs://bucket/folder/video.mp4
 
-# Make public command
+#### YOLO-NAS Service (super-gradients + gsutil)
+```dockerfile
+# Correct installation order - super-gradients FIRST
+RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
+    pip install --no-cache-dir super-gradients && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Fail fast verification - no silent failures
+RUN python -c "from super_gradients.training import models; print('✅ super-gradients imported successfully')"
+```
+
+#### MMPose Service (PyTorch 1.13.1 + Python GCS)
+```dockerfile
+# MMPose confirmed working configuration
+RUN pip install --no-cache-dir --upgrade pip==23.1.2 setuptools==60.2.0 wheel && \
+    pip install --no-cache-dir torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 && \
+    pip install --no-cache-dir -U openmim && \
+    mim install mmengine && \
+    mim install "mmcv>=2.0.1" && \
+    mim install mmdet && \
+    mim install "mmpose>=1.1.0" && \
+    pip install --no-cache-dir -r requirements.txt
+```
+
+#### GCS Upload Methods
+```bash
+# gsutil CLI (YOLO-NAS) - no protobuf conflicts
+gsutil cp /path/to/video.mp4 gs://bucket/folder/video.mp4
 gsutil acl ch -u AllUsers:R gs://bucket/folder/video.mp4
+```
+
+```python
+# Python library (MMPose) - works with PyTorch 1.13.1
+from google.cloud import storage
+client = storage.Client()
+bucket = client.bucket("bucket-name")
+blob = bucket.blob("folder/video.mp4")
+blob.upload_from_filename("/path/to/video.mp4")
 ```
 
 ## 🔧 Workaround for Video Uploads

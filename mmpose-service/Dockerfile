@@ -46,20 +46,18 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies in optimized single-layer approach
-# This reduces build time significantly while maintaining exact MMPose requirements
-RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
-    pip uninstall openxlab torch torchvision torchaudio triton xtcocotools pycocotools numpy -y --quiet 2>/dev/null || true && \
-    pip install --no-cache-dir numpy==1.24.3 && \
-    pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 && \
-    pip install --no-cache-dir cython && \
-    pip install --no-cache-dir pycocotools && \
-    pip install --no-cache-dir --no-deps --force-reinstall xtcocotools && \
-    pip install --no-cache-dir openmim && \
+# Install Python dependencies - confirmed working configuration for MMPose
+# PyTorch 1.13.1 required for MMPose compatibility
+RUN pip install --no-cache-dir --upgrade pip==23.1.2 setuptools==60.2.0 wheel && \
+    pip install --no-cache-dir torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 && \
+    pip install --no-cache-dir -U openmim && \
     mim install mmengine && \
     mim install "mmcv>=2.0.1" && \
     mim install mmdet && \
-    mim install "mmpose>=1.0.0" && \
+    mim install "mmpose>=1.1.0" && \
+    pip install --no-cache-dir cython && \
+    pip install --no-cache-dir pycocotools && \
+    pip install --no-cache-dir --no-deps --force-reinstall xtcocotools && \
     pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory
@@ -76,8 +74,8 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# Verify MMPose installation
-RUN python -c "import numpy as np; print(f'NumPy version: {np.__version__}'); import xtcocotools; print('xtcocotools imported successfully'); import mmpose; print('MMPose imported successfully'); print('✅ All MMPose dependencies working correctly')" || echo "⚠️ MMPose verification failed - check installation"
+# Verify MMPose installation - fail fast if broken
+RUN python -c "import numpy as np; print(f'NumPy version: {np.__version__}'); import xtcocotools; print('xtcocotools imported successfully'); import mmpose; print('MMPose imported successfully'); print('✅ All MMPose dependencies working correctly')"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=120s --retries=3 \

@@ -51,11 +51,10 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies - gsutil handles GCS, no protobuf conflicts
+# Install super-gradients FIRST - it manages PyTorch versions correctly
+# Fail fast - no silent failures with fallbacks
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' 'torchaudio>=2.0.0,<2.6.0' && \
-    pip install --no-cache-dir numpy scipy && \
-    (pip install --no-cache-dir super-gradients || echo "⚠️ super-gradients installation failed - service will run in fallback mode") && \
+    pip install --no-cache-dir super-gradients && \
     pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory
@@ -72,8 +71,8 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# Verify super-gradients installation (with fallback)
-RUN python -c "try: from super_gradients.training import models; print('✅ super-gradients imported successfully')\nexcept ImportError as e: print('⚠️ super-gradients not available:', e)" || echo "⚠️ super-gradients verification failed"
+# Verify super-gradients installation - fail fast if broken
+RUN python -c "from super_gradients.training import models; print('✅ super-gradients imported successfully')"
 
 # Health check (longer start period due to potential model download)
 HEALTHCHECK --interval=30s --timeout=30s --start-period=180s --retries=3 \

@@ -55,10 +55,9 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install compatible versions that satisfy all requirements
-# Fix dependency conflicts: super-gradients requires numpy<=1.23 and docutils<0.19
-RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir "numpy<=1.23" "docutils<0.19" "requests>=2.31.0"
+# Install dependencies with compatible versions for super-gradients
+RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel
+RUN pip install --no-cache-dir "sphinx~=4.0.2"
 RUN pip install --no-cache-dir super-gradients==3.7.1
 RUN pip install --no-cache-dir -r requirements.txt
 

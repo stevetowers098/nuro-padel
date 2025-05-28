@@ -54,8 +54,8 @@ COPY requirements.txt .
 # Install exact openxlab dependency versions first, then MMPose
 # Clean cache during install to save space
 RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
-    pip install --no-cache-dir pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0 "numpy>=1.21.0,<2.0" && \
-    pip install --no-cache-dir mmpose && \
+    pip install --no-cache-dir pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0 && \
+    pip install --no-cache-dir "numpy>=1.21.0,<2.0" xtcocotools mmpose && \
     pip install --no-cache-dir -r requirements.txt && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 

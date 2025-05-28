@@ -119,10 +119,12 @@ POST /yolo-nas/object  # Maximum accuracy object detection
 ## 🛠️ Installation & Deployment
 
 ### Prerequisites
-- **Docker 24.0+** with Docker Compose
+- **Docker 20.10+** with Docker Compose (any version)
 - **NVIDIA GPU** with 8GB+ VRAM
 - **NVIDIA Container Runtime**
 - **32GB+ RAM** recommended
+
+> **✅ Docker Compose Compatibility**: Our [`docker-compose.yml`](docker-compose.yml) omits the version field for maximum compatibility with older Docker Compose versions (1.27+) and newer versions alike.
 
 ### 1. Quick Setup
 ```bash

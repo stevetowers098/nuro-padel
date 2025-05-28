@@ -1,7 +1,7 @@
 # MMPose Service Dockerfile
 # Optimized for fast builds with complex MMPose dependencies - Complete isolation
 
-FROM nvidia/cuda:11.8-devel-ubuntu20.04
+FROM nvidia/cuda:12.2.0-devel-ubuntu20.04
 
 # Set environment variables for speed and stability
 ENV DEBIAN_FRONTEND=noninteractive \

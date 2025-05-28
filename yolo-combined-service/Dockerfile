@@ -1,7 +1,7 @@
 # YOLO Combined Service Dockerfile (YOLO11 + YOLOv8)
 # Optimized for fast builds while maintaining complete service isolation
 
-FROM nvidia/cuda:11.8-runtime-ubuntu20.04
+FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04
 
 # Set environment variables for speed and stability
 ENV DEBIAN_FRONTEND=noninteractive \

@@ -2,7 +2,7 @@
 # Optimized for fast builds with super-gradients compatibility - Complete isolation
 # ⚠️ RISKY: Deci AI dissolved - super-gradients may have compatibility issues
 
-FROM nvidia/cuda:11.8-runtime-ubuntu20.04
+FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04
 
 # Set environment variables for speed and stability
 ENV DEBIAN_FRONTEND=noninteractive \

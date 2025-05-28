@@ -2,8 +2,8 @@
 # Verified versions for MMPose stack
 
 # --- Core ML/DL with CUDA Support ---
-torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
-torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
+torch==2.3.1 --index-url https://download.pytorch.org/whl/cu122
+torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu122
 
 # --- Core Dependencies ---
 numpy>=1.24.0,<2.0.0

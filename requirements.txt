@@ -5,4 +5,5 @@ supervision==0.16.0
 pydantic==2.5.0
 httpx
 numpy
+protobuf>=5.26.1,<6.0.0
 google-cloud-compute==1.14.1

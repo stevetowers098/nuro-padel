@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # app/main.py - Enhanced with GPU Auto Start/Stop
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse

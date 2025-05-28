@@ -21,6 +21,7 @@ seaborn>=0.13.0            # Latest for advanced plotting
 # --- Core Dependencies ---
 numpy>=1.24.0,<2.0.0      # Stable numpy 1.x for compatibility
 scipy>=1.11.0              # Latest scientific computing
+protobuf>=5.26.1,<6.0.0   # Compatible with grpcio-status from GCS
 
 # --- COCO Tools (Proper Installation Order) ---
 cython>=3.0.0              # Latest Cython first

@@ -14,8 +14,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix symbolic link issue - Container-friendly DNS resolution
-RUN cp /run/systemd/resolve/resolv.conf /etc/resolv.conf || echo "nameserver 8.8.8.8" > /etc/resolv.conf
+# Fix DNS resolution - Robust temporary file approach
+RUN echo "nameserver 8.8.8.8" > /tmp/resolv.conf && mv /tmp/resolv.conf /etc/resolv.conf
 
 # Install system dependencies in single optimized layer with enhanced Python venv support
 RUN apt-get update && apt-get install -y --no-install-recommends \

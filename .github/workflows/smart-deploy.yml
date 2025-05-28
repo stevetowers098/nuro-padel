@@ -9,6 +9,7 @@ on:
       - 'yolo-nas-service/**'
       - 'docker-compose*.yml'
       - 'nginx.conf'
+      - '.github/workflows/smart-deploy.yml'
   
   workflow_dispatch:
     inputs:

@@ -21,7 +21,7 @@ import torch
 import uuid
 import uvicorn
 from datetime import datetime
-from google.cloud import storage
+from google.cloud import storage  # Re-enabled with compatible GCS version
 import subprocess
 import httpx
 

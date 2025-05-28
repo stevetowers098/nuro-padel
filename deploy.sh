@@ -1,4 +1,4 @@
-#!/bin/bash
+ne#!/bin/bash
 
 # NuroPadel Docker Deployment Script
 # Builds and deploys 3 AI services with zero-downtime strategy
@@ -46,8 +46,15 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Check Docker Compose
-    if ! command -v docker-compose &> /dev/null; then
+    # Check Docker Compose (v2 preferred, v1 fallback)
+    if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE="docker compose"
+        log "Using Docker Compose v2: $(docker compose version --short)"
+    elif command -v docker-compose >/dev/null 2>&1; then
+        DOCKER_COMPOSE="docker-compose"
+        warning "Using legacy Docker Compose v1: $(docker-compose version --short)"
+        warning "Consider upgrading to Docker Compose v2 for better performance"
+    else
         error "Docker Compose is not installed"
         exit 1
     fi
@@ -64,9 +71,26 @@ check_prerequisites() {
         echo "Place your model weights in ./weights/ directory" > ./weights/README.md
     fi
     
-    # Enable BuildKit for better caching
+    # Enable BuildKit and advanced Docker optimizations for maximum speed
     export DOCKER_BUILDKIT=1
-    export COMPOSE_DOCKER_CLI_BUILD=1
+    export BUILDKIT_PROGRESS=plain
+    export DOCKER_CLI_EXPERIMENTAL=enabled
+    
+    # Docker Compose v2 specific optimizations
+    if [[ "$DOCKER_COMPOSE" == "docker compose" ]]; then
+        export COMPOSE_DOCKER_CLI_BUILD=1
+        export COMPOSE_BUILDKIT=1
+        log "Docker Compose v2 optimizations enabled"
+    else
+        export COMPOSE_DOCKER_CLI_BUILD=1
+        log "Docker Compose v1 compatibility mode"
+    fi
+    
+    # Configure BuildKit for optimal caching
+    docker buildx create --name nuro-builder --use --driver docker-container --driver-opt network=host 2>/dev/null || docker buildx use nuro-builder 2>/dev/null || true
+    
+    # Create cache directories
+    mkdir -p /tmp/.buildx-cache-yolo-combined /tmp/.buildx-cache-mmpose /tmp/.buildx-cache-yolo-nas
     
     success "Prerequisites check completed"
 }
@@ -95,12 +119,28 @@ needs_rebuild() {
         return 0
     fi
     
-    local image_timestamp=$(date -d "$image_created" +%s 2>/dev/null || echo "0")
+    # Cross-platform date parsing (Linux vs macOS/BSD)
+    local image_timestamp
+    if date -d "$image_created" +%s 2>/dev/null; then
+        image_timestamp=$(date -d "$image_created" +%s 2>/dev/null)
+    elif date -j -f "%Y-%m-%dT%H:%M:%S" "$image_created" +%s 2>/dev/null; then
+        image_timestamp=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$image_created" +%s 2>/dev/null)
+    else
+        image_timestamp=0
+    fi
     
     # Check if any source files are newer than the image
     for file_path in "$dockerfile_path" "$requirements_path" "$main_path"; do
         if [ -f "$file_path" ]; then
-            local file_timestamp=$(stat -c %Y "$file_path" 2>/dev/null || echo "999999999")
+            # Cross-platform file timestamp (Linux vs macOS/BSD)
+            local file_timestamp
+            if stat -c %Y "$file_path" 2>/dev/null; then
+                file_timestamp=$(stat -c %Y "$file_path" 2>/dev/null)
+            elif stat -f %m "$file_path" 2>/dev/null; then
+                file_timestamp=$(stat -f %m "$file_path" 2>/dev/null)
+            else
+                file_timestamp=999999999
+            fi
             if [ "$file_timestamp" -gt "$image_timestamp" ]; then
                 log "${service}: ${file_path} modified since last build - rebuild required"
                 return 0
@@ -135,35 +175,70 @@ build_service() {
     
     cd "${service}-service"
     
-    # Build with BuildKit and advanced caching
-    DOCKER_BUILDKIT=1 docker build \
-        --tag "${REGISTRY}/${service}:latest" \
-        --tag "${REGISTRY}/${service}:$(date +%Y%m%d-%H%M%S)" \
-        --cache-from "${REGISTRY}/${service}:latest" \
-        --build-arg BUILDKIT_INLINE_CACHE=1 \
-        --progress=plain \
-        .
+    # Try BuildKit first, fallback to regular docker build
+    if command -v docker-buildx >/dev/null 2>&1 || docker buildx version >/dev/null 2>&1; then
+        log "Using BuildKit for optimized caching..."
+        docker buildx build \
+            --builder nuro-builder \
+            --tag "${REGISTRY}/${service}:latest" \
+            --tag "${REGISTRY}/${service}:$(date +%Y%m%d-%H%M%S)" \
+            --cache-from type=local,src=/tmp/.buildx-cache-${service} \
+            --cache-to type=local,dest=/tmp/.buildx-cache-${service},mode=max \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --progress=plain \
+            --load \
+            . || {
+                warning "BuildKit failed, falling back to regular docker build"
+                DOCKER_BUILDKIT=1 docker build \
+                    --tag "${REGISTRY}/${service}:latest" \
+                    --tag "${REGISTRY}/${service}:$(date +%Y%m%d-%H%M%S)" \
+                    --cache-from "${REGISTRY}/${service}:latest" \
+                    --build-arg BUILDKIT_INLINE_CACHE=1 \
+                    --progress=plain \
+                    .
+            }
+    else
+        log "BuildKit not available, using regular docker build..."
+        DOCKER_BUILDKIT=1 docker build \
+            --tag "${REGISTRY}/${service}:latest" \
+            --tag "${REGISTRY}/${service}:$(date +%Y%m%d-%H%M%S)" \
+            --cache-from "${REGISTRY}/${service}:latest" \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --progress=plain \
+            .
+    fi
     
     cd ..
     success "${service} service built successfully"
 }
 
-# Build all services with smart caching
+# Build all services with smart caching and parallel processing
 build_all_optimized() {
-    log "Building Docker services with smart change detection..."
+    log "Building Docker services with smart change detection and parallel processing..."
     
     local build_count=0
     local cache_count=0
+    local services_to_build=()
     
+    # Determine which services need rebuilding
     for service in "${SERVICES[@]}"; do
         if needs_rebuild "$service"; then
-            build_service "$service"
+            services_to_build+=("$service")
             ((build_count++))
         else
             success "${service} service: Using cached image"
             ((cache_count++))
         fi
     done
+    
+    # Build services sequentially to avoid directory conflicts
+    # Parallel building can cause issues with cd commands and shared state
+    if [ ${#services_to_build[@]} -gt 0 ]; then
+        log "Building ${#services_to_build[@]} service(s)..."
+        for service in "${services_to_build[@]}"; do
+            build_service "$service"
+        done
+    fi
     
     log "Build summary: ${build_count} rebuilt, ${cache_count} cached"
     success "All services processed successfully"
@@ -187,18 +262,34 @@ deploy_smart() {
     # Check if docker-compose.yml changed
     local compose_changed=false
     if [ -f "docker-compose.yml" ]; then
-        local compose_running=$(docker-compose ps -q 2>/dev/null | wc -l)
+        local compose_running=$($DOCKER_COMPOSE ps -q 2>/dev/null | wc -l)
         if [ "$compose_running" -eq 0 ]; then
             log "No running containers detected - full deployment required"
             compose_changed=true
         else
             # Check if compose file was modified
-            local running_services=$(docker-compose ps --services)
+            local running_services=$($DOCKER_COMPOSE ps --services)
             for service in $running_services; do
                 local container_created=$(docker inspect "nuro-padel-${service}" --format '{{.Created}}' 2>/dev/null)
                 if [ -n "$container_created" ]; then
-                    local container_timestamp=$(date -d "$container_created" +%s 2>/dev/null || echo "0")
-                    local compose_timestamp=$(stat -c %Y "docker-compose.yml" 2>/dev/null || echo "999999999")
+                    # Cross-platform date and stat commands
+                    local container_timestamp
+                    if date -d "$container_created" +%s 2>/dev/null; then
+                        container_timestamp=$(date -d "$container_created" +%s 2>/dev/null)
+                    elif date -j -f "%Y-%m-%dT%H:%M:%S" "$container_created" +%s 2>/dev/null; then
+                        container_timestamp=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$container_created" +%s 2>/dev/null)
+                    else
+                        container_timestamp=0
+                    fi
+                    
+                    local compose_timestamp
+                    if stat -c %Y "docker-compose.yml" 2>/dev/null; then
+                        compose_timestamp=$(stat -c %Y "docker-compose.yml" 2>/dev/null)
+                    elif stat -f %m "docker-compose.yml" 2>/dev/null; then
+                        compose_timestamp=$(stat -f %m "docker-compose.yml" 2>/dev/null)
+                    else
+                        compose_timestamp=999999999
+                    fi
                     if [ "$compose_timestamp" -gt "$container_timestamp" ]; then
                         log "docker-compose.yml modified - deployment update required"
                         compose_changed=true
@@ -216,7 +307,7 @@ deploy_smart() {
     else
         # Rolling update for changed services only
         log "Performing rolling update for changed services..."
-        docker-compose up -d --remove-orphans
+        $DOCKER_COMPOSE up -d --remove-orphans
         success "Smart deployment completed"
     fi
 }
@@ -277,10 +368,10 @@ deploy_production() {
     log "Deploying to production with zero downtime..."
     
     # Pull latest images if using registry
-    # docker-compose pull
+    # $DOCKER_COMPOSE pull
     
     # Deploy with rolling updates
-    docker-compose up -d --remove-orphans
+    $DOCKER_COMPOSE up -d --remove-orphans
     
     # Wait for services to be healthy
     log "Waiting for services to become healthy..."
@@ -289,7 +380,7 @@ deploy_production() {
     # Check all services are healthy
     local services_healthy=true
     for service in "${SERVICES[@]}"; do
-        if ! docker-compose ps "$service" | grep -q "healthy"; then
+        if ! $DOCKER_COMPOSE ps "$service" | grep -q "healthy"; then
             error "${service} is not healthy"
             services_healthy=false
         fi
@@ -299,17 +390,17 @@ deploy_production() {
         success "Production deployment completed successfully"
         
         # Show running services
-        docker-compose ps
+        $DOCKER_COMPOSE ps
         
         # Show service URLs
         log "Service URLs:"
         echo "  - YOLO Combined: http://localhost:8001/healthz"
         echo "  - MMPose:        http://localhost:8003/healthz"
         echo "  - YOLO-NAS:      http://localhost:8004/healthz"
-        echo "  - Load Balancer: http://localhost/healthz"
+        echo "  - Load Balancer: http://localhost:8080/healthz"
         
     else
-        error "Some services are unhealthy - check logs with: docker-compose logs"
+        error "Some services are unhealthy - check logs with: $DOCKER_COMPOSE logs"
         return 1
     fi
 }

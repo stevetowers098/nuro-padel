@@ -51,9 +51,9 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install compatible versions first to prevent dependency conflicts
+# Install compatible versions that satisfy all requirements
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir "numpy>=1.24.4" "requests>=2.31.0" "docutils>=0.18,<0.22"
+    pip install --no-cache-dir "numpy>=1.24.4" "docutils>=0.18,<0.19" "requests>=2.31.0"
 RUN pip install --no-cache-dir super-gradients==3.7.1
 RUN pip install --no-cache-dir -r requirements.txt
 

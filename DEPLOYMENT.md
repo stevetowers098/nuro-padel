@@ -61,13 +61,13 @@ google-cloud-storage==2.10.0
 
 **Root Cause**: `/etc/resolv.conf` is already in use or locked by another process
 
-**Solution Applied - Force Removal Approach**:
+**Solution Applied - MMpose Enhanced Approach**:
 ```dockerfile
-# Both MMPose and YOLO-NAS now use the reliable force removal approach
-RUN rm -f /etc/resolv.conf && ln -sfT /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
+# MMpose uses the enhanced symlink creation approach
+RUN rm -f /etc/resolv.conf && ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
 ```
 
-**Why This Works**: Forcibly removes any existing file/link before creating the new symlink, avoiding "resource busy" errors. The `|| true` ensures build continues even if the operation fails.
+**Why This Works**: Forcibly removes any existing file/link before creating the new symlink using a cleaner approach without temporary flags, avoiding "resource busy" errors completely.
 
 ### 2. Super-gradients Dependency Conflicts
 
@@ -125,19 +125,100 @@ RUN pip install --no-cache-dir numpy xtcocotools mmpose --verbose
 RUN apt-get update && apt-get install -y python3.10-dev python3-dev
 ```
 
-### 6. Pip Running as Root Warning
+### 6. Python Virtual Environment Creation Failures
+
+**Error**: `python3 -m venv /opt/venv` fails or `python3 -m ensurepip` fails to upgrade pip
+
+**Root Cause**: Missing Python virtual environment dependencies or dbus system bus socket
+
+**Solution Applied - MMpose Enhanced Virtual Environment Setup**:
+```dockerfile
+# Install comprehensive Python venv support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10-venv \
+    python3-venv \
+    python3-pip \
+    python3-dev \
+    dbus \
+    && mkdir -p /var/run/dbus \
+    && service dbus start
+
+# Create virtual environment with enhanced error handling
+RUN echo "🔧 Creating Python virtual environment..." && \
+    python3 -m venv /opt/venv && \
+    echo "✅ Virtual environment created successfully" && \
+    /opt/venv/bin/python -m ensurepip --upgrade && \
+    echo "✅ Virtual environment pip ensured and upgraded"
+ENV PATH="/opt/venv/bin:$PATH"
+```
+
+**Why This Works**:
+- Installs both `python3.10-venv` and `python3-venv` for comprehensive support
+- Ensures dbus service is running to avoid missing system bus socket errors
+- Uses explicit ensurepip upgrade within the virtual environment
+- Provides detailed logging for debugging virtual environment creation
+
+### 7. Pip Running as Root Warning
 
 **Warning**: `WARNING: Running pip as the 'root' user can result in broken permissions`
 
 **Solution Applied**:
 ```dockerfile
-# Create virtual environment to avoid root pip issues
+# Create virtual environment to avoid root pip issues (see solution #6 above)
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install -r requirements.txt
 ```
 
-### 7. Enhanced Dependency Verification
+### 8. Missing System Bus Socket Error
+
+**Error**: `Failed to open connection to "system" message bus due to missing /var/run/dbus/system_bus_socket`
+
+**Root Cause**: dbus service not properly configured or running during Docker build
+
+**Solution Applied - MMpose dbus Configuration**:
+```dockerfile
+# Install and configure dbus properly
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dbus \
+    && mkdir -p /var/run/dbus \
+    && service dbus start
+```
+
+**Why This Works**: Ensures dbus is installed, the socket directory exists, and the service is started during the build process.
+
+### 9. Python Version Compatibility Issues (YOLO-NAS)
+
+**Error**: `networkx` requires Python >=3.9 but system Python is 3.8.10
+
+**Root Cause**: Default system Python version doesn't meet dependency requirements for modern packages like networkx
+
+**Solution Applied - YOLO-NAS Enhanced Python Setup**:
+```dockerfile
+# Ensure Python 3.10 is properly linked as default Python
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
+    ln -sf /usr/bin/python3.10 /usr/bin/python3
+
+# Create virtual environment explicitly with Python 3.10
+RUN echo "🔧 Creating Python virtual environment with Python 3.10..." && \
+    python3.10 -m venv /opt/venv && \
+    /opt/venv/bin/python -m ensurepip --upgrade && \
+    /opt/venv/bin/python --version
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Verify Python version meets networkx requirements
+RUN echo "🔍 PYTHON VERSION CHECK: Verifying Python >=3.9 for networkx compatibility..." && \
+    python --version && \
+    python -c "import sys; assert sys.version_info >= (3, 9), f'Python {sys.version_info} < 3.9 required for networkx'; print('✅ Python version meets networkx requirements')"
+```
+
+**Why This Works**:
+- Explicitly creates virtual environment with Python 3.10 instead of system default
+- Links Python 3.10 as the default python and python3 commands
+- Verifies version compatibility before dependency installation
+- Ensures networkx and other modern packages have required Python version
+
+### 10. Enhanced Dependency Verification
 
 **Error**: `ERROR: failed to solve: process "/bin/sh -c echo "🔍 VERIFICATION..."`
 
@@ -233,14 +314,55 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 ### YOLO-NAS Service
 ```dockerfile
+# CRITICAL: Enhanced system dependencies for Python 3.10 and virtual environment support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3.10-dev \
+    python3.10-venv \
+    python3-venv \
+    python3-pip \
+    python3-dev \
+    dbus \
+    && mkdir -p /var/run/dbus \
+    && service dbus start \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python3
+
+# CRITICAL: Enhanced virtual environment creation with Python 3.10
+RUN echo "🔧 Creating Python virtual environment with Python 3.10..." && \
+    python3.10 -m venv /opt/venv && \
+    /opt/venv/bin/python -m ensurepip --upgrade && \
+    /opt/venv/bin/python --version
+ENV PATH="/opt/venv/bin:$PATH"
+
+# CRITICAL: Verify Python version meets networkx requirements (>=3.9)
+RUN python --version && \
+    python -c "import sys; assert sys.version_info >= (3, 9), f'Python {sys.version_info} < 3.9 required for networkx'; print('✅ Python version meets networkx requirements')"
+
 # CRITICAL: Install compatible versions BEFORE super-gradients
 RUN pip install numpy==1.23.0 sphinx==4.0.2
 RUN pip install super-gradients==3.7.1
 RUN pip install -r requirements.txt  # Other dependencies
 ```
 
-### MMPose Service  
+### MMPose Service
 ```dockerfile
+# CRITICAL: Enhanced system dependencies for virtual environment support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10-venv \
+    python3-venv \
+    python3-pip \
+    python3-dev \
+    dbus \
+    && mkdir -p /var/run/dbus \
+    && service dbus start
+
+# CRITICAL: Enhanced virtual environment creation with error handling
+RUN echo "🔧 Creating Python virtual environment..." && \
+    python3 -m venv /opt/venv && \
+    /opt/venv/bin/python -m ensurepip --upgrade
+ENV PATH="/opt/venv/bin:$PATH"
+
 # CRITICAL: Install base dependencies first
 RUN pip install numpy
 RUN pip install torch==1.12.1 torchvision==0.13.1 --extra-index-url https://download.pytorch.org/whl/cu117

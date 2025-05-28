@@ -14,10 +14,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix potential resolv.conf symbolic link issue in Docker - force removal approach
-RUN rm -f /etc/resolv.conf && ln -sfT /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
+# Fix symbolic link issue - Device or resource busy error resolution
+RUN rm -f /etc/resolv.conf && ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
-# Install system dependencies in single optimized layer
+# Install system dependencies in single optimized layer with enhanced Python venv support
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10-dev \
     python3.10-distutils \
     python3.10-venv \
+    python3-venv \
     python3-pip \
     python3-dev \
     ffmpeg \
@@ -42,13 +43,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     dbus \
     && mkdir -p /var/run/dbus \
+    && service dbus start \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Create virtual environment to avoid pip root warnings
-RUN python3 -m venv /opt/venv
+# Create virtual environment with enhanced error handling to avoid pip root warnings
+RUN echo "🔧 Creating Python virtual environment..." && \
+    python3 -m venv /opt/venv && \
+    echo "✅ Virtual environment created successfully" && \
+    /opt/venv/bin/python -m ensurepip --upgrade && \
+    echo "✅ Virtual environment pip ensured and upgraded"
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Set working directory

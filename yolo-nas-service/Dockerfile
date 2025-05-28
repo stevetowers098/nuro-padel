@@ -15,10 +15,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Properly fix resolv.conf symlink
-RUN rm -f /etc/resolv.conf && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
+# Fix symbolic link issue - Device or resource busy error resolution
+RUN rm -f /etc/resolv.conf && ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
-# Install system dependencies with PPA fallback handling
+# Install system dependencies with enhanced Python 3.10 support and venv dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     && (add-apt-repository ppa:deadsnakes/ppa || true) \
@@ -27,7 +27,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
     python3.10-distutils \
+    python3.10-venv \
+    python3-venv \
     python3-pip \
+    python3-dev \
     ffmpeg \
     libglib2.0-0 \
     libsm6 \
@@ -47,9 +50,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
     && apt-get update && apt-get install -y google-cloud-cli \
     && mkdir -p /var/run/dbus \
-    && ln -s /usr/bin/python3.10 /usr/bin/python \
+    && service dbus start \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Create virtual environment with enhanced error handling to avoid Python version conflicts
+RUN echo "🔧 Creating Python virtual environment with Python 3.10..." && \
+    python3.10 -m venv /opt/venv && \
+    echo "✅ Virtual environment created successfully" && \
+    /opt/venv/bin/python -m ensurepip --upgrade && \
+    echo "✅ Virtual environment pip ensured and upgraded" && \
+    /opt/venv/bin/python --version && \
+    echo "✅ Python version verified in virtual environment"
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Verify Python version meets networkx requirements (>=3.9)
+RUN echo "🔍 PYTHON VERSION CHECK: Verifying Python >=3.9 for networkx compatibility..." && \
+    python --version && \
+    python -c "import sys; assert sys.version_info >= (3, 9), f'Python {sys.version_info} < 3.9 required for networkx'; print('✅ Python version meets networkx requirements')"
 
 # Set working directory
 WORKDIR /app

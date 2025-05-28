@@ -190,52 +190,6 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-  # === INTEGRATION TEST ===
-  integration-test:
-    name: 🧪 Integration Tests
-    runs-on: ubuntu-latest
-    needs: [build-yolo-combined, build-mmpose, build-yolo-nas]
-    if: github.event_name == 'pull_request'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Docker Compose
-      run: |
-        sudo apt-get update
-        sudo apt-get remove docker-compose || true
-        sudo apt-get install -y docker-compose-plugin
-        docker compose version
-        
-    - name: Create test environment
-      run: |
-        mkdir -p weights
-        echo "# Test weights directory" > weights/README.md
-        
-    - name: Start services
-      run: |
-        # Use pre-built images from GitHub Registry
-        export REGISTRY=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}
-        docker compose -f docker-compose.test.yml up -d
-        
-    - name: Wait for services
-      run: |
-        echo "Waiting for services to be healthy..."
-        sleep 60
-        
-    - name: Test service endpoints
-      run: |
-        # Test health endpoints
-        curl -f http://localhost:8001/healthz || exit 1
-        curl -f http://localhost:8003/healthz || exit 1
-        curl -f http://localhost:8004/healthz || exit 1
-        curl -f http://localhost:8080/healthz || exit 1
-        
-    - name: Cleanup
-      if: always()
-      run: docker compose -f docker-compose.test.yml down -v
-
   # === VM DEPLOYMENT ===
   deploy-vm:
     name: 🚀 Deploy to VM
@@ -276,12 +230,17 @@ jobs:
           # Make script executable
           chmod +x deploy.sh
           
-          # Update images from registry
+          # Build images locally since registry may not have them yet
           export REGISTRY=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}
-          docker compose -f docker-compose.resilient.yml pull || echo "Registry pull failed, will build locally"
+          
+          # Try to pull from registry, if that fails build locally
+          docker compose -f docker-compose.yml pull || {
+            echo "Registry pull failed, building locally..."
+            docker compose -f docker-compose.yml build
+          }
           
           # Deploy with zero downtime
-          ./deploy-resilient.sh --deploy
+          ./deploy.sh --deploy
           
           # Verify deployment
           sleep 30

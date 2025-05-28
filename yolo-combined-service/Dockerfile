@@ -15,10 +15,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     YOLO_TELEMETRY=False
 
 # Install system dependencies in single layer for better caching
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
     python3.10-distutils \

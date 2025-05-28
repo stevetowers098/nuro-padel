@@ -15,11 +15,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     YOLO_TELEMETRY=False
 
 # Install system dependencies in single optimized layer with enhanced Python venv support
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
     && add-apt-repository universe \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
     python3.10-distutils \
@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus \
     && (apt-get install -y libcrc32c-dev || echo "libcrc32c-dev not available, continuing...") \
     && mkdir -p /var/run/dbus \
-    && (ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null || echo "resolv.conf already managed, skipping...") \
+    && (rm -f /etc/resolv.conf && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null || echo "resolv.conf already managed, skipping...") \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/* \

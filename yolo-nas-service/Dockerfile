@@ -16,10 +16,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     YOLO_TELEMETRY=False
 
 # Install system dependencies with enhanced Python 3.10 support and venv dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     software-properties-common \
     && apt-add-repository ppa:deadsnakes/ppa \
-    && apt-get update \
+    && apt-get update --fix-missing \
     && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
@@ -45,9 +45,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus \
     && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list \
     && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
-    && apt-get update && apt-get install -y google-cloud-cli \
+    && apt-get update --fix-missing && apt-get install -y google-cloud-cli \
     && mkdir -p /var/run/dbus \
-    && (ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null || echo "resolv.conf already managed, skipping...") \
+    && (rm -f /etc/resolv.conf && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null || echo "resolv.conf already managed, skipping...") \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*

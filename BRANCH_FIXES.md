@@ -4,17 +4,21 @@ This document outlines the fixes applied to resolve the specific issues identifi
 
 ## 🎯 Issues Found and Fixed
 
-### 1. ✅ Protobuf Dependency Conflict 
-**Error**: `grpcio-status 1.70.0 has requirement protobuf<6.0dev,>=5.26.1, but you'll have protobuf 4.25.7 which is incompatible.`
+### 1. ⚠️ Protobuf Dependency Conflict (Complex Issue)
+**Error**: `ERROR: Cannot install -r /opt/padel/app/requirements/optimized_yolo.txt (line 11) and protobuf<6.0.0 and >=5.26.1 because these package versions have conflicting dependencies.`
 
-**Root Cause**: Google Cloud Storage dependency (`google-cloud-storage==2.18.0`) pulls in `grpcio-status 1.70.0` which requires newer protobuf.
+**Root Cause**: **IRRECONCILABLE CONFLICT**
+- `super-gradients==3.7.1` (YOLO-NAS) requires `protobuf<4.0.0`
+- `google-cloud-storage==2.18.0` requires `protobuf>=5.26.1,<6.0.0` (via grpcio-status)
 
-**Fixed in**:
-- [`requirements.txt`](requirements.txt:8) - Added `protobuf>=5.26.1,<6.0.0`
-- [`requirements/optimized_main.txt`](requirements/optimized_main.txt:15) - Added protobuf constraint
-- [`requirements/optimized_mmpose.txt`](requirements/optimized_mmpose.txt:24) - Added protobuf constraint
-- [`requirements/optimized_yolo.txt`](requirements/optimized_yolo.txt:25) - Added protobuf constraint
-- [`requirements/yolo-nas.txt`](requirements/yolo-nas.txt:25) - Added protobuf constraint
+**Resolution Strategy - Separate Environments**:
+- [`requirements.txt`](requirements.txt:8) - Added `protobuf>=5.26.1,<6.0.0` (Main API)
+- [`requirements/optimized_main.txt`](requirements/optimized_main.txt:15) - Added protobuf constraint (Main API + GCS)
+- [`requirements/optimized_mmpose.txt`](requirements/optimized_mmpose.txt:24) - Added protobuf constraint (MMPose + GCS)
+- [`requirements/optimized_yolo.txt`](requirements/optimized_yolo.txt:25) - **REMOVED** protobuf constraint (YOLO services only)
+- [`requirements/yolo-nas.txt`](requirements/yolo-nas.txt:25) - **REMOVED** protobuf constraint (YOLO-NAS only)
+
+**📋 See [`DEPENDENCY_CONFLICT_RESOLUTION.md`](DEPENDENCY_CONFLICT_RESOLUTION.md) for complete fix instructions**
 
 ### 2. ✅ Python Encoding Error (Line 18)
 **Error**: `UnicodeDecodeError: 'ascii' codec can't decode byte 0xe2 in position X` (line 18)

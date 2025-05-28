@@ -22,7 +22,8 @@ pillow==10.4.0             # Latest with security fixes
 
 # --- Core Dependencies ---
 numpy>=1.24.0,<2.0.0      # Stable numpy 1.x for compatibility
-protobuf>=5.26.1,<6.0.0   # Compatible with grpcio-status from GCS
+# protobuf - CONFLICT: super-gradients requires older protobuf, GCS requires newer
+# Install protobuf separately based on which services are used
 httpx==0.27.2              # Latest async client
 python-multipart==0.0.12  # Latest for file uploads
 

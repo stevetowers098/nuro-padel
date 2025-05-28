@@ -53,9 +53,9 @@ COPY requirements.txt .
 
 # Install compatible versions first to prevent dependency conflicts
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir "numpy>=1.24.4" "requests>=2.31.0" "docutils>=0.18,<0.22" && \
-    pip install --no-cache-dir super-gradients==3.7.1 && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir "numpy>=1.24.4" "requests>=2.31.0" "docutils>=0.18,<0.22"
+RUN pip install --no-cache-dir super-gradients==3.7.1
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory
 RUN mkdir -p /app/weights

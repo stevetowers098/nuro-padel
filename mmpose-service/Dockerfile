@@ -46,11 +46,10 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install PyTorch first (required by mim), then MMPose stack
+# Install exact openxlab dependency versions first, then MMPose
 RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
-    pip install --no-cache-dir torch torchvision && \
-    pip install --no-cache-dir -U openmim && \
-    mim install mmengine mmcv mmpose && \
+    pip install --no-cache-dir pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0 "numpy>=1.21.0,<2.0" && \
+    pip install --no-cache-dir mmpose && \
     pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory

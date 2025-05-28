@@ -128,39 +128,41 @@ google-cloud-storage==2.10.0
 
 **Root Cause**: `/etc/resolv.conf` is already in use or locked by another process
 
-**Solution Applied - Append Approach (Final Fix)**:
+**Solution Applied - Remove DNS Configuration (Final Fix)**:
 ```dockerfile
-# Both MMpose and YOLO-NAS use append approach
-RUN echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+# DNS configuration step removed entirely from both MMpose and YOLO-NAS Dockerfiles
+# Docker handles DNS resolution automatically
 ```
 
-**Why This Works**: The append approach is the most reliable solution for Docker environments:
-- **No File Replacement**: Appends to existing `/etc/resolv.conf` instead of overwriting/replacing
-- **Avoids Lock Issues**: No attempt to move, copy, or replace files that may be managed by Docker
-- **Preserves Existing Config**: Keeps any existing DNS configuration while adding backup
-- **Simple and Reliable**: Single operation that works consistently across all Docker environments
-- **No Fallback Needed**: Append operation rarely fails unless filesystem is read-only
+**Why This Works**: Removing DNS configuration is the most reliable solution:
+- **Docker Native**: Docker automatically manages DNS resolution for containers
+- **No File System Conflicts**: Eliminates all `/etc/resolv.conf` manipulation that causes read-only errors
+- **Build Reliability**: DNS issues never block Docker builds
+- **Production Ready**: Standard practice for containerized applications
+- **Zero Maintenance**: No DNS configuration to manage or debug
 
 **Root Cause Addressed**:
-- **Device Busy Errors**: Eliminates all file replacement operations that cause "Device or resource busy"
-- **Docker File Management**: Works with Docker's management of `/etc/resolv.conf` without conflicts
-- **Build Reliability**: Ensures DNS configuration never blocks Docker builds
+- **Read-Only File System**: Eliminates attempts to modify `/etc/resolv.conf` which is read-only in many build environments
+- **Device Busy Errors**: No file operations that can conflict with Docker's file management
+- **Build Simplicity**: Focuses Dockerfile on application dependencies, not system configuration
 
-**Alternative Solutions for Advanced Cases**:
-```dockerfile
-# Option 1: Multiple DNS servers
-RUN echo "nameserver 8.8.8.8" >> /etc/resolv.conf && \
-    echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+**Production DNS Configuration**:
+```bash
+# Option 1: Runtime DNS via Docker flags (recommended)
+docker run --dns=8.8.8.8 <image>
 
-# Option 2: Build argument for dynamic DNS
-ARG DNS_SERVER=8.8.8.8
-RUN echo "nameserver ${DNS_SERVER}" >> /etc/resolv.conf
+# Option 2: Docker Compose DNS configuration
+services:
+  mmpose-service:
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
-# Option 3: Runtime DNS via Docker flags (recommended for production)
-# docker run --dns=8.8.8.8 <image>
+# Option 3: Host network DNS inheritance (default)
+# Container inherits host DNS configuration automatically
 ```
 
-**Best Practice**: For production deployments, use Docker's `--dns` flag instead of modifying `/etc/resolv.conf` in Dockerfile.
+**Best Practice**: Let Docker handle DNS automatically. Use runtime configuration only if specific DNS servers are required.
 
 ### 2. Super-gradients Dependency Conflicts
 

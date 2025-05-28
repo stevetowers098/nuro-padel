@@ -14,9 +14,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix DNS resolution - Append approach to avoid file lock issues
-RUN echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-
 # Install system dependencies in single optimized layer with enhanced Python venv support
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \

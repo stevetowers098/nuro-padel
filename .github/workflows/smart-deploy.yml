@@ -2,7 +2,7 @@ name: 🧠 Smart Deployment - Only Changed Services
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, docker-containers ]
     paths:
       - 'yolo-combined-service/**'
       - 'mmpose-service/**'

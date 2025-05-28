@@ -1,9 +1,9 @@
 name: Smart Deployment
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, master, docker-containers, feature/*, fix/*, hotfix/* ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master, develop ]
 
 env:
   REGISTRY: ghcr.io

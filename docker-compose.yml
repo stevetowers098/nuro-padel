@@ -7,7 +7,7 @@ services:
     build:
       context: ./yolo-combined-service
       dockerfile: Dockerfile
-    image: nuro-padel/yolo-combined:latest
+    image: ghcr.io/stevetowers098/nuro-padel/yolo-combined:latest
     container_name: nuro-padel-yolo-combined
     restart: unless-stopped
     ports:
@@ -23,6 +23,10 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Fix permission/directory issues
+      - HOME=/tmp
+      - MPLCONFIGDIR=/tmp/matplotlib
+      - PYTHONPATH=/app
     runtime: nvidia
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
@@ -38,7 +42,7 @@ services:
     build:
       context: ./mmpose-service
       dockerfile: Dockerfile
-    image: nuro-padel/mmpose:latest
+    image: ghcr.io/stevetowers098/nuro-padel/mmpose:latest
     container_name: nuro-padel-mmpose
     restart: unless-stopped
     ports:
@@ -54,6 +58,10 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Fix permission/directory issues
+      - HOME=/tmp
+      - MPLCONFIGDIR=/tmp/matplotlib
+      - PYTHONPATH=/app
     runtime: nvidia
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/healthz"]
@@ -69,7 +77,7 @@ services:
     build:
       context: ./yolo-nas-service
       dockerfile: Dockerfile
-    image: nuro-padel/yolo-nas:latest
+    image: ghcr.io/stevetowers098/nuro-padel/yolo-nas:latest
     container_name: nuro-padel-yolo-nas
     restart: unless-stopped
     ports:
@@ -85,6 +93,10 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Fix permission/directory issues
+      - HOME=/tmp
+      - MPLCONFIGDIR=/tmp/matplotlib
+      - PYTHONPATH=/app
     runtime: nvidia
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/healthz"]

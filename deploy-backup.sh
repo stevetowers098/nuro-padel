@@ -1,6 +1,6 @@
-#!/bin/bash
+ne#!/bin/bash
 
-# NuroPadel Docker Deployment Script - Updated for Resilient Deployment
+# NuroPadel Docker Deployment Script
 # Builds and deploys 3 AI services with zero-downtime strategy
 
 set -euo pipefail
@@ -15,8 +15,7 @@ NC='\033[0m' # No Color
 # Configuration
 PROJECT_NAME="nuro-padel"
 SERVICES=("yolo-combined" "mmpose" "yolo-nas")
-REGISTRY="ghcr.io/stevetowers098/nuro-padel"  # Updated for registry support
-COMPOSE_FILE="docker-compose.resilient.yml"  # Use the fixed compose file
+REGISTRY="nuro-padel"
 VM_HOST="towers@35.189.53.46"
 VM_PATH="/opt/padel-docker"
 
@@ -49,10 +48,10 @@ check_prerequisites() {
     
     # Check Docker Compose (v2 preferred, v1 fallback)
     if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-        DOCKER_COMPOSE="docker compose -f $COMPOSE_FILE"
+        DOCKER_COMPOSE="docker compose"
         log "Using Docker Compose v2: $(docker compose version --short)"
     elif command -v docker-compose >/dev/null 2>&1; then
-        DOCKER_COMPOSE="docker-compose -f $COMPOSE_FILE"
+        DOCKER_COMPOSE="docker-compose"
         warning "Using legacy Docker Compose v1: $(docker-compose version --short)"
         warning "Consider upgrading to Docker Compose v2 for better performance"
     else
@@ -63,12 +62,6 @@ check_prerequisites() {
     # Check NVIDIA Docker runtime
     if ! docker info | grep -q nvidia; then
         warning "NVIDIA Docker runtime not detected - GPU acceleration may not work"
-    fi
-    
-    # Check compose file exists
-    if [ ! -f "$COMPOSE_FILE" ]; then
-        error "Compose file $COMPOSE_FILE not found"
-        exit 1
     fi
     
     # Check weights directory
@@ -84,7 +77,7 @@ check_prerequisites() {
     export DOCKER_CLI_EXPERIMENTAL=enabled
     
     # Docker Compose v2 specific optimizations
-    if [[ "$DOCKER_COMPOSE" == *"docker compose"* ]]; then
+    if [[ "$DOCKER_COMPOSE" == "docker compose" ]]; then
         export COMPOSE_DOCKER_CLI_BUILD=1
         export COMPOSE_BUILDKIT=1
         log "Docker Compose v2 optimizations enabled"
@@ -219,30 +212,6 @@ build_service() {
     success "${service} service built successfully"
 }
 
-# Pull pre-built images from registry
-pull_images() {
-    log "Pulling pre-built images from registry..."
-    
-    local pull_success=true
-    for service in "${SERVICES[@]}"; do
-        log "Pulling ${service} from ${REGISTRY}/${service}:latest"
-        if docker pull "${REGISTRY}/${service}:latest"; then
-            success "${service} image pulled successfully"
-        else
-            error "Failed to pull ${service} image"
-            pull_success=false
-        fi
-    done
-    
-    if [ "$pull_success" = true ]; then
-        success "All images pulled successfully"
-        return 0
-    else
-        error "Some images failed to pull"
-        return 1
-    fi
-}
-
 # Build all services with smart caching and parallel processing
 build_all_optimized() {
     log "Building Docker services with smart change detection and parallel processing..."
@@ -290,9 +259,9 @@ build_all() {
 deploy_smart() {
     log "Deploying with smart change detection..."
     
-    # Check if docker-compose.resilient.yml changed
+    # Check if docker-compose.yml changed
     local compose_changed=false
-    if [ -f "$COMPOSE_FILE" ]; then
+    if [ -f "docker-compose.yml" ]; then
         local compose_running=$($DOCKER_COMPOSE ps -q 2>/dev/null | wc -l)
         if [ "$compose_running" -eq 0 ]; then
             log "No running containers detected - full deployment required"
@@ -314,15 +283,15 @@ deploy_smart() {
                     fi
                     
                     local compose_timestamp
-                    if stat -c %Y "$COMPOSE_FILE" 2>/dev/null; then
-                        compose_timestamp=$(stat -c %Y "$COMPOSE_FILE" 2>/dev/null)
-                    elif stat -f %m "$COMPOSE_FILE" 2>/dev/null; then
-                        compose_timestamp=$(stat -f %m "$COMPOSE_FILE" 2>/dev/null)
+                    if stat -c %Y "docker-compose.yml" 2>/dev/null; then
+                        compose_timestamp=$(stat -c %Y "docker-compose.yml" 2>/dev/null)
+                    elif stat -f %m "docker-compose.yml" 2>/dev/null; then
+                        compose_timestamp=$(stat -f %m "docker-compose.yml" 2>/dev/null)
                     else
                         compose_timestamp=999999999
                     fi
                     if [ "$compose_timestamp" -gt "$container_timestamp" ]; then
-                        log "$COMPOSE_FILE modified - deployment update required"
+                        log "docker-compose.yml modified - deployment update required"
                         compose_changed=true
                         break
                     fi
@@ -355,9 +324,6 @@ test_service() {
         --name "test-${service}" \
         --gpus all \
         -p "${port}:${port}" \
-        -e HOME=/tmp \
-        -e MPLCONFIGDIR=/tmp/matplotlib \
-        -e PYTHONPATH=/app \
         "${REGISTRY}/${service}:latest"
     
     # Wait for service to start
@@ -401,7 +367,10 @@ test_all() {
 deploy_production() {
     log "Deploying to production with zero downtime..."
     
-    # Deploy with rolling updates using resilient compose file
+    # Pull latest images if using registry
+    # $DOCKER_COMPOSE pull
+    
+    # Deploy with rolling updates
     $DOCKER_COMPOSE up -d --remove-orphans
     
     # Wait for services to be healthy
@@ -411,35 +380,9 @@ deploy_production() {
     # Check all services are healthy
     local services_healthy=true
     for service in "${SERVICES[@]}"; do
-        if ! $DOCKER_COMPOSE ps "$service" | grep -q "healthy\|running"; then
-            warning "${service} is not healthy - checking manually..."
-            # Manual health check
-            case "$service" in
-                "yolo-combined") 
-                    if curl -f http://localhost:8001/healthz &> /dev/null; then
-                        success "${service} is responding to health checks"
-                    else
-                        error "${service} is not responding"
-                        services_healthy=false
-                    fi
-                    ;;
-                "mmpose")
-                    if curl -f http://localhost:8003/healthz &> /dev/null; then
-                        success "${service} is responding to health checks"
-                    else
-                        error "${service} is not responding"
-                        services_healthy=false
-                    fi
-                    ;;
-                "yolo-nas")
-                    if curl -f http://localhost:8004/healthz &> /dev/null; then
-                        success "${service} is responding to health checks"
-                    else
-                        error "${service} is not responding"
-                        services_healthy=false
-                    fi
-                    ;;
-            esac
+        if ! $DOCKER_COMPOSE ps "$service" | grep -q "healthy"; then
+            error "${service} is not healthy"
+            services_healthy=false
         fi
     done
     
@@ -454,7 +397,7 @@ deploy_production() {
         echo "  - YOLO Combined: http://localhost:8001/healthz"
         echo "  - MMPose:        http://localhost:8003/healthz"
         echo "  - YOLO-NAS:      http://localhost:8004/healthz"
-        echo "  - Load Balancer: http://localhost:8080/"
+        echo "  - Load Balancer: http://localhost:8080/healthz"
         
     else
         error "Some services are unhealthy - check logs with: $DOCKER_COMPOSE logs"
@@ -484,10 +427,10 @@ deploy_vm() {
         ./ "$VM_HOST:$VM_PATH/"
     
     # Make deploy script executable
-    ssh "$VM_HOST" "chmod +x $VM_PATH/deploy.sh $VM_PATH/deploy-resilient.sh"
+    ssh "$VM_HOST" "chmod +x $VM_PATH/deploy.sh"
     
-    # Run deployment on VM using resilient script
-    ssh "$VM_HOST" "cd $VM_PATH && bash deploy-resilient.sh all"
+    # Run deployment on VM
+    ssh "$VM_HOST" "cd $VM_PATH && bash deploy.sh --production"
     
     success "VM deployment completed"
 }
@@ -517,9 +460,9 @@ deploy_sequential() {
         # Build only this service
         build_service "$service"
         
-        # Deploy only this service using profiles
+        # Deploy only this service
         log "Starting ${service} service..."
-        $DOCKER_COMPOSE --profile "$service" up -d
+        $DOCKER_COMPOSE up -d "$service"
         
         # Wait for service to be healthy
         local max_wait=120
@@ -557,7 +500,7 @@ deploy_sequential() {
     
     # Start nginx load balancer last
     log "🔄 Starting nginx load balancer..."
-    $DOCKER_COMPOSE --profile nginx up -d
+    $DOCKER_COMPOSE up -d nginx
     
     success "Sequential deployment completed!"
 }
@@ -612,21 +555,6 @@ free_disk_space() {
     success "Disk cleanup completed"
 }
 
-# Fast deployment using pre-built images
-deploy_fast() {
-    log "🚀 Fast deployment using pre-built images..."
-    
-    # Try to pull pre-built images first
-    if pull_images; then
-        success "Using pre-built images from registry"
-        deploy_production
-    else
-        warning "Pre-built images not available, falling back to local build"
-        build_all_optimized
-        deploy_production
-    fi
-}
-
 # Show usage
 usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -640,10 +568,6 @@ usage() {
     echo "  --build-force        Force rebuild all services"
     echo "  --deploy-force       Force full redeployment"
     echo "  --all-force          Force rebuild and redeploy"
-    echo ""
-    echo "Fast Options (use pre-built images):"
-    echo "  --fast               Fast deployment using registry images"
-    echo "  --pull               Pull pre-built images from registry"
     echo ""
     echo "Sequential Options (space optimized):"
     echo "  --deploy-sequential  Deploy services one by one (saves disk space)"
@@ -661,7 +585,6 @@ usage() {
     echo "  $0 --build-force      # Force rebuild all"
     echo "  $0 --all              # Smart full deployment"
     echo "  $0 --all-force        # Force full deployment"
-    echo "  $0 --fast             # Fast deployment with registry images"
     echo "  $0 --deploy-sequential # Deploy one service at a time"
     echo "  $0 --deploy-seq yolo-combined # Deploy only YOLO Combined"
     echo "  $0 --cleanup-disk     # Free up disk space"
@@ -690,14 +613,6 @@ main() {
         --deploy-force)
             check_prerequisites
             deploy_production
-            ;;
-        --fast)
-            check_prerequisites
-            deploy_fast
-            ;;
-        --pull)
-            check_prerequisites
-            pull_images
             ;;
         --deploy-sequential)
             check_prerequisites

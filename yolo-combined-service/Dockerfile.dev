@@ -1,0 +1,44 @@
+# YOLO Combined Development Dockerfile - FAST builds for code changes
+# Uses pre-built base image with heavy dependencies already installed
+
+# Use the base image with all heavy dependencies (built once)
+FROM ghcr.io/stevetowers098/nuro-padel/base:latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy and install ONLY the light requirements (fast changes)
+COPY requirements.txt .
+RUN echo "🚀 Installing light requirements (fast)..." && \
+    pip install --no-cache-dir -r requirements.txt --verbose && \
+    echo "✅ Light requirements installed in ~30 seconds!"
+
+# Create weights directory
+RUN mkdir -p /app/weights
+
+# Copy application code (this layer rebuilds quickly when you change code)
+COPY . .
+
+# Set proper permissions
+RUN chmod +x /app/main.py
+
+# Quick verification (no heavy imports needed)
+RUN echo "🔍 Quick verification..." && \
+    python -c "import fastapi; print('✅ FastAPI ready')" && \
+    python -c "import cv2; print('✅ OpenCV ready from base image')" && \
+    echo "📊 Development build complete in ~1-2 minutes!"
+
+# Create non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8001/healthz || exit 1
+
+# Expose port
+EXPOSE 8001
+
+# Start command
+CMD ["python", "main.py"]

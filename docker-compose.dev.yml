@@ -1,0 +1,144 @@
+# NuroPadel Development Docker Compose - FAST builds for testing phase
+# Uses pre-built base image + development Dockerfiles for 1-2 minute builds
+
+services:
+  # === YOLO Combined Service (Development) ===
+  yolo-combined:
+    build:
+      context: ./yolo-combined-service
+      dockerfile: Dockerfile.dev
+    image: nuro-padel/yolo-combined:dev
+    container_name: nuro-padel-yolo-combined-dev
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./weights:/app/weights:ro
+      - /tmp:/tmp
+      # DEVELOPMENT: Mount your code for live changes (optional)
+      - ./yolo-combined-service:/app:ro
+    environment:
+      - YOLO_OFFLINE=1
+      - ULTRALYTICS_OFFLINE=1
+      - ONLINE=False
+      - YOLO_TELEMETRY=False
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Fix permission/directory issues
+      - HOME=/tmp
+      - MPLCONFIGDIR=/tmp/matplotlib
+      - PYTHONPATH=/app
+    runtime: nvidia
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - nuro-padel-dev-network
+
+  # === MMPose Service (Development) ===
+  mmpose:
+    build:
+      context: ./mmpose-service
+      dockerfile: Dockerfile.dev
+    image: nuro-padel/mmpose:dev
+    container_name: nuro-padel-mmpose-dev
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./weights:/app/weights:ro
+      - /tmp:/tmp
+      # DEVELOPMENT: Mount your code for live changes (optional)
+      - ./mmpose-service:/app:ro
+    environment:
+      - YOLO_OFFLINE=1
+      - ULTRALYTICS_OFFLINE=1
+      - ONLINE=False
+      - YOLO_TELEMETRY=False
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Fix permission/directory issues
+      - HOME=/tmp
+      - MPLCONFIGDIR=/tmp/matplotlib
+      - PYTHONPATH=/app
+    runtime: nvidia
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - nuro-padel-dev-network
+
+  # === YOLO-NAS Service (Development) ===
+  yolo-nas:
+    build:
+      context: ./yolo-nas-service
+      dockerfile: Dockerfile.dev
+    image: nuro-padel/yolo-nas:dev
+    container_name: nuro-padel-yolo-nas-dev
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./weights:/app/weights:ro
+      - /tmp:/tmp
+      # DEVELOPMENT: Mount your code for live changes (optional)
+      - ./yolo-nas-service:/app:ro
+    environment:
+      - YOLO_OFFLINE=1
+      - ULTRALYTICS_OFFLINE=1
+      - ONLINE=False
+      - YOLO_TELEMETRY=False
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Fix permission/directory issues
+      - HOME=/tmp
+      - MPLCONFIGDIR=/tmp/matplotlib
+      - PYTHONPATH=/app
+    runtime: nvidia
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - nuro-padel-dev-network
+
+  # === Nginx Load Balancer (same as production) ===
+  nginx:
+    image: nginx:alpine
+    container_name: nuro-padel-nginx-dev
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - yolo-combined
+      - mmpose
+      - yolo-nas
+    networks:
+      - nuro-padel-dev-network
+
+networks:
+  nuro-padel-dev-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.21.0.0/16
+
+volumes:
+  weights-data:
+    driver: local

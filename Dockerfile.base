@@ -1,0 +1,91 @@
+# Base Image for Development - Build Once, Use Many Times
+# This contains all the heavy dependencies that rarely change
+
+FROM nvidia/cuda:12.2.0-devel-ubuntu20.04
+
+# Set environment variables for speed and stability
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    YOLO_OFFLINE=1 \
+    ULTRALYTICS_OFFLINE=1 \
+    ONLINE=False \
+    YOLO_TELEMETRY=False
+
+# Install system dependencies
+RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && add-apt-repository universe \
+    && apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3.10-dev \
+    python3.10-distutils \
+    python3.10-venv \
+    python3-venv \
+    python3-pip \
+    python3-dev \
+    ffmpeg \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgtk-3-0 \
+    libglib2.0-dev \
+    build-essential \
+    curl \
+    wget \
+    git \
+    dbus \
+    && (apt-get install -y libcrc32c-dev || echo "libcrc32c-dev not available, continuing...") \
+    && mkdir -p /var/run/dbus \
+    && (rm -f /etc/resolv.conf && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null || echo "resolv.conf already managed, skipping...") \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create virtual environment
+RUN echo "🔧 Creating Python virtual environment..." \
+    && python3 -m venv /opt/venv \
+    && echo "✅ Virtual environment created successfully" \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && echo "✅ Virtual environment pip ensured and upgraded"
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install HEAVY dependencies that rarely change (THIS IS THE 25-MINUTE PART)
+RUN echo "🔍 Installing heavy AI dependencies (one-time setup)..." && \
+    echo "Step 1: Installing PyTorch ecosystem..." && \
+    pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --extra-index-url https://download.pytorch.org/whl/cu118 --verbose && \
+    echo "Step 2: Installing OpenMIM..." && \
+    pip install --no-cache-dir -U openmim --verbose && \
+    echo "Step 3: Installing mmengine..." && \
+    mim install mmengine --verbose && \
+    echo "Step 4: Installing MMCV (SLOW - CUDA compilation)..." && \
+    mim install "mmcv==2.1.0" --verbose && \
+    echo "Step 5: Installing mmdet..." && \
+    mim install "mmdet>=3.0.0,<3.3.0" --verbose && \
+    echo "Step 6: Installing MMPose..." && \
+    mim install mmpose xtcocotools --verbose && \
+    echo "Step 7: Installing super-gradients..." && \
+    pip install --no-cache-dir super-gradients==3.7.1 --verbose && \
+    echo "Step 8: Installing common dependencies..." && \
+    pip install --no-cache-dir \
+        "numpy==1.23.0" \
+        "opencv-python-headless==4.10.0.84" \
+        "pillow==10.4.0" \
+        "fastapi==0.111.0" \
+        "pydantic==2.7.4" \
+        "uvicorn[standard]==0.30.1" \
+        "httpx==0.27.0" \
+        "google-cloud-storage==2.18.0" \
+        "requests==2.31.0" \
+        "albumentations~=1.3" \
+        "boto3>=1.17.15" \
+        psutil --verbose && \
+    echo "✅ Heavy dependencies installed - this base image is ready for development!"
+
+WORKDIR /app

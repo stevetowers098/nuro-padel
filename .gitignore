@@ -124,3 +124,7 @@ yarn-error.log*
 # === Local Development ===
 .local/
 local_config.json
+weights/
+*.pth
+*.pt
+*.onnx

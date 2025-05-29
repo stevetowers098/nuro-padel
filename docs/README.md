@@ -161,16 +161,19 @@ curl -X POST http://35.189.53.46:8080/track-ball \
 
 ```
 nuro-padel/
-├── yolo-combined-service/      # Main service with TrackNet
-│   ├── tracknet/              # TrackNet integration
-│   ├── models/                # Model weights
-│   └── main.py
-├── mmpose-service/            # Advanced pose estimation
-├── yolo-nas-service/         # High-accuracy detection
+├── services/                 # All AI services
+│   ├── yolo-combined/        # Main service with TrackNet
+│   │   ├── tracknet/         # TrackNet integration
+│   │   ├── models/           # Model weights
+│   │   └── main.py
+│   ├── mmpose/               # Advanced pose estimation
+│   └── yolo-nas/             # High-accuracy detection
+├── deployment/               # Nginx configurations
+├── docs/                     # Documentation
+├── scripts/                  # Deployment scripts
+├── testing/                  # Test suite
 ├── docker-compose.yml        # Service orchestration
-├── nginx.conf               # Load balancer
-├── README.md               # This file
-└── DEPLOYMENT.md          # Technical deployment guide
+└── DEPLOYMENT.md            # Technical deployment guide
 ```
 
 ## Technology Stack

@@ -1,33 +1,96 @@
-# NuroPadel Deployment Guide
+# Deployment Guide
 
-## Docker Build Strategy Notes
+## 🚀 Quick Deploy Commands
+```bash
+./scripts/deploy.sh           # Smart production deploy
+./scripts/dev-fast.sh         # Fast development builds (1-2 min)
+./scripts/backup.sh           # Backup working services
+```
 
-### Why Multiple Build Iterations Were Needed
+## 🌍 Environments
+- **Development**: `localhost:8080` (docker-compose.dev.yml)
+- **Production**: `35.189.53.46:8080` (docker-compose.yml)
+- **CI/CD**: GitHub Actions → Auto-deploy on push to `docker-containers`
 
-The Docker builds for MMPose and YOLO-NAS services required multiple iterations due to:
+## 📦 Service Details
 
-1. **Complex ML Dependency Ecosystem**: PyTorch, MMCV, and super-gradients have intricate version interdependencies
-2. **Docker Environment Variability**: Different host systems (GitHub Actions, local, cloud) have varying configurations
-3. **Containerization Challenges**: File system permissions, DNS resolution, and system service management differ across Docker setups
+### **YOLO Combined Service** (services/yolo-combined/)
+**Models**: YOLO11, YOLOv8, TrackNet
+**Endpoints**: 5 total (/yolo11/pose, /yolo11/object, /yolov8/pose, /yolov8/object, /track-ball)
+**Port**: 8001
+**Key Dependencies**:
+```txt
+torch==2.3.1
+torchvision==0.18.1
+ultralytics==8.2.97
+google-cloud-storage==2.10.0  # Specific version for protobuf compatibility
+protobuf>=3.19.5,<4.0.0       # Critical constraint
+opencv-python-headless==4.10.0.84
+fastapi==0.111.0
+httpx==0.27.0
+```
 
-### Lessons Learned
-- **Test Early**: Build in target environment (GitHub Actions) early in development
-- **Minimal Base Images**: Consider using official PyTorch Docker images as base
-- **Dependency Locking**: Pin all versions explicitly to prevent surprises
-- **Graceful Fallbacks**: Always include fallback mechanisms for system operations
+### **MMPose Service** (services/mmpose/)
+**Models**: RTMPose-M, HRNet-W48
+**Endpoints**: /mmpose/pose (biomechanical analysis)
+**Port**: 8003
+**Key Dependencies** (Critical Version Constraints):
+```txt
+torch==2.1.2                  # Must match MMCV compatibility
+torchvision==0.16.2
+torchaudio==2.1.2
+mmcv==2.1.0                   # Exact version required
+numpy>=1.21.0,<2.0            # Critical: constrained for mmcv
+pytz==2023.3                  # Must be 2023.3 for openxlab
+mmdet>=3.0.0,<3.3.0           # Version constraint for compatibility
+mmengine                      # Latest compatible via mim
+mmpose                        # Latest compatible via mim
+```
 
----
+### **YOLO-NAS Service** (services/yolo-nas/)
+**Models**: YOLO-NAS Pose N, YOLO-NAS S
+**Endpoints**: /yolo-nas/pose, /yolo-nas/object
+**Port**: 8004
+**Key Dependencies**:
+```txt
+super-gradients==3.7.1        # Main framework
+numpy==1.23.0                 # Must be ≤1.23 for super-gradients
+torch + torchvision           # Auto-managed by super-gradients
+requests==2.31.0
+```
 
-# NuroPadel Deployment Guide
+## 🔧 Development Workflow
 
-## Prerequisites
+### Fast Development (Recommended)
+```bash
+# Uses pre-built base image for 1-2 minute builds
+./scripts/dev-fast.sh
+```
 
-### System Requirements
-- **CPU**: 4+ cores recommended
+**Base Image**: `ghcr.io/stevetowers098/nuro-padel/base:latest`
+- Contains heavy ML dependencies (PyTorch, CUDA, etc.)
+- Built once, reused for fast iteration
+- Perfect for testing phase
+
+### Production Deployment
+```bash
+# Full production build with optimizations
+./scripts/deploy.sh
+```
+
+## 🛠️ System Requirements
+
+### Minimum Requirements
+- **CPU**: 4+ cores
 - **RAM**: 8GB minimum, 16GB recommended
 - **Storage**: 20GB+ available space
-- **GPU**: NVIDIA GPU with 8GB+ VRAM (optional, for acceleration)
 - **OS**: Ubuntu 20.04+ or compatible Docker environment
+
+### Recommended (Production)
+- **CPU**: 8+ cores
+- **RAM**: 32GB
+- **GPU**: NVIDIA GPU with 8GB+ VRAM
+- **Storage**: 50GB+ SSD
 
 ### Software Dependencies
 - Docker 20.10+
@@ -35,531 +98,64 @@ The Docker builds for MMPose and YOLO-NAS services required multiple iterations 
 - NVIDIA Docker runtime (for GPU support)
 - Google Cloud SDK (for GCS uploads)
 
-## Version Consistency & Deployment Issues
-
-### Critical Version Conflicts Resolved
-
-This section addresses serious production issues that were identified and resolved to ensure consistent deployment across Docker and VM environments.
-
-#### MMPose Service Issues Fixed
-
-**Issue**: mmcv version conflict between Docker (mmcv==2.1.0) and potential VM deployment inconsistencies.
-**Solution Applied**: Created [`requirements/mmpose.txt`](requirements/mmpose.txt) with exact Docker version matching.
-
-**Issue**: Potential numpy>=2.0 conflicts with mmcv 2.1.0 (developed against numpy 1.x).
-**Solution Applied**: Explicitly constrained numpy in [`mmpose-service/Dockerfile`](mmpose-service/Dockerfile:72) to `numpy>=1.21.0,<2.0`.
-
-**Issue**: PyTorch CUDA version mismatch (cu118 vs CUDA 12.2.0 base image).
-**Solution Applied**: Documented as acceptable due to forward compatibility, but flagged for future optimization.
-
-#### YOLO-NAS Service Issues Fixed
-
-**Issue**: Long-term risk from super-gradients==3.7.1 due to Deci AI operational changes.
-**Solution Applied**: Documented migration recommendation to Ultralytics or MMYOLO in future roadmap.
-
-**Issue**: Documentation tools (sphinx, docutils) in runtime requirements causing bloat and security risk.
-**Solution Applied**: Removed from [`yolo-nas-service/requirements.txt`](yolo-nas-service/requirements.txt) - only needed for builds.
-
-**Issue**: Inconsistent PyTorch installation between Docker and VM deployment.
-**Solution Applied**: Created [`requirements/yolo-nas.txt`](requirements/yolo-nas.txt) with explicit PyTorch management strategy.
-
-#### Deployment Consistency Fixes
-
-**Issue**: Outdated dependency versions in README.md causing confusion.
-**Solution Applied**: Updated [`README.md`](README.md:89) with accurate per-service version information.
-
-**Issue**: Missing VM deployment requirements files.
-**Solution Applied**: Created standardized requirements files in [`requirements/`](requirements/) directory.
-
-### Version Management Strategy
-
-**Docker-First Approach**: Docker configurations are considered authoritative for version specifications.
-**VM Parity**: VM deployment files mirror Docker versions exactly for core ML dependencies.
-**Service Isolation**: Different services use different PyTorch versions as required by their ML frameworks.
-
----
-
-## Exact Version Requirements
-
-### Critical Dependency Versions
-
-#### YOLO-NAS Service (Optimized Runtime)
-```txt
-# Super-gradients compatibility requirements (runtime optimized)
-numpy==1.23.0          # Must be ≤1.23 for super-gradients
-super-gradients==3.7.1
-requests==2.31.0
-# Note: sphinx and docutils removed (build-time only, not runtime)
-```
-
-#### MMPose Service (Production-Ready with Version Consistency)
-```txt
-# Production-ready versions with Docker-VM consistency
-torch==2.1.2
-torchvision==0.16.2
-torchaudio==2.1.2
-numpy>=1.21.0,<2.0     # Critical: constrained for mmcv compatibility
-mmcv==2.1.0            # Critical: exact version required, matches Docker
-mmengine               # Latest compatible version via mim
-mmdet>=3.0.0,<3.3.0    # Version constraint for compatibility
-mmpose                 # Latest compatible version via mim
-pytz==2023.3           # Must be 2023.3 for openxlab
-requests==2.28.2
-rich==13.4.2
-tqdm==4.65.0
-xtcocotools
-```
-
-#### YOLO Combined Service
-```txt
-torch==2.3.1
-torchvision==0.18.1
-ultralytics==8.2.97
-opencv-python-headless==4.10.0.84
-fastapi==0.111.0
-google-cloud-storage==2.10.0
-```
-
-## Known Issues & Solutions
-
-### 1. Symbolic Link Creation Failures
-
-**Error**: `ln: failed to create symbolic link '/etc/resolv.conf': Device or resource busy`
-
-**Root Cause**: `/etc/resolv.conf` is already in use or locked by another process
-
-**Solution Applied - Remove DNS Configuration (Final Fix)**:
-```dockerfile
-# DNS configuration step removed entirely from both MMpose and YOLO-NAS Dockerfiles
-# Docker handles DNS resolution automatically
-```
-
-**Why This Works**: Removing DNS configuration is the most reliable solution:
-- **Docker Native**: Docker automatically manages DNS resolution for containers
-- **No File System Conflicts**: Eliminates all `/etc/resolv.conf` manipulation that causes read-only errors
-- **Build Reliability**: DNS issues never block Docker builds
-- **Production Ready**: Standard practice for containerized applications
-- **Zero Maintenance**: No DNS configuration to manage or debug
-
-**Root Cause Addressed**:
-- **Read-Only File System**: Eliminates attempts to modify `/etc/resolv.conf` which is read-only in many build environments
-- **Device Busy Errors**: No file operations that can conflict with Docker's file management
-- **Build Simplicity**: Focuses Dockerfile on application dependencies, not system configuration
-
-**Production DNS Configuration**:
+## 🩺 Health Checks
 ```bash
-# Option 1: Runtime DNS via Docker flags (recommended)
-docker run --dns=8.8.8.8 <image>
+# Global health
+curl http://35.189.53.46:8080/healthz
 
-# Option 2: Docker Compose DNS configuration
-services:
-  mmpose-service:
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
+# Individual services
+curl http://35.189.53.46:8080/yolo-combined/healthz
+curl http://35.189.53.46:8080/mmpose/healthz  
+curl http://35.189.53.46:8080/yolo-nas/healthz
 
-# Option 3: Host network DNS inheritance (default)
-# Container inherits host DNS configuration automatically
+# Direct service access (when running locally)
+curl http://localhost:8001/healthz  # YOLO Combined
+curl http://localhost:8003/healthz  # MMPose
+curl http://localhost:8004/healthz  # YOLO-NAS
 ```
 
-**Best Practice**: Let Docker handle DNS automatically. Use runtime configuration only if specific DNS servers are required.
-
-### 2. Super-gradients Dependency Conflicts
-
-**Error**: `ModuleNotFoundError: No module named 'super_gradients'`
-
-**Root Cause**: Impossible dependency conflict within super-gradients itself:
-- `super-gradients 3.7.1` requires `numpy<=1.23`
-- `albumentations/albucore` (dependencies of super-gradients) require `numpy>=1.24.4`
-
-**Solution Applied - Install with Dependency Exclusion**:
-```dockerfile
-# Install super-gradients compatible versions first
-RUN pip install "numpy==1.23.0" "requests==2.31.0"
-# Install super-gradients without automatic dependency resolution
-RUN pip install super-gradients==3.7.1 --no-deps
-# Manually install essential dependencies (PyTorch, etc.)
-RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-RUN pip install -r requirements.txt
+### Expected Health Response
+```json
+{
+  "status": "healthy",
+  "models": {
+    "yolo11_pose": true,
+    "yolov8_object": true,
+    "yolov8_pose": true,
+    "tracknet": true,
+    "mmpose_loaded": true,
+    "super_gradients_available": true
+  }
+}
 ```
 
-**Key Insight**: Use `--no-deps` to avoid conflicting sub-dependencies, then manually install only the essential ones.
+## 🔄 GitHub Actions CI/CD
+**Smart Deployment Features**:
+- **Change Detection**: Only rebuilds modified services
+- **Selective Builds**: Skips unchanged services automatically  
+- **Time Savings**: 5-minute deploys vs 30+ minute full rebuilds
+- **Auto-Deploy**: Push to `docker-containers` → Deploy to VM
 
-### 3. MMPose OpenXLab Conflicts
+**Branches**:
+- `docker-containers` - Auto-deploys to production VM
+- `main` - Source code, manual deploy
+- `develop` - Development branch
 
-**Error**: `openxlab 0.1.2 has requirement pytz~=2023.3, but you'll have pytz 2025.2`
-
-**Solution Applied**:
-```dockerfile
-# Install specific compatible versions
-RUN pip install pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0
-RUN mim install mmcv-full mmpose xtcocotools
-```
-
-### 4. Missing numpy Dependency
-
-**Error**: `ModuleNotFoundError: No module named 'numpy'`
-
-**Solution Applied**:
-```dockerfile
-# Install numpy explicitly before other dependencies
-RUN pip install numpy
-# Ensure numpy is available during verification
-RUN pip install --no-cache-dir numpy xtcocotools mmpose --verbose
-```
-
-### 5. Missing Python.h Development Headers
-
-**Error**: `fatal error: Python.h: No such file or directory`
-
-**Root Cause**: Python development headers missing for C extensions
-
-**Solution Applied**:
-```dockerfile
-# Install Python development headers
-RUN apt-get update && apt-get install -y python3.10-dev python3-dev
-```
-
-### 6. Python Virtual Environment Creation Failures
-
-**Error**: `python3 -m venv /opt/venv` fails or `python3 -m ensurepip` fails to upgrade pip
-
-**Root Cause**: Missing Python virtual environment dependencies or dbus system bus socket
-
-**Solution Applied - MMpose Enhanced Virtual Environment Setup**:
-```dockerfile
-# Install comprehensive Python venv support
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10-venv \
-    python3-venv \
-    python3-pip \
-    python3-dev \
-    dbus \
-    && mkdir -p /var/run/dbus \
-    && service dbus start
-
-# Create virtual environment with enhanced error handling
-RUN echo "🔧 Creating Python virtual environment..." && \
-    python3 -m venv /opt/venv && \
-    echo "✅ Virtual environment created successfully" && \
-    /opt/venv/bin/python -m ensurepip --upgrade && \
-    echo "✅ Virtual environment pip ensured and upgraded"
-ENV PATH="/opt/venv/bin:$PATH"
-```
-
-**Why This Works**:
-- Installs both `python3.10-venv` and `python3-venv` for comprehensive support
-- Ensures dbus service is running to avoid missing system bus socket errors
-- Uses explicit ensurepip upgrade within the virtual environment
-- Provides detailed logging for debugging virtual environment creation
-
-### 7. Pip Running as Root Warning
-
-**Warning**: `WARNING: Running pip as the 'root' user can result in broken permissions`
-
-**Solution Applied**:
-```dockerfile
-# Create virtual environment to avoid root pip issues (see solution #6 above)
-RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install -r requirements.txt
-```
-
-### 8. MMPose Version Compatibility Conflicts (Critical)
-
-**Error**: Multiple conflicting version errors between mmcv, mmengine, mmdet, and PyTorch
-
-**Root Cause**: MMPose has strict version compatibility requirements that conflict when using latest versions
-
-**GitHub Issues Referenced**:
-- Error in installation of MMPose package #3020
-- Installation documentation does not create a working demo #3103
-- FAQ documentation on version conflicts
-
-**Solution Applied - Official MMCV Installation Guidelines**:
-```dockerfile
-# Install PyTorch 2.1.x (compatible versions)
-RUN pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --extra-index-url https://download.pytorch.org/whl/cu118
-
-# Verify PyTorch installation (MMCV requirement)
-RUN python -c "import torch; print(f'✅ PyTorch successfully installed: {torch.__version__}')"
-RUN python -c "import torch; print(f'✅ CUDA version: {torch.version.cuda}')"
-
-# Install OpenMIM (recommended for MMCV)
-RUN pip install -U openmim
-
-# Critical: Uninstall ALL existing mmcv versions (prevents conflicts)
-RUN pip uninstall -y mmcv mmcv-lite mmcv-full || true
-
-# Install dependencies in correct order following official guidelines
-RUN mim install mmengine
-RUN mim install "mmcv==2.1.0"  # Full version with CUDA ops (recommended when CUDA available)
-RUN mim install "mmdet>=3.0.0,<3.3.0"  # Version constraint for compatibility
-RUN mim install mmpose xtcocotools
-
-# Verify no dependency conflicts
-RUN pip check
-```
-
-**Why This Works**:
-- Follows official MMCV installation guidelines from OpenMMLab documentation
-- Verifies PyTorch installation before installing MMCV (required step)
-- Uses mmcv (full version) with CUDA ops instead of mmcv-lite for better performance
-- Uninstalls all conflicting old versions first (mmcv, mmcv-lite, mmcv-full)
-- Uses exact version constraints to prevent conflicts
-- Uses `pip check` to verify dependency integrity
-- Avoids latest versions that often conflict
-
-**MMCV Version Selection**:
-- **mmcv**: Full version with CUDA ops (recommended when CUDA available) - used in production
-- **mmcv-lite**: Lite version without CUDA ops (for CPU-only environments)
-- **Critical**: Never install both versions in same environment - causes ModuleNotFound errors
-
-### 9. Missing System Bus Socket Error
-
-**Error**: `Failed to open connection to "system" message bus due to missing /var/run/dbus/system_bus_socket`
-
-**Root Cause**: dbus service not properly configured or running during Docker build
-
-**Solution Applied - MMpose dbus Configuration**:
-```dockerfile
-# Install and configure dbus properly
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    dbus \
-    && mkdir -p /var/run/dbus \
-    && service dbus start
-```
-
-**Why This Works**: Ensures dbus is installed, the socket directory exists, and the service is started during the build process.
-
-### 10. Python Version Compatibility Issues (YOLO-NAS)
-
-**Error**: `networkx` requires Python >=3.9 but system Python is 3.8.10
-
-**Root Cause**: Default system Python version doesn't meet dependency requirements for modern packages like networkx
-
-**Solution Applied - YOLO-NAS Enhanced Python Setup**:
-```dockerfile
-# Ensure Python 3.10 is properly linked as default Python
-RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
-    ln -sf /usr/bin/python3.10 /usr/bin/python3
-
-# Create virtual environment explicitly with Python 3.10
-RUN echo "🔧 Creating Python virtual environment with Python 3.10..." && \
-    python3.10 -m venv /opt/venv && \
-    /opt/venv/bin/python -m ensurepip --upgrade && \
-    /opt/venv/bin/python --version
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Verify Python version meets networkx requirements
-RUN echo "🔍 PYTHON VERSION CHECK: Verifying Python >=3.9 for networkx compatibility..." && \
-    python --version && \
-    python -c "import sys; assert sys.version_info >= (3, 9), f'Python {sys.version_info} < 3.9 required for networkx'; print('✅ Python version meets networkx requirements')"
-```
-
-**Why This Works**:
-- Explicitly creates virtual environment with Python 3.10 instead of system default
-- Links Python 3.10 as the default python and python3 commands
-- Verifies version compatibility before dependency installation
-- Ensures networkx and other modern packages have required Python version
-
-### 11. Enhanced Dependency Verification
-
-**Error**: `ERROR: failed to solve: process "/bin/sh -c echo "🔍 VERIFICATION..."`
-
-**Solution Applied**:
-```dockerfile
-# Test each dependency individually for better error isolation
-RUN echo "Testing NumPy..." && \
-    python -c "import numpy; print(f'✅ NumPy version: {numpy.__version__}')" && \
-    echo "Testing xtcocotools..." && \
-    python -c "import xtcocotools; print('✅ xtcocotools imported successfully')" && \
-    echo "Testing MMPose..." && \
-    python -c "import mmpose; print('✅ MMPose imported successfully')"
-```
-
-## Deployment Methods
-
-### Method 1: Standard Docker Compose
-
+## 🛠️ VM SSH Access
 ```bash
-# Start all services
-docker-compose up --build -d
+# Connect to production VM
+gcloud compute ssh nuro-vm --zone=us-central1-a
 
-# Check status
+# Or using IP directly
+ssh user@35.189.53.46
+
+# Check services on VM
+docker ps
 docker-compose ps
-
-# View logs
-docker-compose logs -f [service-name]
+docker-compose logs -f
 ```
 
-### Method 2: Sequential Deployment (Space Optimized)
-
-For environments with limited disk space (GitHub runners, small VMs):
-
-```bash
-# Deploy services one at a time
-./deploy.sh --deploy-sequential
-
-# Deploy specific service
-./deploy.sh --deploy-seq yolo-combined
-./deploy.sh --deploy-seq mmpose
-./deploy.sh --deploy-seq yolo-nas
-
-# Clean up disk space aggressively
-./deploy.sh --cleanup-disk
-```
-
-### Method 3: GitHub Actions Sequential
-
-```yaml
-# Deploy single service
-gh workflow run sequential-deploy.yml -f service=yolo-combined
-
-# Deploy all services sequentially  
-gh workflow run sequential-deploy.yml -f service=all
-```
-
-## Disk Space Optimization
-
-### Problem
-GitHub runners have ~14GB disk space. PyTorch dependencies are ~2GB each, causing deployment failures.
-
-### Solutions Implemented
-
-#### 1. Aggressive Cleanup
-```bash
-# Remove unnecessary system packages
-sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
-sudo rm -rf "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android
-sudo docker system prune -af --volumes
-```
-
-#### 2. No-Cache Installation
-```dockerfile
-ENV PIP_NO_CACHE_DIR=1
-RUN pip install --no-cache-dir -r requirements.txt
-```
-
-#### 3. CPU-Only PyTorch (Space Saving)
-```txt
-torch==2.3.1+cpu --index-url https://download.pytorch.org/whl/cpu
-torchvision==0.18.1+cpu --index-url https://download.pytorch.org/whl/cpu
-```
-
-#### 4. Split Installation Strategy
-```dockerfile
-# Install in stages to manage memory
-RUN pip install --no-cache-dir numpy opencv-python fastapi
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu  
-RUN pip install --no-cache-dir -r requirements.txt
-```
-
-## Installation Order Importance
-
-### YOLO-NAS Service
-```dockerfile
-# CRITICAL: Enhanced system dependencies for Python 3.10 and virtual environment support
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 \
-    python3.10-dev \
-    python3.10-venv \
-    python3-venv \
-    python3-pip \
-    python3-dev \
-    dbus \
-    && mkdir -p /var/run/dbus \
-    && service dbus start \
-    && ln -sf /usr/bin/python3.10 /usr/bin/python \
-    && ln -sf /usr/bin/python3.10 /usr/bin/python3
-
-# CRITICAL: Enhanced virtual environment creation with Python 3.10
-RUN echo "🔧 Creating Python virtual environment with Python 3.10..." && \
-    python3.10 -m venv /opt/venv && \
-    /opt/venv/bin/python -m ensurepip --upgrade && \
-    /opt/venv/bin/python --version
-ENV PATH="/opt/venv/bin:$PATH"
-
-# CRITICAL: Verify Python version meets networkx requirements (>=3.9)
-RUN python --version && \
-    python -c "import sys; assert sys.version_info >= (3, 9), f'Python {sys.version_info} < 3.9 required for networkx'; print('✅ Python version meets networkx requirements')"
-
-# CRITICAL: Install compatible versions BEFORE super-gradients
-RUN pip install numpy==1.23.0 sphinx==4.0.2
-RUN pip install super-gradients==3.7.1
-RUN pip install -r requirements.txt  # Other dependencies
-```
-
-### MMPose Service (Production-Ready with Version Compatibility)
-```dockerfile
-# CRITICAL: Enhanced system dependencies for virtual environment support
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10-venv \
-    python3-venv \
-    python3-pip \
-    python3-dev \
-    dbus \
-    && mkdir -p /var/run/dbus \
-    && service dbus start
-
-# CRITICAL: Enhanced virtual environment creation with error handling
-RUN echo "🔧 Creating Python virtual environment..." && \
-    python3 -m venv /opt/venv && \
-    /opt/venv/bin/python -m ensurepip --upgrade
-ENV PATH="/opt/venv/bin:$PATH"
-
-# CRITICAL: Install base dependencies first
-RUN pip install --upgrade pip setuptools wheel
-RUN pip install numpy
-
-# CRITICAL: Install PyTorch 2.1.x (compatible versions)
-RUN pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --extra-index-url https://download.pytorch.org/whl/cu118
-
-# CRITICAL: Install PyTorch and verify (MMCV requirement)
-RUN pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --extra-index-url https://download.pytorch.org/whl/cu118
-RUN python -c "import torch; print(f'✅ PyTorch: {torch.__version__}')"
-RUN python -c "import torch; print(f'✅ CUDA: {torch.version.cuda}')"
-
-# CRITICAL: OpenMIM and MMPose ecosystem following official MMCV guidelines
-RUN pip install -U openmim
-RUN pip uninstall -y mmcv mmcv-lite mmcv-full || true  # Remove ALL old versions
-RUN mim install mmengine
-RUN mim install "mmcv==2.1.0"  # Full version with CUDA ops (recommended)
-RUN mim install "mmdet>=3.0.0,<3.3.0"  # Version constraint
-RUN pip install pytz==2023.3 requests==2.28.2 rich==13.4.2 tqdm==4.65.0
-RUN mim install mmpose xtcocotools
-RUN pip install -r requirements.txt
-RUN pip check  # Verify no conflicts
-
-# CRITICAL: Enhanced verification following official MMCV guidelines
-RUN python -c "import mmcv; print(f'✅ MMCV (full): {mmcv.__version__}')"
-RUN python -c "import mmcv; print('✅ MMCV CUDA ops available')"
-```
-
-## Model Setup
-
-### YOLO Combined Service
-Models auto-downloaded by Ultralytics on first run:
-- `yolo11n.pt`, `yolo11n-pose.pt`
-- `yolov8n.pt`, `yolov8n-pose.pt`
-
-### TrackNet Weights
-```bash
-# Download TrackNet weights (if available)
-wget -O yolo-combined-service/models/tracknet_v2.pth [MODEL_URL]
-
-# Or service runs with random initialization for testing
-```
-
-### MMPose Models
-Auto-downloaded via OpenMMLab Model Zoo on first inference.
-
-### YOLO-NAS Models
-Auto-downloaded by super-gradients:
-- `yolo_nas_pose_n` with `coco_pose` weights
-- `yolo_nas_s` with `coco` weights
-
-## Environment Configuration
+## ⚙️ Environment Configuration
 
 ### Required Environment Variables
 ```bash
@@ -569,10 +165,16 @@ PYTHONUNBUFFERED=1
 PIP_NO_CACHE_DIR=1
 YOLO_OFFLINE=1
 ULTRALYTICS_OFFLINE=1
+ONLINE=False
+YOLO_TELEMETRY=False
 
 # GCS configuration
 GCS_BUCKET_NAME=padel-ai
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+
+# GPU support
+NVIDIA_VISIBLE_DEVICES=all
+NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ```
 
 ### Port Configuration
@@ -586,148 +188,103 @@ services:
   yolo-nas:
     ports: ["8004:8004"]
   nginx:
-    ports: ["80:80"]
+    ports: ["8080:80", "8443:443"]
 ```
 
-## Verification & Testing
+## 🔧 Installation Methods
 
-### Health Checks
+### Method 1: Standard Docker Compose
 ```bash
-# Individual services
-curl http://localhost:8001/healthz  # YOLO Combined
-curl http://localhost:8003/healthz  # MMPose  
-curl http://localhost:8004/healthz  # YOLO-NAS
+# Start all services
+docker-compose up --build -d
 
-# Load balancer
-curl http://localhost/api/healthz
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f [service-name]
 ```
 
-### Expected Health Check Response
-```json
-{
-  "status": "healthy",
-  "models": {
-    "yolo11_pose": true,
-    "yolov8_object": true,
-    "tracknet": true,
-    "mmpose_loaded": true,
-    "super_gradients_available": true
-  }
-}
-```
-
-### Testing Imports
+### Method 2: Fast Development Build
 ```bash
-# In containers
-docker-compose exec mmpose-service python -c "import mmpose; print('✅ MMPose OK')"
-docker-compose exec yolo-nas-service python -c "from super_gradients.training import models; print('✅ Super-gradients OK')"
-docker-compose exec yolo-combined-service python -c "import ultralytics; print('✅ YOLO OK')"
+# Use pre-built base image for fast iteration
+./scripts/dev-fast.sh
+
+# Check base image exists
+docker image inspect ghcr.io/stevetowers098/nuro-padel/base:latest
 ```
 
-## Troubleshooting
-
-### Common Errors
-
-#### 1. "Device or resource busy" during build
+### Method 3: Sequential Deployment (Space Optimized)
+For environments with limited disk space:
 ```bash
-# Solution: Use -T flag for ln command
-RUN ln -sfT /run/systemd/resolve/resolv.conf /etc/resolv.conf || echo "Skipping"
+# Deploy services one at a time
+./scripts/deploy.sh --deploy-sequential
+
+# Deploy specific service
+./scripts/deploy.sh --deploy-seq yolo-combined
+./scripts/deploy.sh --deploy-seq mmpose
+./scripts/deploy.sh --deploy-seq yolo-nas
 ```
 
-#### 2. "ModuleNotFoundError: No module named 'super_gradients'"
+## 📊 Model Setup
+
+### YOLO Combined Service
+Models auto-downloaded by Ultralytics on first run:
+- `yolo11n-pose.pt` - YOLO11 pose detection
+- `yolov8m.pt` - YOLOv8 object detection
+- `yolov8n-pose.pt` - YOLOv8 pose detection
+
+### TrackNet Weights
 ```bash
-# Check dependency order in Dockerfile
-# Ensure numpy==1.23.0 and sphinx==4.0.2 installed first
+# Download TrackNet weights (if available)
+wget -O services/yolo-combined/models/tracknet_v2.pth [MODEL_URL]
+
+# Or service runs with TrackNet disabled for testing
 ```
 
-#### 3. "protobuf version conflicts"
+### MMPose Models
+Auto-downloaded via OpenMMLab Model Zoo on first inference:
+- RTMPose-M (recommended)
+- HRNet-W48 (fallback)
+
+### YOLO-NAS Models
+Auto-downloaded by super-gradients:
+- `yolo_nas_pose_n` with `coco_pose` weights
+- `yolo_nas_s` with `coco` weights
+
+## 🔍 Testing & Verification
+
+### API Testing
 ```bash
-# Force compatible protobuf version
-pip install protobuf>=5.26.1,<6.0.0
+# Test YOLO Combined endpoints
+curl -X POST http://localhost:8001/yolo11/pose \
+  -H "Content-Type: application/json" \
+  -d '{"video_url": "https://example.com/test.mp4", "video": false, "data": true}'
+
+curl -X POST http://localhost:8001/yolov8/object \
+  -H "Content-Type: application/json" \
+  -d '{"video_url": "https://example.com/test.mp4", "confidence": 0.3}'
+
+# Test MMPose biomechanics
+curl -X POST http://localhost:8003/mmpose/pose \
+  -H "Content-Type: application/json" \
+  -d '{"video_url": "https://example.com/test.mp4", "video": true}'
+
+# Test YOLO-NAS high-accuracy
+curl -X POST http://localhost:8004/yolo-nas/pose \
+  -H "Content-Type: application/json" \
+  -d '{"video_url": "https://example.com/test.mp4", "confidence": 0.5}'
 ```
 
-#### 4. Out of disk space during build
+### Import Testing
 ```bash
-# Use sequential deployment
-./deploy.sh --deploy-sequential
-
-# Or use CPU-only PyTorch
-# Edit requirements.txt to use +cpu versions
+# Test in containers
+docker-compose exec yolo-combined python -c "import ultralytics; print('✅ YOLO OK')"
+docker-compose exec mmpose python -c "import mmpose; print('✅ MMPose OK')"
+docker-compose exec yolo-nas python -c "from super_gradients.training import models; print('✅ Super-gradients OK')"
 ```
 
-### Container Debugging
-```bash
-# Shell into container
-docker-compose exec mmpose-service bash
-
-# Check installed packages
-pip list | grep -E "(torch|mmpose|super)"
-
-# Check GPU availability
-nvidia-smi
-
-# Check disk space
-df -h
-```
-
-### Service-Specific Debugging
-
-#### YOLO-NAS Service
-```bash
-# Check super-gradients installation
-python -c "from super_gradients.training import models; print('OK')"
-
-# Check model loading
-python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
-```
-
-#### MMPose Service
-```bash
-# Check MMPose installation
-python -c "import mmpose; print(mmpose.__version__)"
-
-# Check MMCV compatibility
-python -c "import mmcv; print(mmcv.__version__)"
-```
-
-## Production Considerations
-
-### Resource Allocation
-```yaml
-# docker-compose.yml resource limits
-services:
-  mmpose-service:
-    deploy:
-      resources:
-        limits:
-          memory: 8G
-          cpus: '4'
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-```
-
-### Monitoring
-```bash
-# Resource usage
-docker stats
-
-# Service health monitoring
-curl -f http://localhost/api/healthz || exit 1
-```
-
-### Backup & Recovery
-```bash
-# Backup model weights
-tar -czf models_backup.tar.gz */models/
-
-# Backup configuration
-tar -czf config_backup.tar.gz docker-compose.yml nginx.conf
-```
-
-## Performance Tuning
+## 🚀 Performance Optimization
 
 ### GPU Optimization
 ```python
@@ -750,11 +307,11 @@ proxy_read_timeout 300s;
 proxy_send_timeout 300s;
 ```
 
-## Security
+## 🔒 Security Considerations
 
 ### Container Security
 ```dockerfile
-# Run as non-root user
+# Run as non-root user (in development)
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 USER appuser
 ```
@@ -763,12 +320,42 @@ USER appuser
 ```yaml
 # Internal network isolation
 networks:
-  internal:
+  nuro-padel-network:
     driver: bridge
-    internal: true
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
 ```
 
-## Maintenance
+## 📈 Production Monitoring
+
+### Resource Monitoring
+```bash
+# Resource usage
+docker stats
+
+# Service health monitoring
+watch -n 5 'curl -s http://localhost:8080/healthz | jq .status'
+
+# Log monitoring
+docker-compose logs -f --tail=100
+```
+
+### Backup & Recovery
+```bash
+# Backup model weights
+tar -czf models_backup.tar.gz services/*/models/
+
+# Backup configuration
+tar -czf config_backup.tar.gz deployment/ scripts/
+
+# Service backup/restore
+./scripts/backup.sh           # Backup working services
+./scripts/restore.sh          # Restore from backup
+```
+
+## 🔧 Maintenance
 
 ### Regular Updates
 ```bash
@@ -777,16 +364,30 @@ docker-compose pull
 docker-compose up -d
 
 # Update Python packages (test in staging first)
-pip install --upgrade ultralytics mmpose
+pip install --upgrade ultralytics mmpose super-gradients
 ```
 
 ### Log Management
 ```bash
-# Rotate logs
+# View recent logs
 docker-compose logs --tail=1000 > service_logs.txt
 
-# Clean old containers
+# Clean old containers and images
 docker system prune -f
+docker builder prune -af
 ```
 
-This deployment guide provides comprehensive instructions for reliable deployment of the NuroPadel platform with all known issues addressed.
+### Disk Space Management
+```bash
+# Check space usage
+docker system df
+
+# Aggressive cleanup
+docker system prune -af --volumes
+docker builder prune -af
+
+# Remove unused images
+docker rmi $(docker images -f "dangling=true" -q)
+```
+
+This deployment guide provides comprehensive instructions for reliable deployment of the NuroPadel platform with all services and dependencies properly configured.

@@ -101,9 +101,13 @@ jobs:
               base_commit="HEAD~1"
             fi
           else
-            # Compare with main branch
-            base_commit="origin/main"
+            # For manual workflow dispatch, compare with previous commit on current branch
+            base_commit="HEAD~1"
           fi
+          
+          # Get current branch name for logging
+          current_branch="${{ github.ref_name }}"
+          echo "🌿 Current branch: $current_branch"
           
           echo "📊 Comparing against: $base_commit"
           

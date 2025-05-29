@@ -1,7 +1,7 @@
 # MMPose Service Dockerfile
 # Complex installation requirements - must install MMPose stack in specific order
 
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04 as base
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 as base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive

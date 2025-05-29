@@ -427,4 +427,25 @@ RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     && apt-get update --fix-missing
 ```
 
+### CUDA Base Image Issues
+**Issue**: Docker build failing with:
+```
+nvidia/cuda:12.1-runtime-ubuntu22.04: failed to resolve source metadata
+```
+
+**Root Cause**: Specific CUDA image tags may not exist on Docker Hub.
+
+**Solution**: Use verified available CUDA image tags:
+- ✅ `nvidia/cuda:12.1.1-runtime-ubuntu22.04` (working)
+- ❌ `nvidia/cuda:12.1-runtime-ubuntu22.04` (not found)
+
+**Fixed in all services** (commit reference for working images):
+```dockerfile
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 as base
+```
+
+**Verification**: Check Docker Hub for available tags:
+- https://hub.docker.com/r/nvidia/cuda/tags
+- Use specific version numbers (e.g., 12.1.1) not generic (e.g., 12.1)
+
 This deployment guide provides comprehensive instructions for reliable deployment of the NuroPadel platform with all services and dependencies properly configured.

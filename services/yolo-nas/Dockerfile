@@ -1,7 +1,7 @@
 # YOLO-NAS Service Dockerfile
 # ⚠️ RISKY: Deci AI dissolved - super-gradients may have compatibility issues
 
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04 as base
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 as base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive

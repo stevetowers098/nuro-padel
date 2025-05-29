@@ -1,13 +1,15 @@
 # NuroPadel Docker Compose - Production Deployment
 # 3 Isolated AI Services: YOLO Combined, MMPose, YOLO-NAS
 
+version: '3.8'
+
 services:
   # === YOLO Combined Service (YOLO11 + YOLOv8) ===
   yolo-combined:
     build:
       context: ../services/yolo-combined
       dockerfile: Dockerfile
-    # image: ghcr.io/stevetowers098/nuro-padel/yolo-combined:latest
+    image: nuro-padel/yolo-combined:latest
     container_name: nuro-padel-yolo-combined
     restart: unless-stopped
     ports:
@@ -21,13 +23,13 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      # Fix permission/directory issues
-      - HOME=/tmp
-      - MPLCONFIGDIR=/tmp/matplotlib
-      - PYTHONPATH=/app
-    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
       interval: 30s
@@ -42,7 +44,7 @@ services:
     build:
       context: ../services/mmpose
       dockerfile: Dockerfile
-    # image: ghcr.io/stevetowers098/nuro-padel/mmpose:latest
+    image: nuro-padel/mmpose:latest
     container_name: nuro-padel-mmpose
     restart: unless-stopped
     ports:
@@ -56,13 +58,13 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      # Fix permission/directory issues
-      - HOME=/tmp
-      - MPLCONFIGDIR=/tmp/matplotlib
-      - PYTHONPATH=/app
-    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/healthz"]
       interval: 30s
@@ -77,7 +79,7 @@ services:
     build:
       context: ../services/yolo-nas
       dockerfile: Dockerfile
-    # image: ghcr.io/stevetowers098/nuro-padel/yolo-nas:latest
+    image: nuro-padel/yolo-nas:latest
     container_name: nuro-padel-yolo-nas
     restart: unless-stopped
     ports:
@@ -91,13 +93,13 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      # Fix permission/directory issues
-      - HOME=/tmp
-      - MPLCONFIGDIR=/tmp/matplotlib
-      - PYTHONPATH=/app
-    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/healthz"]
       interval: 30s

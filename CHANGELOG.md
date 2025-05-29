@@ -1,5 +1,40 @@
 # NuroPadel Platform Changelog
 
+## May 29, 2025 - Smart Deploy Fixes & MMPose Enhancements
+
+### Smart Deploy False Success Issue - FIXED 🐛
+**Problem:** Smart Deploy workflow was showing green/success status even when builds failed
+- Root cause: Build retry logic not properly failing workflow
+- Secondary issue: Misleading job naming ('deploy' vs 'build-only')
+
+**Solutions Applied:**
+- ✅ Enhanced build error detection with explicit exit codes
+- ✅ Fixed misleading 'deploy' job name → 'summary'
+- ✅ Added proper failure propagation in retry loops
+- ✅ Enhanced health check logging with service-specific error reporting
+- ✅ Clear warnings that workflow only builds images, doesn't deploy
+
+**Testing Improvements:**
+- Build failures now explicitly exit with code 1
+- Enhanced logging shows detailed build attempt results
+- Failed services are tracked and reported with logs
+- Workflow will now properly fail when builds fail
+
+### MMPose Service Enhancements ✨
+**New Features:**
+- ✅ Added [`services/mmpose/configs/rtmpose_complete.py`](services/mmpose/configs/rtmpose_complete.py) - comprehensive pose estimation configuration
+- ✅ Enhanced [`services/mmpose/main.py`](services/mmpose/main.py) with better error handling and logging
+- ✅ Created working backup copies for development:
+  - [`working/mmpose-29-5-25/`](working/mmpose-29-5-25/) (complete service copy)
+  - [`working/yolo-combined-29-5-25/`](working/yolo-combined-29-5-25/)
+  - [`working/yolo-nas-29-5-25/`](working/yolo-nas-29-5-25/)
+
+**Configuration Updates:**
+- ✅ Updated [`services/mmpose/requirements.txt`](services/mmpose/requirements.txt) for consistency
+- ✅ Updated [`services/yolo-combined/requirements.txt`](services/yolo-combined/requirements.txt)
+- ✅ Updated [`services/yolo-nas/requirements.txt`](services/yolo-nas/requirements.txt)
+- ✅ Modified [`deployment/docker-compose.yml`](deployment/docker-compose.yml) for improved service coordination
+
 ## May 29, 2025 - Network Connectivity Fixes
 
 ### Issues Fixed

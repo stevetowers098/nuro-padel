@@ -35,15 +35,12 @@ WORKDIR /app
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies in optimized single-layer approach with error handling
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' 'torchaudio>=2.0.0,<2.6.0' && \
-    # Pin numpy for super-gradients compatibility
-    pip install --no-cache-dir numpy==1.23.0 scipy && \
-    # Install super-gradients without deps to avoid conflicts
-    (pip install --no-cache-dir super-gradients>=3.7.0 --no-deps || echo "⚠️ super-gradients installation failed - service will run in fallback mode") && \
-    # Install remaining dependencies from requirements.txt
-    pip install --no-cache-dir -r requirements.txt
+# Fix: Use python3 -m pip + correct versions + proper CUDA index + optimal order
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    python3 -m pip install --no-cache-dir numpy==1.24.0 && \
+    python3 -m pip install --no-cache-dir torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121 && \
+    python3 -m pip install --no-cache-dir super-gradients>=3.7.0 --no-deps && \
+    python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory for volume mounting (best practice)
 RUN mkdir -p /app/weights

@@ -443,6 +443,4 @@ async def process_object_detection(payload: VideoAnalysisURLRequest, model: YOLO
         if temp_downloaded_path and os.path.exists(temp_downloaded_path):
             os.unlink(temp_downloaded_path)
 
-if __name__ == "__main__":
-    logger.info("Starting YOLO Combined Service on port 8001")
-    uvicorn.run(app, host="0.0.0.0", port=8001, log_config=None)
+# NOTE: Removed if __name__ == "__main__": block for uvicorn CMD compatibility

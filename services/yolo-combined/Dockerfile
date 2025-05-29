@@ -20,11 +20,18 @@ RUN sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/
     apt-get install -y --no-install-recommends software-properties-common && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get update && \
-    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 curl wget
+    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 curl wget
 
 # Clean up apt cache after installation
 RUN ln -s /usr/bin/python3.10 /usr/bin/python && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create and activate virtual environment
+RUN python3.10 -m venv /opt/venv
+
+# Set virtual environment variables
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Set working directory
 WORKDIR /app
@@ -57,5 +64,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
 # Expose port
 EXPOSE 8001
 
-# Start command
-CMD ["python", "main.py"]
+# Start command using uvicorn directly
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

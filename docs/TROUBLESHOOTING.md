@@ -2,7 +2,63 @@
 
 ## 🚨 Critical Dependency Issues & Solutions
 
-### **1. MMPose Service - Version Conflicts**
+### **1. YOLO Combined Service - Python Environment Issues (NEW FIX)**
+
+#### **Python Environment Mismatch & Missing Virtual Environment**
+**Error**: `ModuleNotFoundError: No module named 'fastapi'`, `No module named 'uvicorn'` or similar import errors
+**Root Cause**: Docker installs Python 3.10 but pip installs to Python 3.8 environment, and missing virtual environment setup
+
+**Solution - Fixed Dockerfile Configuration**:
+```dockerfile
+# Install Python 3.10 with venv support
+RUN apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip
+
+# Create and activate virtual environment
+RUN python3.10 -m venv /opt/venv
+
+# Set virtual environment variables
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Install dependencies in the virtual environment
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+```
+
+#### **Application Startup Method Issues**
+**Error**: Conflicts between `if __name__ == "__main__": uvicorn.run()` and Docker CMD
+**Root Cause**: Using `python main.py` startup method instead of uvicorn directly
+
+**Solution - Updated Startup Configuration**:
+```dockerfile
+# Use uvicorn directly in CMD
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+```
+
+```python
+# Remove conflicting startup block from main.py
+# if __name__ == "__main__":
+#     logger.info("Starting YOLO Combined Service on port 8001")
+#     uvicorn.run(app, host="0.0.0.0", port=8001, log_config=None)
+```
+
+#### **Missing WEIGHTS_DIR and Logger Definitions**
+**Error**: `NameError: name 'WEIGHTS_DIR' is not defined`, `NameError: name 'logger' is not defined`
+**Solution - Proper Variable Definitions**:
+```python
+# Configure logging BEFORE any imports
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# Define configuration constants
+WEIGHTS_DIR = "/app/weights"
+```
+
+### **2. MMPose Service - Version Conflicts**
 
 #### **MMCV Installation Failures**
 **Error**: `ModuleNotFoundError: No module named 'mmcv'` or version conflicts
@@ -531,5 +587,175 @@ git checkout PREVIOUS_WORKING_COMMIT
 # Redeploy
 ./scripts/deploy.sh
 ```
+
+## 🐳 Docker + VSCode Integration & Debugging
+
+### **Setting Up Docker Desktop for VSCode**
+
+#### **Install Docker Desktop**
+1. Download from https://docs.docker.com/desktop/install/windows-install/
+2. Enable WSL 2 integration during installation
+3. Configure Docker Desktop:
+   - **Settings** → **General**: ✅ Use WSL 2 based engine
+   - **Settings** → **Resources** → **WSL Integration**: ✅ Enable integration
+   - **Settings** → **Docker Engine**: Enable BuildKit for faster builds
+
+#### **Required VSCode Extensions**
+```bash
+# Install via VSCode Extensions marketplace:
+# 1. Docker (ms-azuretools.vscode-docker)
+# 2. Remote-Containers (ms-vscode-remote.remote-containers)
+# 3. Python (ms-python.python) for debugging Python in containers
+```
+
+#### **Connect Docker to VSCode**
+1. Open VSCode
+2. Install Docker extension
+3. Open Command Palette (`Ctrl+Shift+P`)
+4. Run: `Docker: Initialize for Docker debugging`
+5. Docker containers will appear in VSCode sidebar
+
+### **Docker Debugging Commands in VSCode**
+
+#### **Container Management from VSCode Terminal**
+```bash
+# View running containers
+docker ps
+
+# Access container shell from VSCode terminal
+docker exec -it nuro-padel-yolo-combined bash
+docker exec -it nuro-padel-mmpose bash
+docker exec -it nuro-padel-yolo-nas bash
+
+# Follow logs in VSCode terminal
+docker-compose logs -f yolo-combined
+docker-compose logs -f mmpose
+docker-compose logs -f yolo-nas
+
+# Restart specific service
+docker-compose restart yolo-combined
+```
+
+#### **VSCode Docker Integration Features**
+1. **Container Explorer**: View all containers in VSCode sidebar
+2. **Right-click actions**:
+   - Attach Visual Studio Code (opens container in new VSCode window)
+   - View Logs
+   - Open in Browser (for web services)
+   - Start/Stop containers
+3. **Integrated Terminal**: Run docker commands directly in VSCode
+4. **File Explorer**: Browse container file systems
+
+#### **Development Container Debugging**
+```bash
+# Create development override for debugging
+cat > docker-compose.debug.yml << 'EOF'
+version: '3.8'
+services:
+  yolo-combined:
+    build:
+      context: ./services/yolo-combined
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./services/yolo-combined:/app
+    environment:
+      - PYTHONPATH=/app
+      - DEBUG=true
+    command: ["python", "-m", "debugpy", "--listen", "0.0.0.0:5678", "--wait-for-client", "main.py"]
+    ports:
+      - "5678:5678"  # Debug port
+EOF
+
+# Run with debug configuration
+docker-compose -f docker-compose.yml -f docker-compose.debug.yml up yolo-combined
+```
+
+#### **Python Debugging in Containers**
+1. Add `debugpy` to requirements.txt:
+```txt
+debugpy>=1.6.0
+```
+
+2. Add debug configuration to VSCode `.vscode/launch.json`:
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Remote Attach",
+            "type": "python",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/services/yolo-combined",
+                    "remoteRoot": "/app"
+                }
+            ]
+        }
+    ]
+}
+```
+
+3. Set breakpoints in VSCode and attach debugger
+
+### **Troubleshooting Docker + VSCode Issues**
+
+#### **Docker Desktop Not Starting**
+```bash
+# Check Docker Desktop status
+docker --version
+docker ps  # Should not show "cannot connect to Docker daemon"
+
+# Restart Docker Desktop
+# Windows: Restart Docker Desktop application
+# WSL: wsl --shutdown && start Docker Desktop
+```
+
+#### **VSCode Cannot Connect to Docker**
+1. Ensure Docker Desktop is running
+2. Check Docker extension is installed and enabled
+3. Reload VSCode window (`Ctrl+Shift+P` → `Developer: Reload Window`)
+4. Check Docker context: `docker context ls`
+
+#### **Container Access Issues**
+```bash
+# Fix permission issues
+docker exec -it --user root CONTAINER_NAME bash
+
+# Check container network
+docker network ls
+docker network inspect nuro-padel_nuro-padel-network
+```
+
+#### **Port Conflicts**
+```bash
+# Check what's using ports
+netstat -tlnp | grep :8001
+netstat -tlnp | grep :8003
+netstat -tlnp | grep :8004
+
+# Kill processes using ports (Windows)
+# Use Task Manager or Resource Monitor to end processes
+```
+
+### **Quick Docker + VSCode Setup for NuroPadel**
+
+1. **Install Docker Desktop** (with WSL 2 integration)
+2. **Install VSCode Docker extension**
+3. **Clone repository** in VSCode
+4. **Open integrated terminal** in VSCode
+5. **Run deployment**:
+```bash
+# From VSCode terminal
+./scripts/deploy.sh
+```
+6. **Monitor in VSCode**:
+   - Use Docker sidebar to view containers
+   - Use integrated terminal for docker commands
+   - Set up debugging configuration for development
 
 This comprehensive troubleshooting guide covers all known issues with tested solutions for reliable operation of the NuroPadel platform.

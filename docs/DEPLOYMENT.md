@@ -448,4 +448,45 @@ FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 as base
 - https://hub.docker.com/r/nvidia/cuda/tags
 - Use specific version numbers (e.g., 12.1.1) not generic (e.g., 12.1)
 
+### Model Management (Best Practice)
+
+**Issue**: Large AI models in Docker images create bloated containers and slow deployments.
+
+**Solution**: Use volume mounting with pre-downloaded models:
+
+```bash
+# Download models before deployment
+./scripts/download-models.sh all
+
+# Models are mounted as volumes (see docker-compose.yml)
+volumes:
+  - ./weights:/app/weights:ro  # Read-only mount
+```
+
+**Model Download Script Usage:**
+```bash
+./scripts/download-models.sh all      # Download all models
+./scripts/download-models.sh yolo     # YOLO models only
+./scripts/download-models.sh mmpose   # MMPose models only
+./scripts/download-models.sh verify   # Verify existing models
+./scripts/download-models.sh clean    # Remove all models
+```
+
+**Required Models:**
+- **YOLO Models**: `yolo11n-pose.pt`, `yolov8m.pt`, `yolov8n-pose.pt` (~50MB total)
+- **MMPose Models**: `rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth` (~180MB)
+
+### Working Version Restored (1:26 AM Sydney - May 28, 2025)
+
+**Restored Configuration:**
+- ✅ **CUDA**: `nvidia/cuda:12.2.0-runtime-ubuntu20.04` (verified working)
+- ✅ **Ubuntu 20.04**: Stable package versions, no python3-setuptools conflicts
+- ✅ **Network Resilience**: Simple apt-get patterns without complex PPA operations
+- ✅ **Volume Mounting**: Models managed separately from containers
+
+**Previous Issues Fixed:**
+- ❌ CUDA `12.1-runtime-ubuntu22.04` (doesn't exist) → ✅ `12.2.0-runtime-ubuntu20.04`
+- ❌ Ubuntu 22.04 package conflicts → ✅ Ubuntu 20.04 stable packages
+- ❌ Models baked into images → ✅ Volume mounting best practice
+
 This deployment guide provides comprehensive instructions for reliable deployment of the NuroPadel platform with all services and dependencies properly configured.

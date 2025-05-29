@@ -1,23 +1,27 @@
 # YOLO Combined Service Dockerfile (YOLO11 + YOLOv8)
-# Multi-stage build for optimized container size
+# Optimized for fast builds while maintaining complete service isolation
 
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 as base
+FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Set environment variables for speed and stability
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    YOLO_OFFLINE=1 \
+    ULTRALYTICS_OFFLINE=1 \
+    ONLINE=False \
+    YOLO_TELEMETRY=False
 
-# YOLO offline mode for production safety
-ENV YOLO_OFFLINE=1
-ENV ULTRALYTICS_OFFLINE=1
-ENV ONLINE=False
-ENV YOLO_TELEMETRY=False
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies in single layer for better caching
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
+    python3.10-distutils \
     python3-pip \
     ffmpeg \
     libglib2.0-0 \
@@ -25,26 +29,24 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    libglib2.0-0 \
     libgtk-3-0 \
     curl \
     wget \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create symlink for python
-RUN ln -s /usr/bin/python3.10 /usr/bin/python
+    && ln -s /usr/bin/python3.10 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better Docker caching
+# Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies in optimized order
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Create weights directory
+# Create weights directory for volume mounting (best practice)
 RUN mkdir -p /app/weights
 
 # Copy application code

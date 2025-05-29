@@ -1,23 +1,28 @@
 # YOLO-NAS Service Dockerfile
+# Optimized for fast builds with super-gradients compatibility - Complete isolation
 # ⚠️ RISKY: Deci AI dissolved - super-gradients may have compatibility issues
 
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 as base
+FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Set environment variables for speed and stability
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    YOLO_OFFLINE=1 \
+    ULTRALYTICS_OFFLINE=1 \
+    ONLINE=False \
+    YOLO_TELEMETRY=False
 
-# YOLO offline mode for production safety
-ENV YOLO_OFFLINE=1
-ENV ULTRALYTICS_OFFLINE=1
-ENV ONLINE=False
-ENV YOLO_TELEMETRY=False
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies in single optimized layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
+    python3.10-distutils \
     python3-pip \
     ffmpeg \
     libglib2.0-0 \
@@ -30,33 +35,24 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create symlink for python
-RUN ln -s /usr/bin/python3.10 /usr/bin/python
+    && ln -s /usr/bin/python3.10 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better Docker caching
+# Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies with conservative approach
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+# Install Python dependencies in optimized single-layer approach with error handling
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' 'torchaudio>=2.0.0,<2.6.0' && \
+    pip install --no-cache-dir numpy scipy && \
+    (pip install --no-cache-dir super-gradients || echo "⚠️ super-gradients installation failed - service will run in fallback mode") && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Install PyTorch first with conservative versions for YOLO-NAS compatibility
-RUN pip install --no-cache-dir 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' 'torchaudio>=2.0.0,<2.6.0' --index-url https://download.pytorch.org/whl/cu121
-
-# Install other core dependencies
-RUN pip install --no-cache-dir numpy scipy
-
-# Try to install super-gradients with error handling
-RUN pip install --no-cache-dir super-gradients || echo "⚠️ super-gradients installation failed - service will run in fallback mode"
-
-# Install remaining requirements
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Create weights directory
+# Create weights directory for volume mounting (best practice)
 RUN mkdir -p /app/weights
 
 # Copy application code

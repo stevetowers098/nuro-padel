@@ -1,25 +1,29 @@
 # MMPose Service Dockerfile
-# Complex installation requirements - must install MMPose stack in specific order
+# Optimized for fast builds with complex MMPose dependencies - Complete isolation
 
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 as base
+FROM nvidia/cuda:12.2.0-devel-ubuntu20.04
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Set environment variables for speed and stability
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    YOLO_OFFLINE=1 \
+    ULTRALYTICS_OFFLINE=1 \
+    ONLINE=False \
+    YOLO_TELEMETRY=False
 
-# YOLO offline mode for production safety
-ENV YOLO_OFFLINE=1
-ENV ULTRALYTICS_OFFLINE=1
-ENV ONLINE=False
-ENV YOLO_TELEMETRY=False
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies in single optimized layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
-    python3-pip \
+    python3.10-distutils \
     python3.10-venv \
+    python3-pip \
     ffmpeg \
     libglib2.0-0 \
     libsm6 \
@@ -32,49 +36,33 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create symlink for python
-RUN ln -s /usr/bin/python3.10 /usr/bin/python
+    && ln -s /usr/bin/python3.10 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better Docker caching
+# Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
 
-# Install basic Python dependencies first
-RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel
+# Install Python dependencies in optimized single-layer approach
+# This reduces build time significantly while maintaining exact MMPose requirements
+RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
+    pip uninstall openxlab torch torchvision torchaudio triton xtcocotools pycocotools numpy -y --quiet 2>/dev/null || true && \
+    pip install --no-cache-dir numpy==1.24.3 && \
+    pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 && \
+    pip install --no-cache-dir cython && \
+    pip install --no-cache-dir pycocotools && \
+    pip install --no-cache-dir --no-deps --force-reinstall xtcocotools && \
+    pip install --no-cache-dir openmim && \
+    mim install mmengine && \
+    mim install "mmcv>=2.0.1" && \
+    mim install mmdet && \
+    mim install "mmpose>=1.0.0" && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Clean up any conflicting packages that might cause issues
-RUN pip uninstall openxlab torch torchvision torchaudio triton xtcocotools pycocotools numpy -y --quiet 2>/dev/null || true
-
-# Install compatible NumPy version first
-RUN pip install --no-cache-dir numpy==1.24.3
-
-# Install PyTorch with compatible versions
-RUN pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu121
-
-# Install Cython before cocotools
-RUN pip install --no-cache-dir cython
-
-# Install cocotools in correct order
-RUN pip install --no-cache-dir pycocotools
-RUN pip install --no-cache-dir --no-deps --force-reinstall xtcocotools
-
-# Install openmim for MMPose installation
-RUN pip install --no-cache-dir openmim
-
-# Install MMPose stack using mim (correct order is critical)
-RUN mim install mmengine
-RUN mim install "mmcv>=2.0.1"
-RUN mim install mmdet
-RUN mim install "mmpose>=1.0.0"
-
-# Install remaining requirements
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Create weights directory
+# Create weights directory for volume mounting (best practice)
 RUN mkdir -p /app/weights
 
 # Copy application code

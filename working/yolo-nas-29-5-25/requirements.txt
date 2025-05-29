@@ -1,0 +1,27 @@
+# YOLO-NAS Service Requirements
+# Verified versions - super-gradients is still maintained open source
+
+# --- Core ML/DL with CUDA Support ---
+torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
+torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
+
+# --- YOLO-NAS ---
+super-gradients>=3.7.0
+
+# --- Core Dependencies ---
+numpy==1.23.0
+
+# --- Computer Vision ---
+opencv-python-headless==4.10.0.84
+pillow==10.4.0
+
+# --- FastAPI Stack ---
+fastapi==0.111.0
+pydantic==2.7.4
+uvicorn[standard]==0.30.1
+
+# --- Additional Dependencies ---
+httpx==0.27.0
+
+# --- Cloud & Storage ---
+google-cloud-storage==2.10.0

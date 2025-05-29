@@ -49,7 +49,8 @@ logger.info("FastAPI app created for YOLO Combined service.")
 GCS_BUCKET_NAME = "padel-ai"
 WEIGHTS_DIR = "/app/weights"
 YOLO11_POSE_MODEL = "yolo11n-pose.pt"
-YOLOV8_OBJECT_MODEL = "yolov8m.pt"
+YOLO11_OBJECT_MODEL = "yolo11n.pt"
+YOLOV8_OBJECT_MODEL = "yolov8n.pt"
 YOLOV8_POSE_MODEL = "yolov8n-pose.pt"
 
 # Pydantic Models
@@ -104,6 +105,7 @@ def load_model(model_name: str, description: str) -> Optional[YOLO]:
 
 # Load Models
 yolo11_pose_model = load_model(YOLO11_POSE_MODEL, "YOLO11 Pose Model")
+yolo11_object_model = load_model(YOLO11_OBJECT_MODEL, "YOLO11 Object Model")
 yolov8_object_model = load_model(YOLOV8_OBJECT_MODEL, "YOLOv8 Object Model")
 yolov8_pose_model = load_model(YOLOV8_POSE_MODEL, "YOLOv8 Pose Model")
 
@@ -215,6 +217,7 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict,
 async def health_check():
     models_status = {
         "yolo11_pose": yolo11_pose_model is not None,
+        "yolo11_object": yolo11_object_model is not None,
         "yolov8_object": yolov8_object_model is not None,
         "yolov8_pose": yolov8_pose_model is not None
     }
@@ -239,10 +242,10 @@ async def yolo11_object_detection(payload: VideoAnalysisURLRequest, request: Req
     """YOLO11 Object Detection - person, sports ball, tennis racket"""
     logger.info("YOLO11 Object detection request received")
 
-    if yolo11_pose_model is None:  # Using pose model for object detection too
-        raise HTTPException(status_code=503, detail="YOLO11 model not available")
+    if yolo11_object_model is None:
+        raise HTTPException(status_code=503, detail="YOLO11 Object model not available")
 
-    return await process_object_detection(payload, yolo11_pose_model, "yolo11_object", "processed_yolo11_object")
+    return await process_object_detection(payload, yolo11_object_model, "yolo11_object", "processed_yolo11_object")
 
 @app.post("/yolov8/pose")
 async def yolov8_pose_detection(payload: VideoAnalysisURLRequest, request: Request):

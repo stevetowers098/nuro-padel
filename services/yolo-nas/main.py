@@ -32,12 +32,14 @@ except ImportError:
     SUPER_GRADIENTS_AVAILABLE = False
     logging.warning("Super Gradients not available - service will run in fallback mode")
 
-# Setup for utils.video_utils
+# Setup for utils
 try:
     from utils.video_utils import get_video_info, extract_frames
+    from utils.model_optimizer import ModelOptimizer
 except ImportError:
     sys.path.append(os.path.dirname(__file__))
     from utils.video_utils import get_video_info, extract_frames
+    from utils.model_optimizer import ModelOptimizer
 
 # Configure logging
 logging.basicConfig(
@@ -82,37 +84,74 @@ async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> s
         logger.error(f"Error uploading to GCS: {e}", exc_info=True)
         return ""
 
-# Model Loading
+# Model Loading with Optimization Support
 yolo_nas_pose_model = None
 yolo_nas_object_model = None
 model_info = {"pose_model": "none", "object_model": "none", "status": "none"}
+
+# Initialize model optimizer
+model_optimizer = ModelOptimizer(WEIGHTS_DIR)
+pose_model_info = None
+object_model_info = None
 
 if SUPER_GRADIENTS_AVAILABLE:
     try:
         logger.info("Loading YOLO-NAS models...")
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        # Load YOLO-NAS Pose Model
+        # Load YOLO-NAS Pose Model (with optimization support)
         try:
-            yolo_nas_pose_model = models.get("yolo_nas_pose_n", pretrained_weights="coco_pose")
+            local_pose_checkpoint = os.path.join(WEIGHTS_DIR, "super-gradients", "yolo_nas_pose_n_coco_pose.pth")
+            
+            # Load PyTorch model first
+            if os.path.exists(local_pose_checkpoint):
+                logger.info(f"🔄 Loading YOLO-NAS pose model from local checkpoint: {local_pose_checkpoint}")
+                yolo_nas_pose_model = models.get("yolo_nas_pose_n",
+                                                checkpoint_path=local_pose_checkpoint,
+                                                num_classes=17)  # COCO pose has 17 keypoints
+            else:
+                logger.warning(f"⚠️ Local checkpoint not found at {local_pose_checkpoint}, falling back to pretrained_weights")
+                yolo_nas_pose_model = models.get("yolo_nas_pose_n", pretrained_weights="coco_pose")
+            
             if torch.cuda.is_available():
                 yolo_nas_pose_model.to('cuda')
                 yolo_nas_pose_model.half()  # Use half precision for speed
-            model_info["pose_model"] = "yolo_nas_pose_n"
-            logger.info("✅ YOLO-NAS Pose model loaded successfully")
+            
+            # Try to load optimized version (TensorRT/ONNX) with PyTorch fallback
+            pose_model_info = model_optimizer.load_optimized_model("yolo_nas_pose_n", yolo_nas_pose_model)
+            backend, optimized_model = pose_model_info
+            
+            model_info["pose_model"] = f"yolo_nas_pose_n ({backend})"
+            logger.info(f"✅ YOLO-NAS Pose model loaded successfully using {backend} backend")
         except Exception as e_pose:
-            logger.error(f"Failed to load YOLO-NAS pose model: {e_pose}")
+            logger.error(f"❌ Failed to load YOLO-NAS pose model: {e_pose}")
 
-        # Load YOLO-NAS Object Model
+        # Load YOLO-NAS Object Model (with optimization support)
         try:
-            yolo_nas_object_model = models.get("yolo_nas_s", pretrained_weights="coco")
+            local_object_checkpoint = os.path.join(WEIGHTS_DIR, "super-gradients", "yolo_nas_s_coco.pth")
+            
+            # Load PyTorch model first
+            if os.path.exists(local_object_checkpoint):
+                logger.info(f"🔄 Loading YOLO-NAS object model from local checkpoint: {local_object_checkpoint}")
+                yolo_nas_object_model = models.get("yolo_nas_s",
+                                                 checkpoint_path=local_object_checkpoint,
+                                                 num_classes=80)  # COCO has 80 object classes
+            else:
+                logger.warning(f"⚠️ Local checkpoint not found at {local_object_checkpoint}, falling back to pretrained_weights")
+                yolo_nas_object_model = models.get("yolo_nas_s", pretrained_weights="coco")
+            
             if torch.cuda.is_available():
                 yolo_nas_object_model.to('cuda')
                 yolo_nas_object_model.half()  # Use half precision for speed
-            model_info["object_model"] = "yolo_nas_s"
-            logger.info("✅ YOLO-NAS Object model loaded successfully")
+            
+            # Try to load optimized version (TensorRT/ONNX) with PyTorch fallback
+            object_model_info = model_optimizer.load_optimized_model("yolo_nas_s", yolo_nas_object_model)
+            backend, optimized_model = object_model_info
+            
+            model_info["object_model"] = f"yolo_nas_s ({backend})"
+            logger.info(f"✅ YOLO-NAS Object model loaded successfully using {backend} backend")
         except Exception as e_object:
-            logger.error(f"Failed to load YOLO-NAS object model: {e_object}")
+            logger.error(f"❌ Failed to load YOLO-NAS object model: {e_object}")
 
         model_info["status"] = "loaded"
 
@@ -126,10 +165,12 @@ else:
 
 # Model Functions
 def detect_high_accuracy_poses(frames: List[np.ndarray]) -> List[List[Dict[str, Any]]]:
-    """Detect poses using YOLO-NAS pose model"""
-    if yolo_nas_pose_model is None:
+    """Detect poses using optimized YOLO-NAS pose model"""
+    if pose_model_info is None or pose_model_info[1] is None:
         logger.warning("YOLO-NAS pose model not loaded")
         return [[] for _ in frames]
+    
+    backend, model = pose_model_info
 
     all_poses = []
     batch_size = 8
@@ -138,8 +179,20 @@ def detect_high_accuracy_poses(frames: List[np.ndarray]) -> List[List[Dict[str, 
         for i in range(0, len(frames), batch_size):
             batch = frames[i:i+batch_size]
 
-            with torch.no_grad():
-                results = yolo_nas_pose_model.predict(batch, half=True)
+            # Use optimized inference if available, fallback to PyTorch
+            if backend in ["onnx", "tensorrt"]:
+                try:
+                    # Convert batch to numpy for ONNX/TensorRT
+                    batch_np = np.array([frame for frame in batch])
+                    results = model_optimizer.predict_optimized(pose_model_info, batch_np)
+                except Exception as e:
+                    logger.warning(f"Optimized inference failed, falling back to PyTorch: {e}")
+                    with torch.no_grad():
+                        results = model.predict(batch, half=True)
+            else:
+                # PyTorch inference
+                with torch.no_grad():
+                    results = model.predict(batch, half=True)
 
             batch_poses = []
             for result in results:
@@ -191,10 +244,12 @@ def detect_high_accuracy_poses(frames: List[np.ndarray]) -> List[List[Dict[str, 
     return all_poses
 
 def detect_high_accuracy_objects(frames: List[np.ndarray]) -> List[List[Dict[str, Any]]]:
-    """Detect objects using YOLO-NAS object detection model"""
-    if yolo_nas_object_model is None:
+    """Detect objects using optimized YOLO-NAS object detection model"""
+    if object_model_info is None or object_model_info[1] is None:
         logger.warning("YOLO-NAS object model not loaded")
         return [[] for _ in frames]
+    
+    backend, model = object_model_info
 
     all_objects = []
     batch_size = 8
@@ -204,8 +259,20 @@ def detect_high_accuracy_objects(frames: List[np.ndarray]) -> List[List[Dict[str
         for i in range(0, len(frames), batch_size):
             batch = frames[i:i+batch_size]
 
-            with torch.no_grad():
-                results = yolo_nas_object_model.predict(batch, half=True)
+            # Use optimized inference if available, fallback to PyTorch
+            if backend in ["onnx", "tensorrt"]:
+                try:
+                    # Convert batch to numpy for ONNX/TensorRT
+                    batch_np = np.array([frame for frame in batch])
+                    results = model_optimizer.predict_optimized(object_model_info, batch_np)
+                except Exception as e:
+                    logger.warning(f"Optimized inference failed, falling back to PyTorch: {e}")
+                    with torch.no_grad():
+                        results = model.predict(batch, half=True)
+            else:
+                # PyTorch inference
+                with torch.no_grad():
+                    results = model.predict(batch, half=True)
 
             batch_objects = []
             for result in results:
@@ -373,12 +440,14 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict) -
 @app.get("/healthz")
 async def health_check():
     models_status = {
-        "pose_model_loaded": yolo_nas_pose_model is not None,
-        "object_model_loaded": yolo_nas_object_model is not None,
-        "super_gradients_available": SUPER_GRADIENTS_AVAILABLE
+        "pose_model_loaded": pose_model_info is not None and pose_model_info[1] is not None,
+        "object_model_loaded": object_model_info is not None and object_model_info[1] is not None,
+        "super_gradients_available": SUPER_GRADIENTS_AVAILABLE,
+        "pose_backend": pose_model_info[0] if pose_model_info else "none",
+        "object_backend": object_model_info[0] if object_model_info else "none"
     }
 
-    if not any([yolo_nas_pose_model, yolo_nas_object_model]):
+    if not any([models_status["pose_model_loaded"], models_status["object_model_loaded"]]):
         return JSONResponse(
             content={
                 "status": "unhealthy",
@@ -406,7 +475,7 @@ async def yolo_nas_pose_detection(payload: VideoAnalysisURLRequest, request: Req
     """
     logger.info("YOLO-NAS pose detection request received")
 
-    if yolo_nas_pose_model is None:
+    if pose_model_info is None or pose_model_info[1] is None:
         raise HTTPException(status_code=503, detail="YOLO-NAS pose model not available")
 
     return await process_pose_detection(payload)
@@ -423,7 +492,7 @@ async def yolo_nas_object_detection(payload: VideoAnalysisURLRequest, request: R
     """
     logger.info("YOLO-NAS object detection request received")
 
-    if yolo_nas_object_model is None:
+    if object_model_info is None or object_model_info[1] is None:
         raise HTTPException(status_code=503, detail="YOLO-NAS object model not available")
 
     return await process_object_detection(payload)
@@ -528,10 +597,5 @@ async def process_object_detection(payload: VideoAnalysisURLRequest):
         if temp_downloaded_path and os.path.exists(temp_downloaded_path):
             os.unlink(temp_downloaded_path)
 
-if __name__ == "__main__":
-    logger.info("Starting YOLO-NAS service on port 8004")
-    if not yolo_nas_pose_model and not yolo_nas_object_model:
-        logger.critical("No YOLO-NAS models loaded - service will be unhealthy")
-    else:
-        logger.info(f"YOLO-NAS service starting with {model_info}")
-    uvicorn.run(app, host="0.0.0.0", port=8004, log_config=None)
+# Remove uvicorn.run block for optimized Docker CMD usage
+# This will be replaced by: CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8004"]

@@ -22,7 +22,7 @@ RUN sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/
     add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    python3.10 python3.10-dev python3.10-distutils python3-pip \
+    python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip \
     ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 build-essential curl wget git
 
 # Clean up and create Python symlink
@@ -31,6 +31,11 @@ RUN ln -s /usr/bin/python3.10 /usr/bin/python && \
 
 # Set working directory
 WORKDIR /app
+
+# Create and activate Python virtual environment
+RUN python3.10 -m venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Copy requirements first for optimal Docker layer caching
 COPY requirements.txt .
@@ -66,5 +71,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=180s --retries=3 \
 # Expose port
 EXPOSE 8004
 
-# Start command
-CMD ["python", "main.py"]
+# Start command - optimized for production
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8004"]

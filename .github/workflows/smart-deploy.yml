@@ -30,19 +30,15 @@ jobs:
         with:
           filters: |
             yolo-combined:
-              - 'yolo-combined-service/**'
-              - 'requirements/yolo*.txt'
+              - 'services/yolo-combined/**'
             mmpose:
-              - 'mmpose-service/**'
-              - 'requirements/mmpose.txt'
+              - 'services/mmpose/**'
             yolo-nas:
-              - 'yolo-nas-service/**'
-              - 'requirements/yolo-nas.txt'
+              - 'services/yolo-nas/**'
             nginx:
-              - 'nginx.conf'
-              - 'nginx.resilient.conf'
+              - 'deployment/nginx*.conf'
             docker-compose:
-              - 'docker-compose*.yml'
+              - 'deployment/docker-compose*.yml'
               - 'Dockerfile*'
             docs-only:
               - '*.md'
@@ -110,7 +106,7 @@ jobs:
       - name: 🐳 Build and push YOLO Combined image
         uses: docker/build-push-action@v5
         with:
-          context: ./yolo-combined-service
+          context: ./services/yolo-combined
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -153,7 +149,7 @@ jobs:
       - name: 🐳 Build and push MMPose image
         uses: docker/build-push-action@v5
         with:
-          context: ./mmpose-service
+          context: ./services/mmpose
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -196,7 +192,7 @@ jobs:
       - name: 🐳 Build and push YOLO-NAS image
         uses: docker/build-push-action@v5
         with:
-          context: ./yolo-nas-service
+          context: ./services/yolo-nas
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

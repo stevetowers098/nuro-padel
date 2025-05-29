@@ -2,9 +2,9 @@
 # Verified compatible versions for Docker container
 
 # --- Core ML/DL with CUDA Support ---
-torch==2.3.1
-torchvision==0.18.1
-torchaudio==2.3.1
+torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
+torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
+torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121
 
 # --- YOLO Models ---
 ultralytics==8.2.97        # Latest stable version
@@ -20,13 +20,7 @@ pillow==10.4.0
 
 # --- Core Dependencies ---
 numpy>=1.24.0,<2.0.0
-protobuf>=3.19.5,<4.0.0  # Compatible with both ultralytics and older GCS
 httpx==0.27.0
 
 # --- Cloud & Storage ---
-google-cloud-storage==2.10.0  # Older version compatible with protobuf 3.x
-
-# --- TrackNet Dependencies ---
-matplotlib>=3.7.0,<3.9.0
-scipy==1.10.1
-tqdm==4.66.1
+google-cloud-storage==2.18.0

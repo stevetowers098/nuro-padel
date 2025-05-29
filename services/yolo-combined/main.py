@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import os
 from pathlib import Path
 
@@ -22,7 +21,7 @@ import torch
 import uuid
 import uvicorn
 from datetime import datetime
-from google.cloud import storage  # Re-enabled with compatible GCS version
+from google.cloud import storage
 from ultralytics import YOLO
 import subprocess
 
@@ -33,26 +32,10 @@ except ImportError:
     sys.path.append(os.path.dirname(__file__))
     from utils.video_utils import get_video_info, extract_frames
 
-# TrackNet Integration (Optional)
-TRACKNET_AVAILABLE = False
-tracknet_inference = None
-try:
-    from tracknet.inference import TrackNetInference, is_tracknet_available
-    tracknet_inference = TrackNetInference(
-        model_path=os.path.join(WEIGHTS_DIR, "tracknet_v2.pth") if os.path.exists(os.path.join(WEIGHTS_DIR, "tracknet_v2.pth")) else None,
-        device='cuda' if torch.cuda.is_available() else 'cpu'
-    )
-    TRACKNET_AVAILABLE = tracknet_inference.is_available
-    logger.info(f"TrackNet integration: {'ENABLED' if TRACKNET_AVAILABLE else 'DISABLED (no model)'}")
-except ImportError as e:
-    logger.info("TrackNet dependencies not available, ball tracking disabled")
-except Exception as e:
-    logger.warning(f"TrackNet initialization failed: {e}")
-
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s', 
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
@@ -102,10 +85,10 @@ def load_model(model_name: str, description: str) -> Optional[YOLO]:
         if not os.path.exists(model_path):
             logger.error(f"Model file {model_path} does not exist")
             return None
-        
+
         model = YOLO(model_path)
         logger.info(f"{description} loaded successfully")
-        
+
         if torch.cuda.is_available():
             logger.info(f"Moving {description} to CUDA")
             model.to('cuda')
@@ -121,7 +104,7 @@ def load_model(model_name: str, description: str) -> Optional[YOLO]:
 
 # Load Models
 yolo11_pose_model = load_model(YOLO11_POSE_MODEL, "YOLO11 Pose Model")
-yolov8_object_model = load_model(YOLOV8_OBJECT_MODEL, "YOLOv8 Object Model")  
+yolov8_object_model = load_model(YOLOV8_OBJECT_MODEL, "YOLOv8 Object Model")
 yolov8_pose_model = load_model(YOLOV8_POSE_MODEL, "YOLOv8 Pose Model")
 
 # Drawing Functions
@@ -137,22 +120,22 @@ def draw_poses_on_frame(frame: np.ndarray, poses: List[Dict[str, Any]]) -> np.nd
         ("left_hip", "left_knee"), ("right_hip", "right_knee"),
         ("left_knee", "left_ankle"), ("right_knee", "right_ankle")
     ]
-    
+
     for pose in poses:
         keypoints = pose.get("keypoints", {})
         bbox = pose.get("bbox", {})
-        
+
         # Draw bounding box
         if bbox and pose.get("confidence", 0) > 0.3:
             cv2.rectangle(annotated_frame, (int(bbox["x1"]), int(bbox["y1"])),
                          (int(bbox["x2"]), int(bbox["y2"])), (255, 0, 0), 2)
-        
+
         # Draw keypoints
         for name, data in keypoints.items():
             x, y, conf = int(data.get("x", 0)), int(data.get("y", 0)), data.get("confidence", 0.0)
             if conf > 0.5:
                 cv2.circle(annotated_frame, (x, y), 3, (0, 255, 0), -1)
-        
+
         # Draw connections
         for p1_name, p2_name in connections:
             p1, p2 = keypoints.get(p1_name), keypoints.get(p2_name)
@@ -164,72 +147,53 @@ def draw_poses_on_frame(frame: np.ndarray, poses: List[Dict[str, Any]]) -> np.nd
 def draw_objects_on_frame(frame: np.ndarray, objects: List[Dict[str, Any]]) -> np.ndarray:
     annotated_frame = frame.copy()
     colors = {"person": (0, 255, 0), "sports ball": (0, 0, 255), "tennis racket": (255, 0, 0)}
-    
+
     for obj in objects:
         bbox = obj["bbox"]
         x1, y1, x2, y2 = int(bbox["x1"]), int(bbox["y1"]), int(bbox["x2"]), int(bbox["y2"])
         class_name, conf = obj["class"], obj["confidence"]
         color = colors.get(class_name, (255, 255, 255))
-        
-        # Draw bounding box
+
         cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-        
-        # Enhanced ball tracking visualization
-        if class_name == "sports ball" and "center" in obj:
-            # Draw center point for ball
-            center_x, center_y = int(obj["center"]["x"]), int(obj["center"]["y"])
-            cv2.circle(annotated_frame, (center_x, center_y), 5, (255, 255, 0), -1)
-            
-            # Add tracking method indicator
-            tracking_method = obj.get("tracking_method", "yolo")
-            label = f"{class_name} ({conf:.2f}) [{tracking_method}]"
-            
-            # Use different color for TrackNet detections
-            if "tracknet" in tracking_method:
-                color = (255, 165, 0)  # Orange for TrackNet
-        else:
-            label = f"{class_name} ({conf:.2f})"
-        
-        cv2.putText(annotated_frame, label,
+        cv2.putText(annotated_frame, f"{class_name} ({conf:.2f})",
                    (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-    
     return annotated_frame
 
-async def create_video_from_frames(frames: List[np.ndarray], video_info: dict, 
+async def create_video_from_frames(frames: List[np.ndarray], video_info: dict,
                                   folder: str) -> Optional[str]:
     """Create video using FFMPEG and upload to GCS"""
     if not frames:
         return None
-    
+
     output_video_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
             output_video_path = temp_file.name
-        
+
         height, width = frames[0].shape[:2]
         fps = float(video_info.get("fps", 30.0))
         if fps <= 0: fps = 30.0
-        
+
         ffmpeg_cmd = [
             'ffmpeg', '-y', '-f', 'rawvideo', '-vcodec', 'rawvideo',
             '-s', f'{width}x{height}', '-pix_fmt', 'bgr24', '-r', str(fps),
             '-i', '-', '-vcodec', 'libx264', '-preset', 'fast', '-crf', '23',
             '-pix_fmt', 'yuv420p', output_video_path
         ]
-        
-        process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, 
+
+        process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        
+
         for frame in frames:
             if process.stdin and not process.stdin.closed:
                 try:
                     process.stdin.write(frame.tobytes())
                 except (IOError, BrokenPipeError):
                     break
-        
+
         if process.stdin and not process.stdin.closed:
             process.stdin.close()
-        
+
         try:
             stdout, stderr = process.communicate(timeout=120)
             if process.returncode == 0:
@@ -252,82 +216,55 @@ async def health_check():
     models_status = {
         "yolo11_pose": yolo11_pose_model is not None,
         "yolov8_object": yolov8_object_model is not None,
-        "yolov8_pose": yolov8_pose_model is not None,
-        "tracknet": TRACKNET_AVAILABLE
+        "yolov8_pose": yolov8_pose_model is not None
     }
-    
-    if not any([models_status["yolo11_pose"], models_status["yolov8_object"], models_status["yolov8_pose"]]):
-        return JSONResponse(content={"status": "unhealthy", "models": models_status}, status_code=503)
-    
+
+    if not any(models_status.values()):
+        return JSONResponse(content={"status": "unhealthy", "models": models_status}, status_code=503)      
+
     return {"status": "healthy", "models": models_status}
 
 @app.post("/yolo11/pose")
 async def yolo11_pose_detection(payload: VideoAnalysisURLRequest, request: Request):
     """YOLO11 Pose Detection - 17 keypoint human pose estimation"""
     logger.info("YOLO11 Pose detection request received")
-    
+
     if yolo11_pose_model is None:
         raise HTTPException(status_code=503, detail="YOLO11 Pose model not available")
-    
-    return await process_pose_detection(payload, yolo11_pose_model, "yolo11_pose", "processed_yolo11_pose")
+
+    return await process_pose_detection(payload, yolo11_pose_model, "yolo11_pose", "processed_yolo11_pose") 
 
 @app.post("/yolo11/object")
 async def yolo11_object_detection(payload: VideoAnalysisURLRequest, request: Request):
     """YOLO11 Object Detection - person, sports ball, tennis racket"""
     logger.info("YOLO11 Object detection request received")
-    
+
     if yolo11_pose_model is None:  # Using pose model for object detection too
         raise HTTPException(status_code=503, detail="YOLO11 model not available")
-    
+
     return await process_object_detection(payload, yolo11_pose_model, "yolo11_object", "processed_yolo11_object")
 
 @app.post("/yolov8/pose")
 async def yolov8_pose_detection(payload: VideoAnalysisURLRequest, request: Request):
     """YOLOv8 Pose Detection - 17 keypoint human pose estimation"""
     logger.info("YOLOv8 Pose detection request received")
-    
+
     if yolov8_pose_model is None:
         raise HTTPException(status_code=503, detail="YOLOv8 Pose model not available")
-    
-    return await process_pose_detection(payload, yolov8_pose_model, "yolov8_pose", "processed_yolov8_pose")
+
+    return await process_pose_detection(payload, yolov8_pose_model, "yolov8_pose", "processed_yolov8_pose") 
 
 @app.post("/yolov8/object")
 async def yolov8_object_detection(payload: VideoAnalysisURLRequest, request: Request):
     """YOLOv8 Object Detection - person, sports ball, tennis racket"""
     logger.info("YOLOv8 Object detection request received")
-    
+
     if yolov8_object_model is None:
         raise HTTPException(status_code=503, detail="YOLOv8 Object model not available")
-    
+
     return await process_object_detection(payload, yolov8_object_model, "yolov8_object", "processed_yolov8_object")
 
-@app.post("/track-ball")
-async def enhanced_ball_tracking(payload: VideoAnalysisURLRequest, request: Request):
-    """Enhanced Ball Tracking - YOLO + TrackNet Integration"""
-    logger.info("Enhanced ball tracking request received")
-    
-    if yolov8_object_model is None:
-        raise HTTPException(status_code=503, detail="YOLOv8 Object model not available")
-    
-    # Use YOLOv8 object detection with TrackNet enhancement
-    response = await process_object_detection(payload, yolov8_object_model, "tracknet_enhanced", "enhanced_ball_tracking")
-    
-    # Add tracking info to response
-    if isinstance(response, JSONResponse):
-        content = response.body
-        if hasattr(content, 'decode'):
-            import json
-            response_dict = json.loads(content.decode())
-            response_dict["tracking_info"] = {
-                "tracknet_enabled": TRACKNET_AVAILABLE,
-                "enhancement_method": "yolo_tracknet_fusion" if TRACKNET_AVAILABLE else "yolo_only",
-                "description": "Enhanced ball tracking combining YOLO detection with TrackNet trajectory refinement"
-            }
-            return JSONResponse(content=response_dict)
-    
-    return response
-
-async def process_pose_detection(payload: VideoAnalysisURLRequest, model: YOLO, 
+async def process_pose_detection(payload: VideoAnalysisURLRequest, model: YOLO,
                                service_name: str, gcs_folder: str):
     """Common pose detection processing logic"""
     temp_downloaded_path = None
@@ -336,36 +273,36 @@ async def process_pose_detection(payload: VideoAnalysisURLRequest, model: YOLO,
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(str(payload.video_url))
             response.raise_for_status()
-        
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
             temp_file.write(response.content)
             temp_downloaded_path = temp_file.name
-        
+
         # Extract frames
         video_info = get_video_info(temp_downloaded_path)
         # Extract ALL frames for smooth video output
         frames = extract_frames(temp_downloaded_path, num_frames_to_extract=-1)
-        
+
         if not frames:
             raise HTTPException(status_code=400, detail="No frames extracted from video")
-        
+
         all_poses_per_frame = []
         annotated_frames = []
-        
+
         # Process in batches
         batch_size = 8
         for i in range(0, len(frames), batch_size):
             batch = frames[i:i+batch_size]
             try:
                 results = model(batch, verbose=False, half=torch.cuda.is_available())
-                
+
                 for frame_idx, result in enumerate(results):
                     current_poses = []
-                    
+
                     if hasattr(result, 'keypoints') and result.keypoints is not None and result.keypoints.data is not None:
                         for keypoints_tensor in result.keypoints.data:
                             kpts = keypoints_tensor.cpu().numpy()
-                            
+
                             # Extract keypoints
                             keypoint_names = [
                                 "nose", "left_eye", "right_eye", "left_ear", "right_ear",
@@ -373,7 +310,7 @@ async def process_pose_detection(payload: VideoAnalysisURLRequest, model: YOLO,
                                 "left_wrist", "right_wrist", "left_hip", "right_hip",
                                 "left_knee", "right_knee", "left_ankle", "right_ankle"
                             ]
-                            
+
                             keypoint_dict = {}
                             for kpt_idx, kpt_data in enumerate(kpts):
                                 if kpt_idx < len(keypoint_names):
@@ -381,38 +318,38 @@ async def process_pose_detection(payload: VideoAnalysisURLRequest, model: YOLO,
                                     keypoint_dict[keypoint_names[kpt_idx]] = {
                                         "x": float(x), "y": float(y), "confidence": float(conf)
                                     }
-                            
+
                             if keypoint_dict:
-                                overall_conf = float(kpts[:, 2].mean()) if kpts.shape[0] > 0 else 0.0
+                                overall_conf = float(kpts[:, 2].mean()) if kpts.shape[0] > 0 else 0.0       
                                 current_poses.append({
                                     "keypoints": keypoint_dict,
                                     "confidence": overall_conf,
                                     "bbox": {}  # TODO: Extract bbox if needed
                                 })
-                    
+
                     all_poses_per_frame.append(current_poses)
-                    
+
                     if payload.video:
-                        annotated_frames.append(draw_poses_on_frame(batch[frame_idx], current_poses))
-                        
+                        annotated_frames.append(draw_poses_on_frame(batch[frame_idx], current_poses))       
+
             except Exception as e:
                 logger.error(f"Error processing batch: {e}")
                 for _ in batch:
                     all_poses_per_frame.append([])
                     if payload.video:
                         annotated_frames.extend(batch)
-        
+
         # Prepare response
         response_data = {}
         if payload.data:
             response_data["data"] = {"poses_per_frame": all_poses_per_frame}
-        
+
         if payload.video:
             video_url = await create_video_from_frames(annotated_frames, video_info, gcs_folder)
             response_data["video_url"] = video_url
-        
+
         return JSONResponse(content=response_data)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -424,105 +361,79 @@ async def process_pose_detection(payload: VideoAnalysisURLRequest, model: YOLO,
 
 async def process_object_detection(payload: VideoAnalysisURLRequest, model: YOLO,
                                  service_name: str, gcs_folder: str):
-    """Common object detection processing logic with TrackNet integration"""
+    """Common object detection processing logic"""
     temp_downloaded_path = None
     try:
         # Download video
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(str(payload.video_url))
             response.raise_for_status()
-        
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
             temp_file.write(response.content)
             temp_downloaded_path = temp_file.name
-        
+
         # Extract frames
         video_info = get_video_info(temp_downloaded_path)
         # Extract ALL frames for smooth video output
         frames = extract_frames(temp_downloaded_path, num_frames_to_extract=-1)
-        
+
         if not frames:
             raise HTTPException(status_code=400, detail="No frames extracted from video")
-        
+
         # Object classes for padel
         PADEL_CLASSES = {0: "person", 32: "sports ball", 38: "tennis racket"}
-        
+
         all_objects_per_frame = []
         annotated_frames = []
-        
+
         # Process in batches
         batch_size = 8
         for i in range(0, len(frames), batch_size):
             batch = frames[i:i+batch_size]
             try:
                 results = model(batch, verbose=False, half=torch.cuda.is_available())
-                
+
                 for frame_idx, result in enumerate(results):
                     current_objects = []
-                    
+
                     if hasattr(result, 'boxes') and result.boxes is not None and result.boxes.data is not None:
                         boxes_data = result.boxes.data.cpu().tolist()
                         for box_data in boxes_data:
                             x1, y1, x2, y2, conf, cls_raw = box_data
                             cls = int(cls_raw)
-                            
+
                             if cls in PADEL_CLASSES and conf > payload.confidence:
-                                obj = {
+                                current_objects.append({
                                     "class": PADEL_CLASSES[cls],
                                     "confidence": float(conf),
                                     "bbox": {"x1": float(x1), "y1": float(y1),
                                            "x2": float(x2), "y2": float(y2)}
-                                }
-                                # Add center point for sports ball
-                                if PADEL_CLASSES[cls] == "sports ball":
-                                    obj["center"] = {
-                                        "x": (x1 + x2) / 2,
-                                        "y": (y1 + y2) / 2
-                                    }
-                                    obj["tracking_method"] = "yolo_only"
-                                current_objects.append(obj)
-                    
+                                })
+
                     all_objects_per_frame.append(current_objects)
-                        
+
+                    if payload.video:
+                        annotated_frames.append(draw_objects_on_frame(batch[frame_idx], current_objects))   
+
             except Exception as e:
                 logger.error(f"Error processing batch: {e}")
                 for _ in batch:
                     all_objects_per_frame.append([])
-        
-        # Enhance with TrackNet if available
-        if TRACKNET_AVAILABLE and tracknet_inference:
-            try:
-                logger.info("Enhancing ball tracking with TrackNet...")
-                tracknet_inference.reset()
-                enhanced_objects = tracknet_inference.enhance_yolo_detections(frames, all_objects_per_frame)
-                all_objects_per_frame = enhanced_objects
-                logger.info("TrackNet enhancement completed")
-            except Exception as e:
-                logger.warning(f"TrackNet enhancement failed, using YOLO only: {e}")
-        
-        # Create annotated video if requested
-        if payload.video:
-            for i, frame in enumerate(frames):
-                if i < len(all_objects_per_frame):
-                    annotated_frames.append(draw_objects_on_frame(frame, all_objects_per_frame[i]))
-                else:
-                    annotated_frames.append(frame)
-        
+                    if payload.video:
+                        annotated_frames.extend(batch)
+
         # Prepare response
         response_data = {}
         if payload.data:
-            response_data["data"] = {
-                "objects_per_frame": all_objects_per_frame,
-                "tracknet_enabled": TRACKNET_AVAILABLE,
-                "total_frames": len(frames)
-            }
-        
+            response_data["data"] = {"objects_per_frame": all_objects_per_frame}
+
         if payload.video:
             video_url = await create_video_from_frames(annotated_frames, video_info, gcs_folder)
             response_data["video_url"] = video_url
-        
+
         return JSONResponse(content=response_data)
-        
+
     except HTTPException:
         raise
     except Exception as e:

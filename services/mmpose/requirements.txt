@@ -1,5 +1,20 @@
 # MMPose Service Requirements
-# Compatible dependencies installed first in Dockerfile (pytz==2023.3, numpy<2.0)
+# Verified versions for MMPose stack
+
+# --- Core ML/DL with CUDA Support ---
+torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
+torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
+
+# --- Core Dependencies ---
+numpy>=1.24.0,<2.0.0
+cython>=3.0.0
+
+# --- COCO Tools ---
+pycocotools>=2.0.8
+xtcocotools>=1.14
+
+# --- MMPose Stack (install via mim in Dockerfile) ---
+openmim>=0.3.0
 
 # --- Computer Vision ---
 opencv-python-headless==4.10.0.84
@@ -15,6 +30,3 @@ httpx==0.27.0
 
 # --- Cloud & Storage ---
 google-cloud-storage==2.18.0
-
-# Core dependencies (pytz, numpy) installed first in Dockerfile
-# MMPose and mmcv installed via MIM in Dockerfile

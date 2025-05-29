@@ -16,15 +16,28 @@ NC='\033[0m' # No Color
 WEIGHTS_DIR="./weights"
 TEMP_DIR="/tmp/nuro-padel-models"
 
-# Model URLs and filenames
+# Model URLs and filenames - Updated based on actual service requirements
 declare -A YOLO_MODELS=(
-    ["yolo11n-pose.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolo11n-pose.pt"
-    ["yolov8m.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m.pt"
+    # NOTE: YOLO 11 models URLs are invalid in v8.2.0 release - returning 0MB files
+    # ["yolo11n-pose.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolo11n-pose.pt"  # URL invalid - returns 0MB
+    # ["yolo11n.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolo11n.pt"  # URL invalid - returns 0MB
+    ["yolov8n.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
     ["yolov8n-pose.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n-pose.pt"
 )
 
 declare -A MMPOSE_MODELS=(
     ["rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth"]="https://download.openmmlab.com/mmpose/v1/projects/rtmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth"
+)
+
+# TrackNet models (if URL available)
+declare -A TRACKNET_MODELS=(
+    # ["tracknet_v2.pth"]="https://example.com/tracknet_v2.pth"  # Add URL when available
+)
+
+# YOLO-NAS models (manually placed, verification only)
+declare -A YOLO_NAS_MODELS=(
+    ["yolo_nas_pose_n_coco_pose.pth"]="super-gradients"
+    ["yolo_nas_s_coco.pth"]="super-gradients"
 )
 
 # Logging functions
@@ -44,14 +57,53 @@ warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
+# Diagnostic function to validate assumptions
+show_diagnostic_info() {
+    log "=== DIAGNOSTIC INFORMATION ==="
+    
+    log "Configured YOLO models (will go to ultralytics/):"
+    for model in "${!YOLO_MODELS[@]}"; do
+        echo "  - $model"
+    done
+    
+    log "Configured MMPose models (will go to mmpose/):"
+    for model in "${!MMPOSE_MODELS[@]}"; do
+        echo "  - $model"
+    done
+    
+    log "TrackNet models configured: ${#TRACKNET_MODELS[@]}"
+    if [ ${#TRACKNET_MODELS[@]} -gt 0 ]; then
+        for model in "${!TRACKNET_MODELS[@]}"; do
+            echo "  - $model"
+        done
+    fi
+    
+    log "YOLO-NAS models (manual verification only):"
+    for model in "${!YOLO_NAS_MODELS[@]}"; do
+        echo "  - $model (expected in ${YOLO_NAS_MODELS[$model]}/)"
+    done
+    
+    log "Directory structure that will be created:"
+    echo "  ./weights/ultralytics/     - YOLO models"
+    echo "  ./weights/mmpose/          - MMPose models"
+    echo "  ./weights/tracknet/        - TrackNet models"
+    echo "  ./weights/super-gradients/ - YOLO-NAS models"
+    
+    log "=== END DIAGNOSTIC ==="
+}
+
 # Create directories
 setup_directories() {
     log "Setting up directories..."
     
     mkdir -p "$WEIGHTS_DIR"
+    mkdir -p "$WEIGHTS_DIR/ultralytics"
+    mkdir -p "$WEIGHTS_DIR/mmpose"
+    mkdir -p "$WEIGHTS_DIR/tracknet"
+    mkdir -p "$WEIGHTS_DIR/super-gradients"
     mkdir -p "$TEMP_DIR"
     
-    success "Directories created"
+    success "Directories created with organized subdirectories"
 }
 
 # Check if model exists and is valid
@@ -75,11 +127,14 @@ check_model_exists() {
 download_model() {
     local url="$1"
     local filename="$2"
-    local expected_size="$3"  # in MB
+    local model_type_path="$3"  # New argument for subdir, e.g., "ultralytics"
+    local expected_size="$4"  # Shifted expected_size argument
     local max_retries=3
     
+    local final_base_dir="$WEIGHTS_DIR/$model_type_path"
+    mkdir -p "$final_base_dir"
     local temp_file="$TEMP_DIR/$filename"
-    local final_path="$WEIGHTS_DIR/$filename"
+    local final_path="$final_base_dir/$filename"
     
     # Check if model already exists and is valid
     if check_model_exists "$final_path" "$expected_size"; then
@@ -121,18 +176,27 @@ download_model() {
 
 # Download YOLO models
 download_yolo_models() {
-    log "Downloading YOLO models..."
+    log "Downloading YOLO models to ultralytics subdirectory..."
     
     local failed_downloads=0
     
     for model in "${!YOLO_MODELS[@]}"; do
-        if ! download_model "${YOLO_MODELS[$model]}" "$model" 5; then
+        # Determine expected size based on model type
+        local expected_size=6  # Default for nano models
+        case "$model" in
+            "yolo11n-pose.pt") expected_size=5 ;;  # Actually downloads as 5MB
+            *"yolo11n"*) expected_size=6 ;;
+            *"yolov8n"*) expected_size=6 ;;
+            *) expected_size=10 ;;  # For larger models if any
+        esac
+        
+        if ! download_model "${YOLO_MODELS[$model]}" "$model" "ultralytics" "$expected_size"; then
             ((failed_downloads++))
         fi
     done
     
     if [ $failed_downloads -eq 0 ]; then
-        success "All YOLO models downloaded successfully"
+        success "All YOLO models downloaded successfully to ultralytics/"
     else
         error "$failed_downloads YOLO model(s) failed to download"
         return 1
@@ -141,60 +205,173 @@ download_yolo_models() {
 
 # Download MMPose models
 download_mmpose_models() {
-    log "Downloading MMPose models..."
+    log "Downloading MMPose models to mmpose subdirectory..."
     
     local failed_downloads=0
     
     for model in "${!MMPOSE_MODELS[@]}"; do
-        if ! download_model "${MMPOSE_MODELS[$model]}" "$model" 100; then
+        # Updated expected size from 100MB to ~50MB as recommended
+        if ! download_model "${MMPOSE_MODELS[$model]}" "$model" "mmpose" 50; then
             ((failed_downloads++))
         fi
     done
     
     if [ $failed_downloads -eq 0 ]; then
-        success "All MMPose models downloaded successfully"
+        success "All MMPose models downloaded successfully to mmpose/"
     else
         error "$failed_downloads MMPose model(s) failed to download"
         return 1
     fi
 }
 
+# Download TrackNet models (if URLs available)
+download_tracknet_models() {
+    log "Downloading TrackNet models to tracknet subdirectory..."
+    
+    if [ ${#TRACKNET_MODELS[@]} -eq 0 ]; then
+        warning "No TrackNet model URLs configured - skipping TrackNet downloads"
+        warning "Please manually place tracknet_v2.pth in ./weights/tracknet/ if available"
+        return 0
+    fi
+    
+    local failed_downloads=0
+    
+    for model in "${!TRACKNET_MODELS[@]}"; do
+        if ! download_model "${TRACKNET_MODELS[$model]}" "$model" "tracknet" 20; then
+            ((failed_downloads++))
+        fi
+    done
+    
+    if [ $failed_downloads -eq 0 ]; then
+        success "All TrackNet models downloaded successfully to tracknet/"
+    else
+        error "$failed_downloads TrackNet model(s) failed to download"
+        return 1
+    fi
+}
+
+# Download YOLO-NAS models using Python script
+download_yolo_nas_models() {
+    log "Downloading YOLO-NAS models using Python downloader..."
+    
+    # Check if Python script exists
+    if [ ! -f "scripts/download-yolo-nas.py" ]; then
+        error "YOLO-NAS download script not found: scripts/download-yolo-nas.py"
+        return 1
+    fi
+    
+    # Try to run the Python script
+    if python3 scripts/download-yolo-nas.py; then
+        success "YOLO-NAS models downloaded successfully via Python script"
+        return 0
+    else
+        warning "YOLO-NAS Python download failed - this is often due to DNS issues with sghub.deci.ai"
+        warning "YOLO-NAS services will fall back to online download during startup"
+        return 1
+    fi
+}
+
+# Verify YOLO-NAS models
+verify_yolo_nas_models() {
+    log "Verifying YOLO-NAS models..."
+    
+    # Use Python script for verification
+    if [ -f "scripts/download-yolo-nas.py" ]; then
+        if python3 scripts/download-yolo-nas.py --verify-only; then
+            success "YOLO-NAS models verified successfully"
+            return 0
+        else
+            warning "YOLO-NAS model verification failed"
+            return 1
+        fi
+    else
+        # Fallback to bash verification
+        local total_models=0
+        local valid_models=0
+        
+        for model in "${!YOLO_NAS_MODELS[@]}"; do
+            ((total_models++))
+            local subdir="${YOLO_NAS_MODELS[$model]}"
+            local model_path="$WEIGHTS_DIR/$subdir/$model"
+            
+            if check_model_exists "$model_path" 10; then
+                ((valid_models++))
+                success "✓ $model (in $subdir/)"
+            else
+                warning "✗ $model (missing from $subdir/)"
+            fi
+        done
+        
+        log "YOLO-NAS verification: $valid_models/$total_models found"
+        
+        if [ $valid_models -gt 0 ]; then
+            success "Some YOLO-NAS models are available"
+            return 0
+        else
+            warning "No YOLO-NAS models found"
+            return 1
+        fi
+    fi
+}
+
 # Verify all models
 verify_models() {
-    log "Verifying all models..."
+    log "Verifying all models in organized subdirectories..."
     
     local total_models=0
     local valid_models=0
     
-    # Check YOLO models
+    # Check YOLO models in ultralytics subdirectory
     for model in "${!YOLO_MODELS[@]}"; do
         ((total_models++))
-        if check_model_exists "$WEIGHTS_DIR/$model" 5; then
+        local expected_size=6
+        case "$model" in
+            "yolo11n-pose.pt") expected_size=5 ;;  # Actually downloads as 5MB
+            *"yolo11n"*) expected_size=6 ;;
+            *"yolov8n"*) expected_size=6 ;;
+            *) expected_size=10 ;;
+        esac
+        
+        if check_model_exists "$WEIGHTS_DIR/ultralytics/$model" "$expected_size"; then
             ((valid_models++))
-            success "✓ $model"
+            success "✓ ultralytics/$model"
         else
-            error "✗ $model (missing or invalid)"
+            error "✗ ultralytics/$model (missing or invalid)"
         fi
     done
     
-    # Check MMPose models
+    # Check MMPose models in mmpose subdirectory
     for model in "${!MMPOSE_MODELS[@]}"; do
         ((total_models++))
-        if check_model_exists "$WEIGHTS_DIR/$model" 100; then
+        if check_model_exists "$WEIGHTS_DIR/mmpose/$model" 50; then
             ((valid_models++))
-            success "✓ $model"
+            success "✓ mmpose/$model"
         else
-            error "✗ $model (missing or invalid)"
+            error "✗ mmpose/$model (missing or invalid)"
         fi
     done
     
-    log "Model verification: $valid_models/$total_models valid"
+    # Check TrackNet models in tracknet subdirectory
+    for model in "${!TRACKNET_MODELS[@]}"; do
+        ((total_models++))
+        if check_model_exists "$WEIGHTS_DIR/tracknet/$model" 20; then
+            ((valid_models++))
+            success "✓ tracknet/$model"
+        else
+            error "✗ tracknet/$model (missing or invalid)"
+        fi
+    done
+    
+    log "Downloaded model verification: $valid_models/$total_models valid"
+    
+    # Also verify YOLO-NAS models (separate since they're manually placed)
+    verify_yolo_nas_models
     
     if [ $valid_models -eq $total_models ]; then
-        success "All models verified successfully!"
+        success "All downloadable models verified successfully!"
         return 0
     else
-        error "Some models are missing or invalid"
+        error "Some downloadable models are missing or invalid"
         return 1
     fi
 }
@@ -208,8 +385,12 @@ cleanup() {
 
 # Show disk usage
 show_disk_usage() {
-    log "Model directory disk usage:"
-    du -sh "$WEIGHTS_DIR"/* 2>/dev/null || echo "No models found"
+    log "Model directory disk usage by subdirectory:"
+    for subdir in ultralytics mmpose tracknet super-gradients; do
+        if [ -d "$WEIGHTS_DIR/$subdir" ]; then
+            echo "  $subdir/: $(du -sh "$WEIGHTS_DIR/$subdir" 2>/dev/null | cut -f1)"
+        fi
+    done
     log "Total weights directory size:"
     du -sh "$WEIGHTS_DIR"
 }
@@ -227,16 +408,33 @@ main() {
             download_mmpose_models
             verify_models
             ;;
+        tracknet)
+            setup_directories
+            download_tracknet_models
+            verify_models
+            ;;
         all)
             setup_directories
             download_yolo_models
             download_mmpose_models
+            download_tracknet_models
             verify_models
             show_disk_usage
             ;;
         verify)
             verify_models
             show_disk_usage
+            ;;
+        yolo-nas)
+            setup_directories
+            download_yolo_nas_models
+            verify_yolo_nas_models
+            ;;
+        yolo-nas-verify)
+            verify_yolo_nas_models
+            ;;
+        diagnose|diagnostic)
+            show_diagnostic_info
             ;;
         clean)
             log "Removing all downloaded models..."
@@ -247,12 +445,28 @@ main() {
             echo "Usage: $0 [command]"
             echo ""
             echo "Commands:"
-            echo "  all      Download all models (default)"
-            echo "  yolo     Download YOLO models only"
-            echo "  mmpose   Download MMPose models only"
-            echo "  verify   Verify existing models"
-            echo "  clean    Remove all models"
-            echo "  help     Show this help"
+            echo "  all        Download all available models (default)"
+            echo "  yolo       Download YOLO models only (to ultralytics/)"
+            echo "  mmpose     Download MMPose models only (to mmpose/)"
+            echo "  tracknet   Download TrackNet models only (to tracknet/)"
+            echo "  yolo-nas         Download YOLO-NAS models using Python script (to super-gradients/)"
+            echo "  yolo-nas-verify  Verify existing YOLO-NAS models only"
+            echo "  verify     Verify all existing models"
+            echo "  diagnose   Show diagnostic information about configured models"
+            echo "  clean      Remove all models from all subdirectories"
+            echo "  help       Show this help"
+            echo ""
+            echo "Models are organized into subdirectories:"
+            echo "  ./weights/ultralytics/     - YOLO models"
+            echo "  ./weights/mmpose/          - MMPose models"
+            echo "  ./weights/tracknet/        - TrackNet models"
+            echo "  ./weights/super-gradients/ - YOLO-NAS models (super-gradients format)"
+            echo ""
+            echo "YOLO-NAS Special Notes:"
+            echo "  - Uses Python script (scripts/download-yolo-nas.py) for downloads"
+            echo "  - May fail due to DNS issues with sghub.deci.ai"
+            echo "  - Services will fall back to online download if models missing"
+            echo "  - Try different network/VPN if downloads fail"
             ;;
         *)
             error "Unknown command: $1"

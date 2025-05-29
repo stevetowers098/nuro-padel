@@ -410,43 +410,70 @@ deploy_production() {
     
     # Check all services are healthy
     local services_healthy=true
+    local failed_services=()
+    
+    log "🔍 Checking health of all services..."
     for service in "${SERVICES[@]}"; do
-        if ! $DOCKER_COMPOSE ps "$service" | grep -q "healthy\|running"; then
-            warning "${service} is not healthy - checking manually..."
-            # Manual health check
+        log "Checking ${service} service health..."
+        
+        # First check docker-compose status
+        local compose_status=$($DOCKER_COMPOSE ps "$service" 2>/dev/null | grep -c "healthy\|running" || echo "0")
+        
+        if [ "$compose_status" -eq 0 ]; then
+            warning "${service} shows unhealthy in docker-compose - performing manual health check..."
+            
+            # Manual health check with detailed logging
             case "$service" in
-                "yolo-combined") 
-                    if curl -f http://localhost:8001/healthz &> /dev/null; then
-                        success "${service} is responding to health checks"
+                "yolo-combined")
+                    log "Testing ${service} health endpoint: http://localhost:8001/healthz"
+                    if curl -f -m 10 http://localhost:8001/healthz 2>/dev/null; then
+                        success "${service} health check PASSED"
                     else
-                        error "${service} is not responding"
+                        error "${service} health check FAILED - service not responding"
+                        failed_services+=("$service")
                         services_healthy=false
+                        # Show logs for debugging
+                        log "Last 20 lines of ${service} logs:"
+                        $DOCKER_COMPOSE logs --tail 20 "$service" || echo "Could not retrieve logs"
                     fi
                     ;;
                 "mmpose")
-                    if curl -f http://localhost:8003/healthz &> /dev/null; then
-                        success "${service} is responding to health checks"
+                    log "Testing ${service} health endpoint: http://localhost:8003/healthz"
+                    if curl -f -m 10 http://localhost:8003/healthz 2>/dev/null; then
+                        success "${service} health check PASSED"
                     else
-                        error "${service} is not responding"
+                        error "${service} health check FAILED - service not responding"
+                        failed_services+=("$service")
                         services_healthy=false
+                        # Show logs for debugging
+                        log "Last 20 lines of ${service} logs:"
+                        $DOCKER_COMPOSE logs --tail 20 "$service" || echo "Could not retrieve logs"
                     fi
                     ;;
                 "yolo-nas")
-                    if curl -f http://localhost:8004/healthz &> /dev/null; then
-                        success "${service} is responding to health checks"
+                    log "Testing ${service} health endpoint: http://localhost:8004/healthz"
+                    if curl -f -m 10 http://localhost:8004/healthz 2>/dev/null; then
+                        success "${service} health check PASSED"
                     else
-                        error "${service} is not responding"
+                        error "${service} health check FAILED - service not responding"
+                        failed_services+=("$service")
                         services_healthy=false
+                        # Show logs for debugging
+                        log "Last 20 lines of ${service} logs:"
+                        $DOCKER_COMPOSE logs --tail 20 "$service" || echo "Could not retrieve logs"
                     fi
                     ;;
             esac
+        else
+            success "${service} is healthy according to docker-compose"
         fi
     done
     
     if [ "$services_healthy" = true ]; then
-        success "Production deployment completed successfully"
+        success "✅ Production deployment completed successfully - all services healthy"
         
         # Show running services
+        log "Current service status:"
         $DOCKER_COMPOSE ps
         
         # Show service URLs
@@ -457,7 +484,11 @@ deploy_production() {
         echo "  - Load Balancer: http://localhost:8080/"
         
     else
-        error "Some services are unhealthy - check logs with: $DOCKER_COMPOSE logs"
+        error "❌ Production deployment FAILED - unhealthy services detected!"
+        error "Failed services: ${failed_services[*]}"
+        error "Check detailed logs above or run: $DOCKER_COMPOSE logs"
+        log "Overall service status:"
+        $DOCKER_COMPOSE ps
         return 1
     fi
 }

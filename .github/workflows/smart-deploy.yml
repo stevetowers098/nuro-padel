@@ -108,17 +108,34 @@ jobs:
           TAGS="${{ steps.meta.outputs.tags }}"
           LABELS="${{ steps.meta.outputs.labels }}"
           
+          BUILD_SUCCESS=false
           for i in 1 2 3; do
-            docker buildx build \
+            echo "🔨 Build attempt $i/3 for YOLO Combined..."
+            if docker buildx build \
               --push \
               --cache-from type=gha \
               --cache-to type=gha,mode=max \
               $(echo "$TAGS" | sed 's/^/--tag /' | tr '\n' ' ') \
               $(echo "$LABELS" | sed 's/^/--label /' | tr '\n' ' ') \
-              ./services/yolo-combined && break
-            echo "Retry $i failed, waiting..."
-            sleep 30
+              ./services/yolo-combined; then
+              echo "✅ Build attempt $i succeeded!"
+              BUILD_SUCCESS=true
+              break
+            else
+              echo "❌ Build attempt $i failed!"
+              if [ $i -eq 3 ]; then
+                echo "🚨 All 3 build attempts failed for YOLO Combined!"
+                exit 1
+              fi
+              echo "⏳ Waiting 30s before retry..."
+              sleep 30
+            fi
           done
+          
+          if [ "$BUILD_SUCCESS" != "true" ]; then
+            echo "🚨 YOLO Combined build failed after all retries"
+            exit 1
+          fi
 
   build-mmpose:
     name: 🤸 Build MMPose Service
@@ -158,17 +175,34 @@ jobs:
           TAGS="${{ steps.meta.outputs.tags }}"
           LABELS="${{ steps.meta.outputs.labels }}"
           
+          BUILD_SUCCESS=false
           for i in 1 2 3; do
-            docker buildx build \
+            echo "🔨 Build attempt $i/3 for MMPose..."
+            if docker buildx build \
               --push \
               --cache-from type=gha \
               --cache-to type=gha,mode=max \
               $(echo "$TAGS" | sed 's/^/--tag /' | tr '\n' ' ') \
               $(echo "$LABELS" | sed 's/^/--label /' | tr '\n' ' ') \
-              ./services/mmpose && break
-            echo "Retry $i failed, waiting..."
-            sleep 30
+              ./services/mmpose; then
+              echo "✅ Build attempt $i succeeded!"
+              BUILD_SUCCESS=true
+              break
+            else
+              echo "❌ Build attempt $i failed!"
+              if [ $i -eq 3 ]; then
+                echo "🚨 All 3 build attempts failed for MMPose!"
+                exit 1
+              fi
+              echo "⏳ Waiting 30s before retry..."
+              sleep 30
+            fi
           done
+          
+          if [ "$BUILD_SUCCESS" != "true" ]; then
+            echo "🚨 MMPose build failed after all retries"
+            exit 1
+          fi
 
   build-yolo-nas:
     name: 🎯 Build YOLO-NAS Service
@@ -208,27 +242,72 @@ jobs:
           TAGS="${{ steps.meta.outputs.tags }}"
           LABELS="${{ steps.meta.outputs.labels }}"
           
+          BUILD_SUCCESS=false
           for i in 1 2 3; do
-            docker buildx build \
+            echo "🔨 Build attempt $i/3 for YOLO-NAS..."
+            if docker buildx build \
               --push \
               --cache-from type=gha \
               --cache-to type=gha,mode=max \
               $(echo "$TAGS" | sed 's/^/--tag /' | tr '\n' ' ') \
               $(echo "$LABELS" | sed 's/^/--label /' | tr '\n' ' ') \
-              ./services/yolo-nas && break
-            echo "Retry $i failed, waiting..."
-            sleep 30
+              ./services/yolo-nas; then
+              echo "✅ Build attempt $i succeeded!"
+              BUILD_SUCCESS=true
+              break
+            else
+              echo "❌ Build attempt $i failed!"
+              if [ $i -eq 3 ]; then
+                echo "🚨 All 3 build attempts failed for YOLO-NAS!"
+                exit 1
+              fi
+              echo "⏳ Waiting 30s before retry..."
+              sleep 30
+            fi
           done
+          
+          if [ "$BUILD_SUCCESS" != "true" ]; then
+            echo "🚨 YOLO-NAS build failed after all retries"
+            exit 1
+          fi
 
-  deploy:
-    name: 🎯 Smart Deployment Summary
+  summary:
+    name: 📊 Build Summary (NOT ACTUAL DEPLOYMENT)
     needs: [detect-changes, build-yolo-combined, build-mmpose, build-yolo-nas]
-    if: always() && (needs.build-yolo-combined.result == 'success' || needs.build-yolo-combined.result == 'skipped') && (needs.build-mmpose.result == 'success' || needs.build-mmpose.result == 'skipped') && (needs.build-yolo-nas.result == 'success' || needs.build-yolo-nas.result == 'skipped')
+    if: always()
     runs-on: ubuntu-22.04
     steps:
-      - name: 📊 Deployment Summary & Analytics
+      - name: Check for build failures
         run: |
-          echo "🚀 Smart Deployment Summary"
+          echo "🔍 Checking build results..."
+          
+          # Check if any builds actually failed
+          YOLO_COMBINED_RESULT="${{ needs.build-yolo-combined.result }}"
+          MMPOSE_RESULT="${{ needs.build-mmpose.result }}"
+          YOLO_NAS_RESULT="${{ needs.build-yolo-nas.result }}"
+          
+          echo "Build Results:"
+          echo "  🚀 YOLO Combined: $YOLO_COMBINED_RESULT"
+          echo "  🤸 MMPose: $MMPOSE_RESULT"
+          echo "  🎯 YOLO-NAS: $YOLO_NAS_RESULT"
+          
+          # Fail if any build actually failed (not skipped)
+          if [[ "$YOLO_COMBINED_RESULT" == "failure" ]] || [[ "$MMPOSE_RESULT" == "failure" ]] || [[ "$YOLO_NAS_RESULT" == "failure" ]]; then
+            echo ""
+            echo "🚨 ERROR: One or more builds FAILED!"
+            echo "❌ This workflow should be marked as FAILED, not SUCCESS"
+            echo "⚠️  WARNING: This is only a summary - NO ACTUAL DEPLOYMENT occurred!"
+            exit 1
+          fi
+          
+      - name: 📊 Build Summary & Analytics
+        run: |
+          echo ""
+          echo "⚠️  IMPORTANT: This is NOT an actual deployment!"
+          echo "⚠️  This workflow only builds Docker images."
+          echo "⚠️  No services were deployed to any environment."
+          echo ""
+          echo "🚀 Smart Build Summary"
           echo "=============================================="
           
           # Service-level changes with emojis

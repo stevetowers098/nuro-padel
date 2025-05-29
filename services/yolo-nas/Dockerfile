@@ -20,7 +20,7 @@ RUN apt-get update && \
     for i in {1..5}; do apt-get install -y --no-install-recommends software-properties-common && break || sleep 15; done && \
     add-apt-repository -y ppa:deadsnakes/ppa || \
     (echo "Retrying repository addition..." && add-apt-repository -y ppa:deadsnakes/ppa) && \
-    apt-get update --fix-missing
+    apt-get update
 
 # Install YOLO-NAS system dependencies with multiple retry attempts
 RUN apt-get update && \

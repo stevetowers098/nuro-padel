@@ -15,7 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     YOLO_TELEMETRY=False
 
 # Fix missing dependencies and connection issues for MMPose
-RUN apt-get update --fix-missing && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends curl software-properties-common || \
     (echo "Retrying package installation..." && apt-get install -y --no-install-recommends curl software-properties-common)
 
@@ -25,7 +25,7 @@ RUN if ! command -v add-apt-repository &> /dev/null; then \
       apt-get install -y software-properties-common; \
     fi && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt-get update --fix-missing
+    apt-get update
 
 # Install MMPose-specific system dependencies with retries
 RUN apt-get update && \
@@ -34,7 +34,7 @@ RUN apt-get update && \
     ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 \
     libglib2.0-dev build-essential curl wget git \
     || (echo "Retrying failed package installations..." && \
-    apt-get update --fix-missing && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip \
     ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 \

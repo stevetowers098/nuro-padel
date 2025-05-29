@@ -11,7 +11,7 @@ env:
 
 jobs:
   detect-changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       yolo-combined: ${{ steps.changes.outputs.yolo-combined }}
       mmpose: ${{ steps.changes.outputs.mmpose }}
@@ -74,16 +74,27 @@ jobs:
     name: 🚀 Build YOLO Combined Service
     needs: detect-changes
     if: needs.detect-changes.outputs.yolo-combined == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write
+    env:
+      DOCKER_BUILDKIT: 1
+      BUILDX_NO_DEFAULT_LOAD: 1
     steps:
-      - name: 📥 Checkout repository
+      - name: 🖥️ Print OS version
+        run: cat /etc/os-release
+
+      - name:  Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-flags: --allow-insecure-entitlement security.insecure
 
       - name: 🔐 Log in to Container Registry
         uses: docker/login-action@v3
@@ -103,30 +114,46 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: 🐳 Build and push YOLO Combined image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/yolo-combined
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: 🐳 Build and push YOLO Combined image with retry
+        run: |
+          for i in 1 2 3; do
+            docker buildx build \
+              --platform linux/amd64 \
+              --push \
+              --tag ${{ steps.meta.outputs.tags }} \
+              --label ${{ steps.meta.outputs.labels }} \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              ./services/yolo-combined && break
+            echo "Build attempt $i failed, retrying..."
+            sleep 15
+          done
 
   build-mmpose:
     name: 🤸 Build MMPose Service
     needs: detect-changes
     if: needs.detect-changes.outputs.mmpose == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write
+    env:
+      DOCKER_BUILDKIT: 1
+      BUILDX_NO_DEFAULT_LOAD: 1
     steps:
+      - name: 🖥️ Print OS version
+        run: cat /etc/os-release
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-flags: --allow-insecure-entitlement security.insecure
 
       - name: 🔐 Log in to Container Registry
         uses: docker/login-action@v3
@@ -146,30 +173,46 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: 🐳 Build and push MMPose image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/mmpose
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: 🐳 Build and push MMPose image with retry
+        run: |
+          for i in 1 2 3; do
+            docker buildx build \
+              --platform linux/amd64 \
+              --push \
+              --tag ${{ steps.meta.outputs.tags }} \
+              --label ${{ steps.meta.outputs.labels }} \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              ./services/mmpose && break
+            echo "Build attempt $i failed, retrying..."
+            sleep 15
+          done
 
   build-yolo-nas:
     name: 🎯 Build YOLO-NAS Service
     needs: detect-changes
     if: needs.detect-changes.outputs.yolo-nas == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write
+    env:
+      DOCKER_BUILDKIT: 1
+      BUILDX_NO_DEFAULT_LOAD: 1
     steps:
+      - name: 🖥️ Print OS version
+        run: cat /etc/os-release
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-flags: --allow-insecure-entitlement security.insecure
 
       - name: 🔐 Log in to Container Registry
         uses: docker/login-action@v3
@@ -189,22 +232,30 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: 🐳 Build and push YOLO-NAS image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/yolo-nas
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: 🐳 Build and push YOLO-NAS image with retry
+        run: |
+          for i in 1 2 3; do
+            docker buildx build \
+              --platform linux/amd64 \
+              --push \
+              --tag ${{ steps.meta.outputs.tags }} \
+              --label ${{ steps.meta.outputs.labels }} \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              ./services/yolo-nas && break
+            echo "Build attempt $i failed, retrying..."
+            sleep 15
+          done
 
   deploy:
     name: 🎯 Smart Deployment Summary
     needs: [detect-changes, build-yolo-combined, build-mmpose, build-yolo-nas]
     if: always() && (needs.build-yolo-combined.result == 'success' || needs.build-yolo-combined.result == 'skipped') && (needs.build-mmpose.result == 'success' || needs.build-mmpose.result == 'skipped') && (needs.build-yolo-nas.result == 'success' || needs.build-yolo-nas.result == 'skipped')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
+      - name: 🖥️ Print OS version
+        run: cat /etc/os-release
+
       - name: 📊 Deployment Summary & Analytics
         run: |
           echo "🚀 Smart Deployment Summary"

@@ -1,7 +1,7 @@
 # MMPose Service Dockerfile
 # Optimized for fast builds with complex MMPose dependencies - Complete isolation
 
-FROM nvidia/cuda:12.2.0-devel-ubuntu20.04
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
 # Set environment variables for speed and stability
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -14,17 +14,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Install system dependencies with precise retry logic for network issues
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update --fix-missing \
-    && apt-get install -y --no-install-recommends \
-    python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip \
-    ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 libglib2.0-dev build-essential curl wget git \
-    || (echo "Retrying failed downloads..." && apt-get update --fix-missing && apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 libglib2.0-dev build-essential curl wget git) \
-    && ln -s /usr/bin/python3.10 /usr/bin/python \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Ensure the repository is added successfully and retry if necessary
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa || \
+    (echo "Retrying repository addition..." && add-apt-repository -y ppa:deadsnakes/ppa) \
+    && apt-get update --fix-missing
+
+# Install packages with retries
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 libglib2.0-dev build-essential curl wget git || \
+    (echo "Retrying failed package installations..." && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 libglib2.0-dev build-essential curl wget git)
+
+# Clean up apt cache after installation
+RUN ln -s /usr/bin/python3.10 /usr/bin/python && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app

@@ -61,8 +61,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
     pip install --no-cache-dir --no-deps --force-reinstall xtcocotools && \
     pip install --no-cache-dir openmim && \
     mim install mmengine && \
-    mim install "mmcv>=2.0.1" && \
-    mim install mmdet && \
+    mim install "mmcv==2.1.0" && \
+    mim install "mmdet>=3.0.0,<3.3.0" && \
     mim install "mmpose>=1.0.0" && \
     pip install --no-cache-dir -r requirements.txt
 

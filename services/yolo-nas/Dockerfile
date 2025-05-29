@@ -42,8 +42,11 @@ COPY requirements.txt .
 # Install Python dependencies in optimized single-layer approach with error handling
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir 'torch>=2.0.0,<2.6.0' 'torchvision>=0.15.0,<0.21.0' 'torchaudio>=2.0.0,<2.6.0' && \
-    pip install --no-cache-dir numpy scipy && \
-    (pip install --no-cache-dir super-gradients || echo "⚠️ super-gradients installation failed - service will run in fallback mode") && \
+    # Pin numpy for super-gradients compatibility
+    pip install --no-cache-dir numpy==1.23.0 scipy && \
+    # Install super-gradients without deps to avoid conflicts
+    (pip install --no-cache-dir super-gradients>=3.7.0 --no-deps || echo "⚠️ super-gradients installation failed - service will run in fallback mode") && \
+    # Install remaining dependencies from requirements.txt
     pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory for volume mounting (best practice)

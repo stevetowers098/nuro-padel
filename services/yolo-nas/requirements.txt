@@ -23,7 +23,7 @@ httpx==0.27.0
 google-cloud-storage==2.10.0
 
 # --- Inference Optimization (Optional for better performance) ---
-onnx==1.16.0
+onnx==1.15.0
 onnxruntime-gpu==1.18.1
 # Note: TensorRT requires manual installation from NVIDIA
 # Install via: pip install nvidia-tensorrt

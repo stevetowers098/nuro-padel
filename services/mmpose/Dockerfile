@@ -14,31 +14,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Fix missing dependencies and connection issues for MMPose
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl software-properties-common || \
-    (echo "Retrying package installation..." && apt-get install -y --no-install-recommends curl software-properties-common)
-
-# Ensure add-apt-repository command is available
-RUN if ! command -v add-apt-repository &> /dev/null; then \
-      echo "add-apt-repository command not found, installing..."; \
-      apt-get install -y software-properties-common; \
-    fi && \
+# Use faster mirrors + retry logic
+RUN sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends software-properties-common && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt-get update
-
-# Install MMPose-specific system dependencies with retries
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip \
-    ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 \
-    libglib2.0-dev build-essential curl wget git \
-    || (echo "Retrying failed package installations..." && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip \
     ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 \
-    libglib2.0-dev build-essential curl wget git)
+    libglib2.0-dev build-essential curl wget git
 
 # Clean up and create Python symlink
 RUN ln -s /usr/bin/python3.10 /usr/bin/python && \

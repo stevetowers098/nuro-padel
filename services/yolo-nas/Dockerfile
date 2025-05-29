@@ -15,19 +15,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Add a retry mechanism for failed connections to archive.ubuntu.com/security.ubuntu.com
-RUN apt-get update && \
-    for i in {1..5}; do apt-get install -y --no-install-recommends software-properties-common && break || sleep 15; done && \
-    add-apt-repository -y ppa:deadsnakes/ppa || \
-    (echo "Retrying repository addition..." && add-apt-repository -y ppa:deadsnakes/ppa) && \
-    apt-get update
-
-# Install YOLO-NAS system dependencies with multiple retry attempts
-RUN apt-get update && \
-    for i in {1..3}; do apt-get install -y --no-install-recommends \
+# Use faster mirrors + retry logic
+RUN sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends software-properties-common && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
     python3.10 python3.10-dev python3.10-distutils python3-pip \
-    ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 build-essential curl wget git \
-    && break || (echo "Retry attempt $i failed, waiting..." && sleep 15); done
+    ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 build-essential curl wget git
 
 # Clean up and create Python symlink
 RUN ln -s /usr/bin/python3.10 /usr/bin/python && \

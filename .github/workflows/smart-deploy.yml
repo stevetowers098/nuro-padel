@@ -103,15 +103,22 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push YOLO Combined image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/yolo-combined
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build and push YOLO Combined image with retry
+        run: |
+          TAGS="${{ steps.meta.outputs.tags }}"
+          LABELS="${{ steps.meta.outputs.labels }}"
+          
+          for i in 1 2 3; do
+            docker buildx build \
+              --push \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              $(echo "$TAGS" | sed 's/^/--tag /' | tr '\n' ' ') \
+              $(echo "$LABELS" | sed 's/^/--label /' | tr '\n' ' ') \
+              ./services/yolo-combined && break
+            echo "Retry $i failed, waiting..."
+            sleep 30
+          done
 
   build-mmpose:
     name: 🤸 Build MMPose Service
@@ -146,15 +153,22 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push MMPose image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/mmpose
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build and push MMPose image with retry
+        run: |
+          TAGS="${{ steps.meta.outputs.tags }}"
+          LABELS="${{ steps.meta.outputs.labels }}"
+          
+          for i in 1 2 3; do
+            docker buildx build \
+              --push \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              $(echo "$TAGS" | sed 's/^/--tag /' | tr '\n' ' ') \
+              $(echo "$LABELS" | sed 's/^/--label /' | tr '\n' ' ') \
+              ./services/mmpose && break
+            echo "Retry $i failed, waiting..."
+            sleep 30
+          done
 
   build-yolo-nas:
     name: 🎯 Build YOLO-NAS Service
@@ -189,15 +203,22 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push YOLO-NAS image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/yolo-nas
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build and push YOLO-NAS image with retry
+        run: |
+          TAGS="${{ steps.meta.outputs.tags }}"
+          LABELS="${{ steps.meta.outputs.labels }}"
+          
+          for i in 1 2 3; do
+            docker buildx build \
+              --push \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              $(echo "$TAGS" | sed 's/^/--tag /' | tr '\n' ' ') \
+              $(echo "$LABELS" | sed 's/^/--label /' | tr '\n' ' ') \
+              ./services/yolo-nas && break
+            echo "Retry $i failed, waiting..."
+            sleep 30
+          done
 
   deploy:
     name: 🎯 Smart Deployment Summary

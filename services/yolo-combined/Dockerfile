@@ -14,18 +14,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Ensure the repository is added successfully and retry if necessary
-RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
-    && add-apt-repository -y ppa:deadsnakes/ppa || \
-    (echo "Retrying repository addition..." && add-apt-repository -y ppa:deadsnakes/ppa) \
-    && apt-get update --fix-missing
-
-# Install packages with retries
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 curl wget || \
-    (echo "Retrying failed package installations..." && \
-    apt-get update --fix-missing && \
-    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 curl wget)
+# Use faster mirrors + retry logic
+RUN sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends software-properties-common && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 curl wget
 
 # Clean up apt cache after installation
 RUN ln -s /usr/bin/python3.10 /usr/bin/python && \

@@ -15,32 +15,17 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Install system dependencies with network retry logic
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+# Install system dependencies with precise retry logic for network issues
+RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update \
+    && apt-get update --fix-missing \
     && apt-get install -y --no-install-recommends \
-    python3.10 \
-    python3.10-dev \
-    python3.10-distutils \
-    python3-pip \
-    ffmpeg \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libgtk-3-0 \
-    build-essential \
-    curl \
-    wget \
-    git \
+    python3.10 python3.10-dev python3.10-distutils python3-pip \
+    ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 build-essential curl wget git \
     || (echo "Retrying failed downloads..." && apt-get update --fix-missing && apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 build-essential curl wget git) \
     && ln -s /usr/bin/python3.10 /usr/bin/python \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app

@@ -418,19 +418,32 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 ```
 
-**Network Retry Logic Applied** (essential for reliability):
+**Final Network Resilience Pattern** (precisely addresses apt-get failures):
 ```dockerfile
-# RECOMMENDED - with retry logic for network failures
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+# FINAL IMPLEMENTATION - follows exact recommended pattern for network issues
+RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends python3.10 python3.10-dev \
-    || (echo "Retrying failed downloads..." && apt-get update --fix-missing && apt-get install -y --no-install-recommends python3.10 python3.10-dev) \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && apt-get update --fix-missing \
+    && apt-get install -y --no-install-recommends \
+    python3.10 python3.10-dev python3.10-distutils python3-pip \
+    ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 curl wget \
+    || (echo "Retrying failed downloads..." && apt-get update --fix-missing && apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 curl wget) \
+    && ln -s /usr/bin/python3.10 /usr/bin/python \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 ```
+
+**Critical Pattern Elements:**
+- ✅ Initial `apt-get update` without --fix-missing (avoids premature fixes)
+- ✅ Add PPA first, then `apt-get update --fix-missing` (ensures PPA packages available)
+- ✅ Targeted retry logic specifically for package installation failures
+- ✅ Complete package list in both primary and retry attempts
+- ✅ Proper cleanup: `apt-get clean && rm -rf /var/lib/apt/lists/*`
+
+**Addresses Specific Failures:**
+- ❌ Connection failures to archive.ubuntu.com → ✅ Retry with --fix-missing
+- ❌ Missing python3.10-dev/python3.10-distutils → ✅ PPA added before --fix-missing
+- ❌ Package installation timeouts → ✅ Complete retry with all packages
 
 **Why Network Issues Persist Even After Restoration:**
 - **Environmental**: Ubuntu repository mirrors can be temporarily unavailable

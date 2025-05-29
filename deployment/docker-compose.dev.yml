@@ -5,7 +5,7 @@ services:
   # === YOLO Combined Service (Development) ===
   yolo-combined:
     build:
-      context: ./yolo-combined-service
+      context: ../services/yolo-combined
       dockerfile: Dockerfile.dev
     image: nuro-padel/yolo-combined:dev
     container_name: nuro-padel-yolo-combined-dev
@@ -42,7 +42,7 @@ services:
   # === MMPose Service (Development) ===
   mmpose:
     build:
-      context: ./mmpose-service
+      context: ../services/mmpose
       dockerfile: Dockerfile.dev
     image: nuro-padel/mmpose:dev
     container_name: nuro-padel-mmpose-dev
@@ -79,7 +79,7 @@ services:
   # === YOLO-NAS Service (Development) ===
   yolo-nas:
     build:
-      context: ./yolo-nas-service
+      context: ../services/yolo-nas
       dockerfile: Dockerfile.dev
     image: nuro-padel/yolo-nas:dev
     container_name: nuro-padel-yolo-nas-dev

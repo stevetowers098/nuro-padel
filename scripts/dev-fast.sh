@@ -52,13 +52,13 @@ print_status "Starting fast development deployment..."
 
 # Stop any existing containers
 print_status "Stopping existing containers..."
-docker-compose -f docker-compose.dev.yml down 2>/dev/null || true
+docker-compose -f deployment/docker-compose.dev.yml down 2>/dev/null || true
 
 # Build development images (should be fast!)
 print_status "Building development images (fast build using base image)..."
 start_time=$(date +%s)
 
-docker-compose -f docker-compose.dev.yml build
+docker-compose -f deployment/docker-compose.dev.yml build
 
 end_time=$(date +%s)
 build_duration=$((end_time - start_time))
@@ -67,7 +67,7 @@ print_success "Build completed in ${build_duration} seconds!"
 
 # Start services
 print_status "Starting development services..."
-docker-compose -f docker-compose.dev.yml up -d
+docker-compose -f deployment/docker-compose.dev.yml up -d
 
 # Wait for services to be ready
 print_status "Waiting for services to be healthy..."
@@ -105,10 +105,10 @@ if [ "$all_healthy" = true ]; then
     echo
     echo "⚡ Next code/requirements changes will build in 1-2 minutes!"
     echo "🔄 To rebuild after changes: ./dev-fast.sh"
-    echo "🛑 To stop: docker-compose -f docker-compose.dev.yml down"
+    echo "🛑 To stop: docker-compose -f deployment/docker-compose.dev.yml down"
 else
     print_error "Some services are unhealthy. Check logs:"
-    echo "  docker-compose -f docker-compose.dev.yml logs"
+    echo "  docker-compose -f deployment/docker-compose.dev.yml logs"
 fi
 
 echo

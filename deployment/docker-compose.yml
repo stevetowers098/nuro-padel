@@ -5,7 +5,7 @@ services:
   # === YOLO Combined Service (YOLO11 + YOLOv8) ===
   yolo-combined:
     build:
-      context: ./yolo-combined-service
+      context: ../services/yolo-combined
       dockerfile: Dockerfile
     # image: ghcr.io/stevetowers098/nuro-padel/yolo-combined:latest
     container_name: nuro-padel-yolo-combined
@@ -40,7 +40,7 @@ services:
   # === MMPose Biomechanics Service ===
   mmpose:
     build:
-      context: ./mmpose-service
+      context: ../services/mmpose
       dockerfile: Dockerfile
     # image: ghcr.io/stevetowers098/nuro-padel/mmpose:latest
     container_name: nuro-padel-mmpose
@@ -75,7 +75,7 @@ services:
   # === YOLO-NAS High-Accuracy Service ===
   yolo-nas:
     build:
-      context: ./yolo-nas-service
+      context: ../services/yolo-nas
       dockerfile: Dockerfile
     # image: ghcr.io/stevetowers098/nuro-padel/yolo-nas:latest
     container_name: nuro-padel-yolo-nas

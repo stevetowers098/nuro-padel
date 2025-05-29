@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 PROJECT_NAME="nuro-padel"
 SERVICES=("yolo-combined" "mmpose" "yolo-nas")
 REGISTRY="ghcr.io/stevetowers098/nuro-padel"  # Updated for registry support
-COMPOSE_FILE="docker-compose.resilient.yml"  # Use the fixed compose file
+COMPOSE_FILE="deployment/docker-compose.yml"  # Use the fixed compose file
 VM_HOST="towers@35.189.53.46"
 VM_PATH="/opt/padel-docker"
 
@@ -105,7 +105,7 @@ check_prerequisites() {
 # Check if service needs rebuilding
 needs_rebuild() {
     local service=$1
-    local service_dir="${service}-service"
+    local service_dir="services/${service}"
     
     # Check if image exists
     if ! docker images "${REGISTRY}/${service}:latest" --format "table {{.Repository}}" | grep -q "${REGISTRY}/${service}"; then
@@ -180,7 +180,7 @@ build_service() {
     
     log "Building ${service} service..."
     
-    cd "${service}-service"
+    cd "services/${service}"
     
     # Try BuildKit first, fallback to regular docker build
     if command -v docker-buildx >/dev/null 2>&1 || docker buildx version >/dev/null 2>&1; then

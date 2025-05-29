@@ -14,11 +14,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Install system dependencies in single optimized layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies with network retry logic
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
     python3.10-distutils \
@@ -36,6 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     git \
+    || (echo "Retrying failed downloads..." && apt-get update --fix-missing && apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 libglib2.0-dev build-essential curl wget git) \
     && ln -s /usr/bin/python3.10 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean

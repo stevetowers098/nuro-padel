@@ -418,9 +418,29 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 ```
 
-**Avoid These Patterns** (cause network failures):
+**Network Retry Logic Applied** (essential for reliability):
 ```dockerfile
-# DON'T USE - causes connection failures
+# RECOMMENDED - with retry logic for network failures
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends python3.10 python3.10-dev \
+    || (echo "Retrying failed downloads..." && apt-get update --fix-missing && apt-get install -y --no-install-recommends python3.10 python3.10-dev) \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+```
+
+**Why Network Issues Persist Even After Restoration:**
+- **Environmental**: Ubuntu repository mirrors can be temporarily unavailable
+- **Timing-Based**: archive.ubuntu.com connection timeouts vary by time/location
+- **CI/CD Load**: GitHub Actions runners may have different network conditions
+- **Repository State**: Package availability changes independent of our code
+
+**Avoid These Patterns** (cause connection failures):
+```dockerfile
+# DON'T USE - no retry logic, fails on first network issue
 RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \

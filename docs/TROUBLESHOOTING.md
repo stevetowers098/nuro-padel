@@ -4,18 +4,23 @@
 
 ### **YOLO-NAS Service - Complete Issue Resolution**
 
-#### **✅ Issue 1: Models Failing to Load Due to Network Error (FIXED)**
+#### **✅ Issue 1: ONNX Version Conflict with Super-gradients (FIXED)**
+**Error**: Docker build fails with dependency conflict between `onnx==1.16.0` and `super-gradients==3.7.1`
+**Solution**: Changed `onnx==1.16.0` to `onnx==1.15.0` in `services/yolo-nas/requirements.txt`
+**Verification**: Docker build now progresses successfully without version conflicts
+
+#### **✅ Issue 2: Models Failing to Load Due to Network Error (FIXED)**
 **Error**: `URLError: <urlopen error [Errno -2] Name or service not known>` from `sghub.deci.ai`
 **Solution**: Added local checkpoint loading with proper fallback
-**Models Required**: 
+**Models Required**:
 - `/opt/padel-docker/weights/super-gradients/yolo_nas_pose_n_coco_pose.pth` (~25MB)
 - `/opt/padel-docker/weights/super-gradients/yolo_nas_s_coco.pth` (~47MB)
 
-#### **✅ Issue 2: Missing Python Virtual Environment (FIXED)**
+#### **✅ Issue 3: Missing Python Virtual Environment (FIXED)**
 **Error**: Global package installation causing isolation issues
 **Solution**: Added `python3.10-venv` and proper virtual environment setup in Dockerfile
 
-#### **✅ Issue 3: Suboptimal Docker CMD (FIXED)**  
+#### **✅ Issue 4: Suboptimal Docker CMD (FIXED)**
 **Error**: Using `python main.py` startup method
 **Solution**: Changed to `CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8004"]`
 
@@ -151,6 +156,25 @@ RUN mim install mmcv-full mmpose xtcocotools
 ```
 
 ### **2. YOLO-NAS Service - Super-gradients Issues**
+
+#### **ONNX Version Conflict with Super-gradients**
+**Error**: Docker build fails with dependency conflict between `onnx==1.16.0` and `super-gradients==3.7.1`
+**Root Cause**:
+- Dockerfile installs `super-gradients>=3.7.0 --no-deps` (becomes 3.7.1)
+- `super-gradients==3.7.1` depends on `onnx==1.15.0`
+- `requirements.txt` specified `onnx==1.16.0` causing conflict
+
+**Solution - Fixed ONNX Version**:
+```txt
+# In services/yolo-nas/requirements.txt
+onnx==1.15.0  # Changed from 1.16.0 to match super-gradients dependency
+onnxruntime-gpu==1.18.1  # Compatible with onnx 1.15.0
+```
+
+**Verification**:
+- `onnxruntime-gpu 1.18.1` supports `onnx >= 1.15.0, < 1.17.0`
+- Docker build now progresses successfully through dependency installation
+- No version conflicts during pip install phase
 
 #### **Impossible Dependency Conflict**
 **Error**: `super-gradients 3.7.1` requires `numpy<=1.23` but sub-dependencies require `numpy>=1.24.4`

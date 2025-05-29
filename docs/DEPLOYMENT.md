@@ -63,11 +63,12 @@ mmpose                        # Latest compatible via mim
 super-gradients==3.7.1        # Main framework
 numpy==1.23.0                 # Must be ≤1.23 for super-gradients
 torch + torchvision           # Auto-managed by super-gradients
-onnx==1.16.0                  # Model optimization
+onnx==1.15.0                  # Model optimization (compatible with super-gradients)
 onnxruntime-gpu==1.18.1       # GPU acceleration
 # TensorRT via: pip install nvidia-tensorrt
 ```
 **Fixes Applied**:
+- ✅ ONNX version conflict resolved (1.16.0 → 1.15.0)
 - ✅ Local model loading from `/opt/padel-docker/weights/super-gradients/`
 - ✅ Python virtual environment isolation
 - ✅ Optimized Docker CMD with uvicorn

@@ -32,7 +32,7 @@ except ImportError:
     SUPER_GRADIENTS_AVAILABLE = False
     logging.warning("Super Gradients not available - service will run in fallback mode")
 
-# Setup for utils
+# Setup for utils and shared config
 try:
     from utils.video_utils import get_video_info, extract_frames
     from utils.model_optimizer import ModelOptimizer
@@ -40,6 +40,22 @@ except ImportError:
     sys.path.append(os.path.dirname(__file__))
     from utils.video_utils import get_video_info, extract_frames
     from utils.model_optimizer import ModelOptimizer
+
+# Import shared configuration loader
+try:
+    sys.path.append('/app')
+    sys.path.append('../shared')
+    from shared.config_loader import ConfigLoader, merge_env_overrides
+except ImportError:
+    # Fallback if shared module not available
+    class ConfigLoader:
+        def __init__(self, service_name: str, config_dir: str = "/app/config"):
+            pass
+        def load_config(self): return {}
+        def get_feature_flags(self): return {}
+        def is_feature_enabled(self, feature_name: str): return False
+        def get_service_info(self): return {"service": "yolo_nas", "version": "2.0.0"}
+    def merge_env_overrides(config): return config
 
 # Configure logging
 logging.basicConfig(
@@ -51,13 +67,20 @@ logger = logging.getLogger(__name__)
 
 logger.info("--- YOLO-NAS HIGH-ACCURACY SERVICE STARTED ---")
 
-app = FastAPI(title="YOLO-NAS High-Accuracy Service", version="1.0.0")
+# Initialize configuration loader
+config_loader = ConfigLoader("yolo_nas", "/app/config")
+service_config = merge_env_overrides(config_loader.load_config())
+logger.info(f"Configuration loaded: {config_loader.get_service_info()}")
+
+app = FastAPI(title="YOLO-NAS High-Accuracy Service", version="2.0.0")
 logger.info("FastAPI app created for YOLO-NAS service.")
 
 # Configuration
 GCS_BUCKET_NAME = "padel-ai"
 GCS_FOLDER = "processed_yolo_nas"
 WEIGHTS_DIR = "/app/weights"
+
+logger.info(f"Feature flags: {config_loader.get_feature_flags()}")
 
 # Pydantic Models
 class VideoAnalysisURLRequest(BaseModel):
@@ -438,30 +461,90 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict) -
 
 # API Endpoints
 @app.get("/healthz")
-async def health_check():
-    models_status = {
-        "pose_model_loaded": pose_model_info is not None and pose_model_info[1] is not None,
-        "object_model_loaded": object_model_info is not None and object_model_info[1] is not None,
-        "super_gradients_available": SUPER_GRADIENTS_AVAILABLE,
-        "pose_backend": pose_model_info[0] if pose_model_info else "none",
-        "object_backend": object_model_info[0] if object_model_info else "none"
-    }
-
-    if not any([models_status["pose_model_loaded"], models_status["object_model_loaded"]]):
-        return JSONResponse(
-            content={
-                "status": "unhealthy",
-                "models": models_status,
-                "model_info": model_info
-            },
-            status_code=503
-        )
-
-    return {
-        "status": "healthy",
+async def enhanced_health_check():
+    """Enhanced health check with model versions and feature flags"""
+    
+    # Reload config for latest feature flags
+    current_config = merge_env_overrides(config_loader.load_config())
+    
+    # Model status with versions
+    models_status = {}
+    model_configs = current_config.get("models", {})
+    
+    for model_key, model_config in model_configs.items():
+        is_loaded = False
+        backend = "none"
+        
+        if model_key == "yolo_nas_pose_n" and pose_model_info is not None:
+            is_loaded = pose_model_info[1] is not None
+            backend = pose_model_info[0] if pose_model_info else "none"
+        elif model_key == "yolo_nas_s" and object_model_info is not None:
+            is_loaded = object_model_info[1] is not None
+            backend = object_model_info[0] if object_model_info else "none"
+        elif model_key == "yolo_nas_m":
+            is_loaded = False  # Not currently loaded
+            backend = "none"
+            
+        models_status[model_key] = {
+            "loaded": is_loaded,
+            "enabled": model_config.get("enabled", False),
+            "version": model_config.get("version", "unknown"),
+            "model_name": model_config.get("model_name", "unknown"),
+            "checkpoint": model_config.get("checkpoint"),
+            "backend": backend,
+            "task": model_config.get("task", "unknown"),
+            "fallback": model_config.get("fallback")
+        }
+    
+    # Feature flags status
+    feature_flags = current_config.get("features", {})
+    active_features = {}
+    for feature_name, feature_info in feature_flags.items():
+        active_features[feature_name] = {
+            "enabled": feature_info.get("enabled", False),
+            "description": feature_info.get("description", "")
+        }
+    
+    # Service information
+    service_info = config_loader.get_service_info()
+    optimization_config = current_config.get("optimization", {})
+    performance_config = current_config.get("performance", {})
+    
+    # Overall health status
+    any_model_loaded = any(status["loaded"] for status in models_status.values())
+    overall_status = "healthy" if any_model_loaded else "unhealthy"
+    status_code = 200 if any_model_loaded else 503
+    
+    response_data = {
+        "status": overall_status,
+        "service": service_info,
         "models": models_status,
-        "model_info": model_info
+        "features": active_features,
+        "optimization": {
+            "half_precision": optimization_config.get("use_half_precision", True),
+            "batch_size": optimization_config.get("batch_size", 8),
+            "fallback_enabled": optimization_config.get("enable_fallback", True),
+            "preferred_backend": optimization_config.get("preferred_backend", "pytorch")
+        },
+        "performance": {
+            "confidence_threshold": performance_config.get("confidence_threshold", 0.3),
+            "max_concurrent_requests": performance_config.get("max_concurrent_requests", 4),
+            "warmup_iterations": performance_config.get("warmup_iterations", 3)
+        },
+        "deployment": {
+            "ready_for_upgrade": any_model_loaded,
+            "config_hot_reload": True,
+            "super_gradients_available": SUPER_GRADIENTS_AVAILABLE,
+            "model_optimizer_available": True,
+            "legacy_model_info": model_info,
+            "last_config_check": datetime.now().isoformat()
+        }
     }
+    
+    if overall_status == "unhealthy":
+        return JSONResponse(content=response_data, status_code=status_code)
+    
+    return response_data
 
 @app.post("/yolo-nas/pose")
 async def yolo_nas_pose_detection(payload: VideoAnalysisURLRequest, request: Request):

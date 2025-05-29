@@ -1,0 +1,62 @@
+{
+  "service": "yolo_nas",
+  "version": "2.0.0",
+  "models": {
+    "yolo_nas_pose_n": {
+      "model_name": "yolo_nas_pose_n",
+      "checkpoint": "super-gradients/yolo_nas_pose_n_coco_pose.pth",
+      "version": "v3.7.1",
+      "enabled": true,
+      "fallback": null,
+      "num_classes": 17,
+      "task": "pose_estimation"
+    },
+    "yolo_nas_s": {
+      "model_name": "yolo_nas_s", 
+      "checkpoint": "super-gradients/yolo_nas_s_coco.pth",
+      "version": "v3.7.1",
+      "enabled": true,
+      "fallback": "yolo_nas_m",
+      "num_classes": 80,
+      "task": "object_detection"
+    },
+    "yolo_nas_m": {
+      "model_name": "yolo_nas_m",
+      "checkpoint": null,
+      "version": "v3.7.1", 
+      "enabled": false,
+      "fallback": null,
+      "num_classes": 80,
+      "task": "object_detection"
+    }
+  },
+  "features": {
+    "high_accuracy_mode": {
+      "enabled": true,
+      "description": "Use YOLO-NAS for maximum accuracy detection"
+    },
+    "onnx_optimization": {
+      "enabled": true,
+      "description": "Use ONNX runtime for faster inference"
+    },
+    "tensorrt_optimization": {
+      "enabled": false,
+      "description": "Use TensorRT for maximum speed (requires compatible GPU)"
+    },
+    "model_ensembling": {
+      "enabled": false,
+      "description": "Combine multiple models for better accuracy"
+    }
+  },
+  "optimization": {
+    "use_half_precision": true,
+    "batch_size": 8,
+    "enable_fallback": true,
+    "preferred_backend": "pytorch"
+  },
+  "performance": {
+    "confidence_threshold": 0.3,
+    "max_concurrent_requests": 4,
+    "warmup_iterations": 3
+  }
+}

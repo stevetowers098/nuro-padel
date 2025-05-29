@@ -12,7 +12,7 @@ NuroPadel is a comprehensive padel analysis platform that combines multiple AI m
 - **YOLO-NAS Service** (Port 8004) - High-accuracy object detection
 
 ### Key Features
-- **Enhanced Ball Tracking**: YOLO + TrackNet fusion for superior accuracy
+- **Enhanced Ball Tracking**: YOLO + TrackNet V2 ✅ fusion for superior accuracy (V4 pending release)
 - **Pose Estimation**: 17-keypoint human pose detection
 - **Object Detection**: Person, sports ball, tennis racket detection
 - **Video Processing**: Full video annotation with GCS upload
@@ -25,6 +25,237 @@ NuroPadel is a comprehensive padel analysis platform that combines multiple AI m
 - NVIDIA GPU (optional, for acceleration)
 - 8GB+ RAM
 - Google Cloud SDK (for GCS uploads)
+
+## 🤖 Model Setup & Downloads
+
+### Automatic Model Download
+The project includes a comprehensive model download script that handles all required AI models:
+
+```bash
+# Download all models (recommended)
+./scripts/download-models.sh all
+
+# Download specific model sets
+./scripts/download-models.sh yolo       # YOLO models only
+./scripts/download-models.sh mmpose     # MMPose models only
+./scripts/download-models.sh tracknet   # TrackNet models only
+./scripts/download-models.sh yolo-nas   # YOLO-NAS models only
+
+# Verify existing models
+./scripts/download-models.sh verify
+
+# Show diagnostic information
+./scripts/download-models.sh diagnose
+```
+
+### Model Organization
+Models are automatically organized into subdirectories:
+```
+./weights/
+├── ultralytics/          # YOLO models (~24MB)
+│   ├── yolov8n.pt
+│   ├── yolov8n-pose.pt
+│   └── yolo11n-pose.pt
+├── mmpose/               # MMPose models (~50MB)
+│   └── rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth
+├── tracknet/             # TrackNet V2 ✅ models (~3MB, V4 pending release)
+│   └── tracknet_v2.pth
+└── super-gradients/      # YOLO-NAS models (~72MB)
+    ├── yolo_nas_pose_n_coco_pose.pth
+    └── yolo_nas_s_coco.pth
+```
+
+### Model Download Requirements
+- **Total Size**: ~166MB for all models
+- **Network**: Required for initial download
+- **Storage**: Models are cached locally for offline operation
+
+## 🔗 How Services Find Model Weights
+
+### Volume Mounting Configuration
+All services locate models through Docker volume mounting configured in [`deployment/docker-compose.yml`](deployment/docker-compose.yml):
+
+```yaml
+services:
+  yolo-combined:
+    volumes:
+      - /opt/padel-docker/weights:/app/weights:ro  # Read-only mount
+  mmpose:
+    volumes:
+      - /opt/padel-docker/weights:/app/weights:ro
+  yolo-nas:
+    volumes:
+      - /opt/padel-docker/weights:/app/weights:ro
+```
+
+### Service Model Paths
+Each service uses the `WEIGHTS_DIR = "/app/weights"` constant and looks for models in specific subdirectories:
+
+#### YOLO-NAS Service ([`services/yolo-nas/main.py:104`](services/yolo-nas/main.py:104))
+```python
+WEIGHTS_DIR = "/app/weights"
+local_pose_checkpoint = os.path.join(WEIGHTS_DIR, "super-gradients", "yolo_nas_pose_n_coco_pose.pth")
+local_object_checkpoint = os.path.join(WEIGHTS_DIR, "super-gradients", "yolo_nas_s_coco.pth")
+```
+
+#### YOLO Combined Service ([`services/yolo-combined/main.py:50`](services/yolo-combined/main.py:50))
+```python
+WEIGHTS_DIR = "/app/weights"
+model_path = os.path.join(WEIGHTS_DIR, "yolo11n-pose.pt")  # Looks for ultralytics/ models
+```
+
+#### MMPose Service
+```python
+WEIGHTS_DIR = "/app/weights"
+# Looks for mmpose/ subdirectory models
+```
+
+### Path Mapping Summary
+```
+Host VM Path              → Container Path        → Service Access
+/opt/padel-docker/weights → /app/weights         → WEIGHTS_DIR constant
+
+Examples:
+/opt/padel-docker/weights/super-gradients/yolo_nas_pose_n_coco_pose.pth
+                         → /app/weights/super-gradients/yolo_nas_pose_n_coco_pose.pth
+                         → YOLO-NAS service loads this automatically
+
+/opt/padel-docker/weights/ultralytics/yolo11n-pose.pt
+                         → /app/weights/yolo11n-pose.pt
+                         → YOLO Combined service loads this automatically
+```
+
+### ✅ **No Configuration Required**
+- Services automatically find models when volume is mounted correctly
+- No environment variables needed for model paths
+- Download script organization matches service expectations
+- Docker Compose handles the path mapping automatically
+
+## ️ VM Infrastructure & Deployment
+
+### Production VM Details
+- **Address**: `35.189.53.46` (Google Cloud VM)
+- **User**: `towers`
+- **Deployment Path**: `/opt/padel-docker`
+- **OS**: Ubuntu 22.04 with NVIDIA T4 GPU
+- **Docker**: Docker Compose v2 with NVIDIA runtime
+
+### VM Directory Structure
+```
+/opt/padel-docker/
+├── services/             # AI service containers
+│   ├── yolo-combined/    # Port 8001
+│   ├── mmpose/          # Port 8003
+│   └── yolo-nas/        # Port 8004
+├── deployment/          # Docker Compose configs
+├── scripts/             # Deployment scripts
+├── weights/             # Model weights (see above)
+├── docs/               # Documentation
+└── testing/            # Test suite
+```
+
+### Model Deployment Process
+
+**Important**: Model weights must be downloaded to the VM before deployment.
+
+#### Option 1: Manual Download (Recommended)
+```bash
+# Connect to VM
+ssh towers@35.189.53.46
+
+# Navigate to deployment directory
+cd /opt/padel-docker
+
+# Download all required models
+./scripts/download-models.sh all
+
+# Verify models are ready
+./scripts/download-models.sh verify
+```
+
+#### Option 2: Local Download + Sync
+```bash
+# Download models locally
+./scripts/download-models.sh all
+
+# Deploy to VM (includes model sync)
+./scripts/deploy.sh --vm
+```
+
+### VM SSH Access
+The project includes SSH configuration for easy VM access:
+
+```bash
+# Using SSH config (recommended)
+ssh padel-ai
+
+# Or direct SSH
+ssh Towers@35.189.53.46
+```
+
+**SSH Configuration**: Located in [`.ssh/config`](.ssh/config)
+- **Host alias**: `padel-ai`
+- **IP**: `35.189.53.46`
+- **User**: `Towers`
+- **Key**: `.ssh/padel-ai-key`
+
+### Model Downloads in Deployment
+
+**❓ Current Status**: Model downloads are **NOT** automatic in deployment scripts.
+
+#### What the deploy script does:
+```bash
+./scripts/deploy.sh --vm
+```
+1. ✅ Syncs project files to VM
+2. ✅ Runs deployment scripts
+3. ❌ **Does NOT download models automatically**
+
+#### Required Manual Step:
+```bash
+# Connect to VM first
+ssh padel-ai
+
+# Download models on VM
+cd /opt/padel-docker
+./scripts/download-models.sh all
+
+# Then deploy services
+./scripts/deploy.sh --all
+```
+
+### Complete VM Deployment Process
+```bash
+# Step 1: Deploy code to VM
+./scripts/deploy.sh --vm
+
+# Step 2: Connect to VM
+ssh padel-ai
+
+# Step 3: Download models (REQUIRED)
+cd /opt/padel-docker
+./scripts/download-models.sh all
+
+# Step 4: Start services
+./scripts/deploy.sh --all
+
+# Step 5: Verify deployment
+docker-compose ps
+curl http://localhost:8080/healthz
+```
+
+### VM Service Status Commands
+```bash
+# On VM: Check service health
+docker-compose ps
+curl http://localhost:8080/healthz
+
+# On VM: View logs
+docker-compose logs -f [service-name]
+
+# On VM: Restart services
+docker-compose restart [service-name]
+```
 
 ### Smart Development Workflow
 ```bash
@@ -89,7 +320,7 @@ All endpoints accept the same JSON format:
 - **YOLO-NAS Object**: `POST http://35.189.53.46:8080/yolo-nas/object`
 
 ### 🎾 Enhanced Ball Tracking
-- **TrackNet Enhanced**: `POST http://35.189.53.46:8080/track-ball`
+- **TrackNet V2 Enhanced**: `POST http://35.189.53.46:8080/track-ball` ✅ **(V4 pending release)**
 
 ### 🩺 Health Check Endpoints
 - **Global Health**: `GET http://35.189.53.46:8080/healthz`
@@ -226,7 +457,11 @@ opencv-python-headless==4.10.0.84
 
 ## Performance
 
-- **Ball Tracking**: 95%+ precision with TrackNet enhancement
+- **Enhanced Ball Tracking**:
+  - **YOLO + Kalman Filtering**: Superior accuracy with gap filling for occlusions
+  - **Trajectory Smoothing**: Polynomial interpolation for physics-based smooth trajectories
+  - **TrackNet V2**: 95%+ precision (V4 upgrade ready when released)
+  - **Real-time Processing**: Sub-frame latency with predictive tracking
 - **Processing Speed**:
   - PyTorch: <50ms per 3-frame sequence (baseline)
   - ONNX: 20-40% faster inference on NVIDIA T4
@@ -234,6 +469,51 @@ opencv-python-headless==4.10.0.84
 - **Pose Detection**: 17-keypoint accuracy on padel scenarios
 - **Video Output**: Real-time annotation with GCS upload
 - **Model Backends**: Automatic fallback PyTorch → ONNX → TensorRT (best available)
+
+## 🎾 Enhanced Ball Tracking Features
+
+### Advanced YOLO Ball Detection
+All `/object` endpoints now include enhanced ball tracking:
+
+- **Kalman Filtering**: Predicts ball position during occlusions
+- **Physics Priors**: Uses gravity and velocity models for realistic trajectories
+- **Gap Filling**: Automatically interpolates missing detections
+- **Trajectory Smoothing**: Polynomial interpolation removes jitter
+- **Velocity Tracking**: Real-time speed and direction analysis
+
+### TrackNet Integration Status
+- **Current**: TrackNet V2 ✅ (Google Drive download available)
+- **Upgrade Path**: TrackNet V4 🔄 (Plug-and-play when released)
+- **Performance**: Enhanced YOLO tracking may outperform basic TrackNet V2
+
+### Ball Tracking Response Format
+```json
+{
+  "data": {
+    "objects_per_frame": [
+      {
+        "class": "sports ball",
+        "confidence": 0.85,
+        "bbox": {"x1": 245.2, "y1": 156.8, "x2": 265.1, "y2": 176.3},
+        "tracking": {
+          "velocity_x": 12.4,
+          "velocity_y": -8.1,
+          "trajectory": [[240.1, 160.2], [245.2, 156.8]],
+          "tracked": true,
+          "interpolated": false,
+          "smoothed": true
+        }
+      }
+    ],
+    "ball_tracking": {
+      "enhanced": true,
+      "kalman_filtered": true,
+      "trajectory_smoothed": true,
+      "fps": 30.0
+    }
+  }
+}
+```
 
 ## Use Cases
 

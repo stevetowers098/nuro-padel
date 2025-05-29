@@ -29,9 +29,9 @@ declare -A MMPOSE_MODELS=(
     ["rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth"]="https://download.openmmlab.com/mmpose/v1/projects/rtmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth"
 )
 
-# TrackNet models (if URL available)
+# TrackNet models - V2 available, V4 pending release
 declare -A TRACKNET_MODELS=(
-    # ["tracknet_v2.pth"]="https://example.com/tracknet_v2.pth"  # Add URL when available
+    ["tracknet_v2.pth"]="https://drive.google.com/file/d/1XEYZ4myUN7QT-NeBYJI0xteLsvs-ZAOl/view"
 )
 
 # YOLO-NAS models (manually placed, verification only)
@@ -123,6 +123,59 @@ check_model_exists() {
     return 1  # Model doesn't exist
 }
 
+# Download Google Drive file
+download_google_drive() {
+    local url="$1"
+    local filename="$2"
+    local model_type_path="$3"
+    local expected_size="$4"
+    
+    local final_base_dir="$WEIGHTS_DIR/$model_type_path"
+    mkdir -p "$final_base_dir"
+    local final_path="$final_base_dir/$filename"
+    
+    # Check if model already exists and is valid
+    if check_model_exists "$final_path" "$expected_size"; then
+        success "$filename already exists and is valid"
+        return 0
+    fi
+    
+    # Extract file ID from Google Drive URL
+    local file_id=""
+    if [[ "$url" =~ drive\.google\.com/file/d/([a-zA-Z0-9_-]+) ]]; then
+        file_id="${BASH_REMATCH[1]}"
+    else
+        error "Invalid Google Drive URL format: $url"
+        return 1
+    fi
+    
+    log "Downloading $filename from Google Drive (ID: $file_id)..."
+    
+    # Use gdown if available, otherwise provide manual instructions
+    if command -v gdown >/dev/null 2>&1; then
+        if gdown "https://drive.google.com/uc?id=$file_id" -O "$final_path"; then
+            if check_model_exists "$final_path" "$expected_size"; then
+                success "$filename downloaded successfully"
+                return 0
+            else
+                error "Downloaded file $filename is corrupted or incomplete"
+                rm -f "$final_path"
+                return 1
+            fi
+        else
+            error "gdown failed to download $filename"
+            return 1
+        fi
+    else
+        warning "gdown not available. Please manually download TrackNet V2:"
+        warning "1. Visit: $url"
+        warning "2. Download the file"
+        warning "3. Save as: $final_path"
+        warning "4. Install gdown for automatic downloads: pip install gdown"
+        return 1
+    fi
+}
+
 # Download single model with retry logic
 download_model() {
     local url="$1"
@@ -130,6 +183,11 @@ download_model() {
     local model_type_path="$3"  # New argument for subdir, e.g., "ultralytics"
     local expected_size="$4"  # Shifted expected_size argument
     local max_retries=3
+    
+    # Handle Google Drive URLs differently
+    if [[ "$url" =~ drive\.google\.com ]]; then
+        return $(download_google_drive "$url" "$filename" "$model_type_path" "$expected_size")
+    fi
     
     local final_base_dir="$WEIGHTS_DIR/$model_type_path"
     mkdir -p "$final_base_dir"
@@ -467,6 +525,12 @@ main() {
             echo "  - May fail due to DNS issues with sghub.deci.ai"
             echo "  - Services will fall back to online download if models missing"
             echo "  - Try different network/VPN if downloads fail"
+            echo ""
+            echo "TrackNet Notes:"
+            echo "  - Currently: TrackNet V2 (Google Drive download)"
+            echo "  - Future: TrackNet V4 upgrade path ready (plug-and-play)"
+            echo "  - Enhanced YOLO ball tracking may outperform basic TrackNet V2"
+            echo "  - Install gdown for automatic downloads: pip install gdown"
             ;;
         *)
             error "Unknown command: $1"

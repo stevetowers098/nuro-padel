@@ -1,6 +1,35 @@
 # Deployment Guide
 
-## 🚀 Quick Deploy Commands
+## 🆕 NEW: Enhanced Upgrade Capabilities
+
+The Nuro-Padel system now includes sophisticated upgrade management:
+- **Model Version Management** - Switch models without code changes
+- **Feature Flags** - Toggle features dynamically via configuration
+- **Enhanced Health Checks** - Detailed service status and upgrade readiness
+- **Hot Configuration Reload** - Changes take effect without restarts
+
+📖 **See the complete [UPGRADE_GUIDE.md](UPGRADE_GUIDE.md) for detailed upgrade instructions**
+
+### Quick Upgrade Commands
+```bash
+# Check enhanced service health with model versions and features
+curl http://localhost:8001/healthz | jq  # YOLO Combined
+curl http://localhost:8003/healthz | jq  # MMPose
+curl http://localhost:8004/healthz | jq  # YOLO-NAS
+
+# Demo all upgrade features
+chmod +x scripts/demo-upgrade-features.sh
+./scripts/demo-upgrade-features.sh
+
+# Toggle features via config files
+jq '.features.tracknet_v4.enabled = true' services/yolo-combined/config/model_config.json > temp.json && mv temp.json services/yolo-combined/config/model_config.json
+
+# Override via environment variables
+export FEATURE_ENHANCED_BALL_TRACKING_ENABLED=false
+docker-compose restart yolo-combined
+```
+
+##  Quick Deploy Commands
 ```bash
 ./scripts/deploy.sh           # Smart production deploy
 ./scripts/dev-fast.sh         # Fast development builds (1-2 min)

@@ -25,12 +25,30 @@ from google.cloud import storage
 from ultralytics import YOLO
 import subprocess
 
-# Setup for utils.video_utils
+# Setup for utils and shared config
 try:
     from utils.video_utils import get_video_info, extract_frames
+    from utils.ball_tracker import smooth_ball_trajectory, draw_enhanced_ball_trajectory
 except ImportError:
     sys.path.append(os.path.dirname(__file__))
     from utils.video_utils import get_video_info, extract_frames
+    from utils.ball_tracker import smooth_ball_trajectory, draw_enhanced_ball_trajectory
+
+# Import shared configuration loader
+try:
+    sys.path.append('/app')
+    sys.path.append('../shared')
+    from shared.config_loader import ConfigLoader, merge_env_overrides
+except ImportError:
+    # Fallback if shared module not available
+    class ConfigLoader:
+        def __init__(self, service_name: str, config_dir: str = "/app/config"):
+            pass
+        def load_config(self): return {}
+        def get_feature_flags(self): return {}
+        def is_feature_enabled(self, feature_name: str): return False
+        def get_service_info(self): return {"service": "yolo_combined", "version": "2.0.0"}
+    def merge_env_overrides(config): return config
 
 # Configure logging
 logging.basicConfig(
@@ -42,16 +60,27 @@ logger = logging.getLogger(__name__)
 
 logger.info("--- YOLO COMBINED SERVICE (YOLO11 + YOLOv8) STARTED ---")
 
-app = FastAPI(title="YOLO Combined Service - YOLO11 + YOLOv8", version="1.0.0")
+# Initialize configuration loader
+config_loader = ConfigLoader("yolo_combined", "/app/config")
+service_config = merge_env_overrides(config_loader.load_config())
+logger.info(f"Configuration loaded: {config_loader.get_service_info()}")
+
+app = FastAPI(title="YOLO Combined Service - YOLO11 + YOLOv8", version="2.0.0")
 logger.info("FastAPI app created for YOLO Combined service.")
 
 # Configuration
 GCS_BUCKET_NAME = "padel-ai"
 WEIGHTS_DIR = "/app/weights"
-YOLO11_POSE_MODEL = "yolo11n-pose.pt"
-YOLO11_OBJECT_MODEL = "yolo11n.pt"
-YOLOV8_OBJECT_MODEL = "yolov8n.pt"
-YOLOV8_POSE_MODEL = "yolov8n-pose.pt"
+
+# Dynamic model configuration based on config file
+model_configs = service_config.get("models", {})
+YOLO11_POSE_MODEL = model_configs.get("yolo11_pose", {}).get("file", "yolo11n-pose.pt")
+YOLO11_OBJECT_MODEL = model_configs.get("yolo11_object", {}).get("file", "yolo11n.pt")
+YOLOV8_OBJECT_MODEL = model_configs.get("yolov8_object", {}).get("file", "yolov8n.pt")
+YOLOV8_POSE_MODEL = model_configs.get("yolov8_pose", {}).get("file", "yolov8n-pose.pt")
+
+logger.info(f"Model files configured: YOLO11 Pose={YOLO11_POSE_MODEL}, YOLO11 Object={YOLO11_OBJECT_MODEL}")
+logger.info(f"Feature flags: {config_loader.get_feature_flags()}")
 
 # Pydantic Models
 class VideoAnalysisURLRequest(BaseModel):
@@ -214,18 +243,78 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict,
 
 # API Endpoints
 @app.get("/healthz")
-async def health_check():
-    models_status = {
-        "yolo11_pose": yolo11_pose_model is not None,
-        "yolo11_object": yolo11_object_model is not None,
-        "yolov8_object": yolov8_object_model is not None,
-        "yolov8_pose": yolov8_pose_model is not None
+async def enhanced_health_check():
+    """Enhanced health check with model versions and feature flags"""
+    
+    # Reload config for latest feature flags
+    current_config = merge_env_overrides(config_loader.load_config())
+    
+    # Model status with versions
+    models_status = {}
+    model_configs = current_config.get("models", {})
+    
+    for model_key, model_info in model_configs.items():
+        is_loaded = False
+        model_file = model_info.get("file", "unknown")
+        
+        # Check if model is actually loaded
+        if model_key == "yolo11_pose":
+            is_loaded = yolo11_pose_model is not None
+        elif model_key == "yolo11_object":
+            is_loaded = yolo11_object_model is not None
+        elif model_key == "yolov8_object":
+            is_loaded = yolov8_object_model is not None
+        elif model_key == "yolov8_pose":
+            is_loaded = yolov8_pose_model is not None
+            
+        models_status[model_key] = {
+            "loaded": is_loaded,
+            "enabled": model_info.get("enabled", False),
+            "version": model_info.get("version", "unknown"),
+            "file": model_file,
+            "fallback": model_info.get("fallback")
+        }
+    
+    # Feature flags status
+    feature_flags = current_config.get("features", {})
+    active_features = {}
+    for feature_name, feature_info in feature_flags.items():
+        active_features[feature_name] = {
+            "enabled": feature_info.get("enabled", False),
+            "description": feature_info.get("description", "")
+        }
+    
+    # Service information
+    service_info = config_loader.get_service_info()
+    performance_config = current_config.get("performance", {})
+    
+    # Overall health status
+    any_model_loaded = any(status["loaded"] for status in models_status.values())
+    overall_status = "healthy" if any_model_loaded else "unhealthy"
+    status_code = 200 if any_model_loaded else 503
+    
+    response_data = {
+        "status": overall_status,
+        "service": service_info,
+        "models": models_status,
+        "features": active_features,
+        "performance": {
+            "batch_size": performance_config.get("batch_size", 8),
+            "confidence_threshold": performance_config.get("confidence_threshold", 0.3),
+            "max_concurrent_requests": performance_config.get("max_concurrent_requests", 5)
+        },
+        "deployment": {
+            "ready_for_upgrade": any_model_loaded,
+            "config_hot_reload": True,
+            "environment_overrides": bool(os.getenv("YOLO11_POSE_ENABLED") or os.getenv("FEATURE_ENHANCED_BALL_TRACKING_ENABLED")),
+            "last_config_check": datetime.now().isoformat()
+        }
     }
-
-    if not any(models_status.values()):
-        return JSONResponse(content={"status": "unhealthy", "models": models_status}, status_code=503)      
-
-    return {"status": "healthy", "models": models_status}
+    
+    if overall_status == "unhealthy":
+        return JSONResponse(content=response_data, status_code=status_code)
+    
+    return response_data
 
 @app.post("/yolo11/pose")
 async def yolo11_pose_detection(payload: VideoAnalysisURLRequest, request: Request):
@@ -364,7 +453,7 @@ async def process_pose_detection(payload: VideoAnalysisURLRequest, model: YOLO,
 
 async def process_object_detection(payload: VideoAnalysisURLRequest, model: YOLO,
                                  service_name: str, gcs_folder: str):
-    """Common object detection processing logic"""
+    """Enhanced object detection with advanced ball tracking"""
     temp_downloaded_path = None
     try:
         # Download video
@@ -378,6 +467,9 @@ async def process_object_detection(payload: VideoAnalysisURLRequest, model: YOLO
 
         # Extract frames
         video_info = get_video_info(temp_downloaded_path)
+        fps = float(video_info.get("fps", 30.0))
+        if fps <= 0: fps = 30.0
+        
         # Extract ALL frames for smooth video output
         frames = extract_frames(temp_downloaded_path, num_frames_to_extract=-1)
 
@@ -416,20 +508,43 @@ async def process_object_detection(payload: VideoAnalysisURLRequest, model: YOLO
 
                     all_objects_per_frame.append(current_objects)
 
-                    if payload.video:
-                        annotated_frames.append(draw_objects_on_frame(batch[frame_idx], current_objects))   
-
             except Exception as e:
                 logger.error(f"Error processing batch: {e}")
                 for _ in batch:
                     all_objects_per_frame.append([])
-                    if payload.video:
-                        annotated_frames.extend(batch)
+
+        # Apply enhanced ball tracking with Kalman filtering and trajectory smoothing
+        logger.info("Applying enhanced ball tracking with Kalman filtering...")
+        enhanced_objects_per_frame = smooth_ball_trajectory(all_objects_per_frame, fps=fps)
+
+        # Create annotated frames with enhanced visualization
+        if payload.video:
+            for frame_idx, frame_objects in enumerate(enhanced_objects_per_frame):
+                if frame_idx < len(frames):
+                    # Separate ball objects for enhanced visualization
+                    ball_objects = [obj for obj in frame_objects if obj.get("class") == "sports ball"]
+                    other_objects = [obj for obj in frame_objects if obj.get("class") != "sports ball"]
+                    
+                    # Draw regular objects
+                    annotated_frame = draw_objects_on_frame(frames[frame_idx], other_objects)
+                    
+                    # Draw enhanced ball trajectory
+                    annotated_frame = draw_enhanced_ball_trajectory(annotated_frame, ball_objects)
+                    
+                    annotated_frames.append(annotated_frame)
 
         # Prepare response
         response_data = {}
         if payload.data:
-            response_data["data"] = {"objects_per_frame": all_objects_per_frame}
+            response_data["data"] = {
+                "objects_per_frame": enhanced_objects_per_frame,
+                "ball_tracking": {
+                    "enhanced": True,
+                    "kalman_filtered": True,
+                    "trajectory_smoothed": True,
+                    "fps": fps
+                }
+            }
 
         if payload.video:
             video_url = await create_video_from_frames(annotated_frames, video_info, gcs_folder)

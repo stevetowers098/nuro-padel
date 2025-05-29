@@ -16,6 +16,8 @@ services:
       - "8001:8001"
     volumes:
       - /opt/padel-docker/weights:/app/weights:ro
+      - ../services/yolo-combined/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - YOLO_OFFLINE=1
@@ -23,6 +25,10 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      # Model configuration overrides (examples)
+      # - YOLO11_POSE_ENABLED=true
+      # - FEATURE_ENHANCED_BALL_TRACKING_ENABLED=true
+      # - CONFIDENCE_THRESHOLD=0.3
     deploy:
       resources:
         reservations:
@@ -52,6 +58,8 @@ services:
     volumes:
       - /opt/padel-docker/weights:/app/weights:ro
       - ../services/mmpose/configs:/app/configs:ro
+      - ../services/mmpose/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - YOLO_OFFLINE=1
@@ -59,6 +67,10 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      # Model configuration overrides (examples)
+      # - RTMPOSE_M_ENABLED=true
+      # - FEATURE_BIOMECHANICAL_ANALYSIS_ENABLED=true
+      # - FEATURE_3D_POSE_ESTIMATION_ENABLED=false
     deploy:
       resources:
         reservations:
@@ -87,6 +99,8 @@ services:
       - "8004:8004"
     volumes:
       - /opt/padel-docker/weights:/app/weights:ro
+      - ../services/yolo-nas/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - YOLO_OFFLINE=1
@@ -94,6 +108,11 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      # Model configuration overrides (examples)
+      # - YOLO_NAS_S_ENABLED=true
+      # - FEATURE_HIGH_ACCURACY_MODE_ENABLED=true
+      # - FEATURE_ONNX_OPTIMIZATION_ENABLED=true
+      # - FEATURE_TENSORRT_OPTIMIZATION_ENABLED=false
     deploy:
       resources:
         reservations:

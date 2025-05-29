@@ -33,12 +33,28 @@ except ImportError:
     MMPOSE_AVAILABLE = False
     logging.warning("MMPose not available - service will run in fallback mode")
 
-# Setup for utils.video_utils
+# Setup for utils.video_utils and shared config
 try:
     from utils.video_utils import get_video_info, extract_frames
 except ImportError:
     sys.path.append(os.path.dirname(__file__))
     from utils.video_utils import get_video_info, extract_frames
+
+# Import shared configuration loader
+try:
+    sys.path.append('/app')
+    sys.path.append('../shared')
+    from shared.config_loader import ConfigLoader, merge_env_overrides
+except ImportError:
+    # Fallback if shared module not available
+    class ConfigLoader:
+        def __init__(self, service_name: str, config_dir: str = "/app/config"):
+            pass
+        def load_config(self): return {}
+        def get_feature_flags(self): return {}
+        def is_feature_enabled(self, feature_name: str): return False
+        def get_service_info(self): return {"service": "mmpose", "version": "2.0.0"}
+    def merge_env_overrides(config): return config
 
 # Configure logging
 logging.basicConfig(
@@ -50,6 +66,11 @@ logger = logging.getLogger(__name__)
 
 logger.info("--- MMPOSE BIOMECHANICS SERVICE STARTED ---")
 
+# Initialize configuration loader
+config_loader = ConfigLoader("mmpose", "/app/config")
+service_config = merge_env_overrides(config_loader.load_config())
+logger.info(f"Configuration loaded: {config_loader.get_service_info()}")
+
 app = FastAPI(title="MMPose Biomechanics Service", version="2.0.0")
 logger.info("FastAPI app created for MMPose service.")
 
@@ -57,6 +78,8 @@ logger.info("FastAPI app created for MMPose service.")
 GCS_BUCKET_NAME = "padel-ai"
 GCS_FOLDER = "processed_mmpose"
 WEIGHTS_DIR = "/app/weights"
+
+logger.info(f"Feature flags: {config_loader.get_feature_flags()}")
 
 # Pydantic Models
 class VideoAnalysisURLRequest(BaseModel):
@@ -491,24 +514,80 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict) -
 
 # API Endpoints
 @app.get("/healthz")
-async def health_check():
-    if mmpose_model is None:
-        return JSONResponse(
-            content={
-                "status": "unhealthy",
-                "model": "mmpose not loaded",
-                "model_info": model_info,
-                "mmpose_available": MMPOSE_AVAILABLE
-            },
-            status_code=503
-        )
-
-    return {
-        "status": "healthy",
-        "model": "mmpose",
-        "model_info": model_info,
-        "mmpose_available": MMPOSE_AVAILABLE
+async def enhanced_health_check():
+    """Enhanced health check with model versions and feature flags"""
+    
+    # Reload config for latest feature flags
+    current_config = merge_env_overrides(config_loader.load_config())
+    
+    # Model status with versions
+    models_status = {}
+    model_configs = current_config.get("models", {})
+    
+    for model_key, model_config in model_configs.items():
+        is_loaded = False
+        if model_key == "rtmpose_m" and mmpose_model is not None:
+            is_loaded = model_info.get("name") == "RTMPose-M"
+        elif model_key == "hrnet_w48" and mmpose_model is not None:
+            is_loaded = model_info.get("name") == "HRNet-W48"
+            
+        models_status[model_key] = {
+            "loaded": is_loaded,
+            "enabled": model_config.get("enabled", False),
+            "version": model_config.get("version", "unknown"),
+            "config": model_config.get("config", "unknown"),
+            "checkpoint": model_config.get("checkpoint"),
+            "fallback": model_config.get("fallback")
+        }
+    
+    # Feature flags status
+    feature_flags = current_config.get("features", {})
+    active_features = {}
+    for feature_name, feature_info in feature_flags.items():
+        active_features[feature_name] = {
+            "enabled": feature_info.get("enabled", False),
+            "description": feature_info.get("description", "")
+        }
+    
+    # Service information
+    service_info = config_loader.get_service_info()
+    biomechanics_config = current_config.get("biomechanics", {})
+    performance_config = current_config.get("performance", {})
+    
+    # Overall health status
+    model_loaded = mmpose_model is not None
+    overall_status = "healthy" if model_loaded else "unhealthy"
+    status_code = 200 if model_loaded else 503
+    
+    response_data = {
+        "status": overall_status,
+        "service": service_info,
+        "models": models_status,
+        "features": active_features,
+        "biomechanics": {
+            "joint_angles": biomechanics_config.get("joint_angle_calculation", True),
+            "balance_assessment": biomechanics_config.get("balance_assessment", True),
+            "movement_efficiency": biomechanics_config.get("movement_efficiency", True),
+            "power_potential": biomechanics_config.get("power_potential", True)
+        },
+        "performance": {
+            "confidence_threshold": performance_config.get("confidence_threshold", 0.5),
+            "keypoint_threshold": performance_config.get("keypoint_threshold", 0.5),
+            "max_concurrent_requests": performance_config.get("max_concurrent_requests", 3)
+        },
+        "deployment": {
+            "ready_for_upgrade": model_loaded,
+            "config_hot_reload": True,
+            "mmpose_available": MMPOSE_AVAILABLE,
+            "current_model": model_info,
+            "last_config_check": datetime.now().isoformat()
+        }
     }
+    
+    if overall_status == "unhealthy":
+        return JSONResponse(content=response_data, status_code=status_code)
+    
+    return response_data
 
 @app.post("/mmpose/pose")
 async def mmpose_pose_analysis(payload: VideoAnalysisURLRequest, request: Request):

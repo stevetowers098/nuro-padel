@@ -1,0 +1,49 @@
+{
+  "service": "mmpose",
+  "version": "2.0.0",
+  "models": {
+    "rtmpose_m": {
+      "config": "rtmpose-m_8xb256-420e_aic-coco-256x192",
+      "checkpoint": "rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth",
+      "version": "v2.0.0",
+      "enabled": true,
+      "fallback": "hrnet_w48"
+    },
+    "hrnet_w48": {
+      "config": "td-hm_hrnet-w48_8xb32-210e_coco-256x192", 
+      "checkpoint": null,
+      "version": "v1.5.0",
+      "enabled": true,
+      "fallback": null
+    }
+  },
+  "features": {
+    "biomechanical_analysis": {
+      "enabled": true,
+      "description": "Calculate joint angles and movement metrics"
+    },
+    "posture_scoring": {
+      "enabled": true,
+      "description": "Automated posture quality assessment"
+    },
+    "3d_pose_estimation": {
+      "enabled": false,
+      "description": "Experimental 3D pose reconstruction (coming soon)"
+    },
+    "real_time_feedback": {
+      "enabled": false,
+      "description": "Live coaching feedback during analysis"
+    }
+  },
+  "biomechanics": {
+    "joint_angle_calculation": true,
+    "balance_assessment": true,
+    "movement_efficiency": true,
+    "power_potential": true
+  },
+  "performance": {
+    "confidence_threshold": 0.5,
+    "keypoint_threshold": 0.5,
+    "max_concurrent_requests": 3
+  }
+}

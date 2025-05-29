@@ -40,7 +40,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
     pip uninstall openxlab torch torchvision torchaudio triton xtcocotools pycocotools numpy -y --quiet 2>/dev/null || true && \
     pip install --no-cache-dir numpy==1.24.3 && \
-    pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121 && \
+    pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 && \
     pip install --no-cache-dir cython && \
     pip install --no-cache-dir pycocotools && \
     pip install --no-cache-dir --no-deps --force-reinstall xtcocotools && \

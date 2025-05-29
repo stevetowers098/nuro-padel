@@ -1,10 +1,9 @@
 # MMPose Service Requirements
-# Verified versions for MMPose stack - Updated with pinned versions for compatibility
+# Verified versions for MMPose stack
 
 # --- Core ML/DL with CUDA Support ---
 torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
-torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 
 # --- MMPose Stack ---
 mmcv==2.1.0
@@ -19,7 +18,6 @@ xtcocotools>=1.14
 
 # --- MMPose Stack (install via mim in Dockerfile) ---
 openmim>=0.3.0
-mmpose>=1.0.0
 
 # --- Computer Vision ---
 opencv-python-headless==4.10.0.84
@@ -29,6 +27,9 @@ pillow==10.4.0
 fastapi==0.111.0
 pydantic==2.7.4
 uvicorn[standard]==0.30.1
+
+# --- Additional Dependencies ---
+httpx==0.27.0
 
 # --- Additional Dependencies ---
 httpx==0.27.0

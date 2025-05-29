@@ -91,74 +91,40 @@ if MMPOSE_AVAILABLE:
         model_device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         logger.info(f"Initializing MMPose model on device: {model_device}")
 
-        # Try Method 1: Use local standalone config with local checkpoint
+        # Try Method 1: Use local checkpoint with MMPose's built-in config
         local_checkpoint = '/app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
-        local_config = '/app/configs/rtmpose_complete.py'
-        
-        # Debug: List available weight files
-        weights_dir = '/app/weights'
-        if os.path.exists(weights_dir):
-            weight_files = [f for f in os.listdir(weights_dir) if f.endswith(('.pth', '.pt'))]
-            logger.info(f"Available weight files in {weights_dir}: {weight_files}")
-        else:
-            logger.warning(f"Weights directory {weights_dir} does not exist")
-            
-        # Debug: Check config file
-        if os.path.exists(local_config):
-            logger.info(f"✅ Found local standalone config: {local_config}")
-        else:
-            logger.warning(f"❌ Local config not found: {local_config}")
 
-        # Try local config + local checkpoint first
-        if os.path.exists(local_config) and os.path.exists(local_checkpoint):
-            logger.info(f"🔄 Attempting Method 1: Local config + local checkpoint")
-            try:
-                logger.info(f"Loading with config: {local_config}, checkpoint: {local_checkpoint}")
-                mmpose_model = init_model(local_config, local_checkpoint, device=model_device)
-                model_info = {"name": "RTMPose-M", "source": "local_config_checkpoint"}
-                logger.info("✅ RTMPose-M model loaded successfully from local config + checkpoint")
-            except Exception as e_local_config:
-                logger.error(f"❌ Failed Method 1 (local config + checkpoint): {e_local_config}")
-                logger.error(f"Error type: {type(e_local_config).__name__}")
-        
-        # Try Method 1b: Use OpenMMLab config with local checkpoint
-        if mmpose_model is None and os.path.exists(local_checkpoint):
-            logger.info(f"🔄 Attempting Method 1b: OpenMMLab config + local checkpoint")
+        if os.path.exists(local_checkpoint):
+            logger.info(f"Loading RTMPose with local checkpoint: {local_checkpoint}")
             try:
                 config_name = 'rtmpose-m_8xb256-420e_aic-coco-256x192'
-                logger.info(f"Loading with OpenMMLab config: {config_name}, checkpoint: {local_checkpoint}")
                 mmpose_model = init_model(config_name, local_checkpoint, device=model_device)
-                model_info = {"name": "RTMPose-M", "source": "openmmlab_config_local_checkpoint"}
-                logger.info("✅ RTMPose-M model loaded successfully from OpenMMLab config + local checkpoint")
+                model_info = {"name": "RTMPose-M", "source": "local_checkpoint"}
+                logger.info("✅ RTMPose-M model loaded successfully from local checkpoint")
             except Exception as e_local:
-                logger.error(f"❌ Failed Method 1b (OpenMMLab config + local checkpoint): {e_local}")
-                logger.error(f"Error type: {type(e_local).__name__}")
+                logger.warning(f"Failed to load local checkpoint: {e_local}")
 
         # Method 2: Use OpenMMLab model zoo if local fails
         if mmpose_model is None:
-            logger.info("🔄 Attempting to load RTMPose-M from OpenMMLab model zoo...")
+            logger.info("Attempting to load RTMPose-M from OpenMMLab model zoo...")
             try:
                 config_name = 'rtmpose-m_8xb256-420e_aic-coco-256x192'
-                logger.info(f"Trying OpenMMLab config: {config_name}")
                 mmpose_model = init_model(config_name, None, device=model_device)
                 model_info = {"name": "RTMPose-M", "source": "openmmlab_zoo"}
                 logger.info("✅ RTMPose-M model loaded successfully from OpenMMLab zoo")
             except Exception as e_zoo:
-                logger.error(f"❌ Failed to load from OpenMMLab zoo: {e_zoo}")
-                logger.error(f"Error type: {type(e_zoo).__name__}")
+                logger.warning(f"Failed to load from OpenMMLab zoo: {e_zoo}")
 
         # Method 3: Fallback to HRNet-W48
         if mmpose_model is None:
-            logger.info("🔄 Attempting fallback to HRNet-W48...")
+            logger.info("Attempting fallback to HRNet-W48...")
             try:
                 config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
-                logger.info(f"Trying HRNet config: {config_name}")
                 mmpose_model = init_model(config_name, None, device=model_device)
                 model_info = {"name": "HRNet-W48", "source": "openmmlab_zoo"}
                 logger.info("✅ HRNet-W48 model loaded successfully (fallback)")
             except Exception as e_hrnet:
-                logger.error(f"❌ Failed to load HRNet-W48: {e_hrnet}")
-                logger.error(f"Error type: {type(e_hrnet).__name__}")
+                logger.error(f"Failed to load HRNet-W48: {e_hrnet}")
 
     except Exception as e_init:
         logger.error(f"Model initialization failed: {e_init}", exc_info=True)
@@ -299,7 +265,7 @@ def analyze_frame_biomechanics(frame_content: np.ndarray) -> Dict[str, Any]:
 
     try:
         # Run MMPose inference
-        pose_data_samples = inference_topdown(mmpose_model, frame_content)
+        pose_data_samples = inference_topdown(mmpose_model, frame_content, bbox_cs='')
 
         if pose_data_samples:
             data_sample = pose_data_samples[0]
@@ -447,43 +413,27 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict) -
         process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        try:
-            for frame in frames:
-                if process.poll() is None:  # Check if process is still running
-                    try:
-                        process.stdin.write(frame.tobytes())
-                    except (IOError, BrokenPipeError):
-                        logger.warning("FFmpeg stdin pipe broken, stopping frame writing")
-                        break
-                else:
-                    logger.warning("FFmpeg process terminated early")
-                    break
-            
-            # Safely close stdin
+        for frame in frames:
             if process.stdin and not process.stdin.closed:
-                process.stdin.close()
+                try:
+                    process.stdin.write(frame.tobytes())
+                except (IOError, BrokenPipeError):
+                    break
 
+        if process.stdin and not process.stdin.closed:
+            process.stdin.close()
+
+        try:
             stdout, stderr = process.communicate(timeout=120)
             if process.returncode == 0:
                 logger.info("Video created successfully")
                 return await upload_to_gcs(output_video_path)
             else:
-                logger.error(f"FFMPEG failed with code {process.returncode}, stderr: {stderr}")
+                logger.error(f"FFMPEG failed with code {process.returncode}")
                 return None
-                
         except subprocess.TimeoutExpired:
+            process.kill()
             logger.error("FFMPEG timed out")
-            if process:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-            return None
-        except Exception as e:
-            logger.error(f"Video processing error: {e}")
-            if process:
-                process.terminate()
             return None
     finally:
         if output_video_path and os.path.exists(output_video_path):

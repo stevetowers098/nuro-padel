@@ -1,0 +1,174 @@
+# Complete RTMPose-M Config for Standalone Use
+# Based on MMPose RTMPose configuration with all required sections
+
+# Dataset configuration
+dataset_name = 'coco'
+dataset_info = dict(
+    dataset_name='coco',
+    paper_info=dict(
+        author='Lin, Tsung-Yi and Maire, Michael and '
+               'Belongie, Serge and Hays, James and '
+               'Perona, Pietro and Ramanan, Deva and '
+               'Dollár, Piotr and Zitnick, C Lawrence',
+        title='Microsoft coco: Common objects in context',
+        container='European conference on computer vision',
+        year='2014',
+        homepage='http://cocodataset.org/',
+    ),
+    keypoint_info={
+        0: dict(name='nose', id=0, color=[51, 153, 255], type='upper', swap=''),
+        1: dict(name='left_eye', id=1, color=[51, 153, 255], type='upper', swap='right_eye'),
+        2: dict(name='right_eye', id=2, color=[51, 153, 255], type='upper', swap='left_eye'),
+        3: dict(name='left_ear', id=3, color=[51, 153, 255], type='upper', swap='right_ear'),
+        4: dict(name='right_ear', id=4, color=[51, 153, 255], type='upper', swap='left_ear'),
+        5: dict(name='left_shoulder', id=5, color=[0, 255, 0], type='upper', swap='right_shoulder'),
+        6: dict(name='right_shoulder', id=6, color=[255, 128, 0], type='upper', swap='left_shoulder'),
+        7: dict(name='left_elbow', id=7, color=[0, 255, 0], type='upper', swap='right_elbow'),
+        8: dict(name='right_elbow', id=8, color=[255, 128, 0], type='upper', swap='left_elbow'),
+        9: dict(name='left_wrist', id=9, color=[0, 255, 0], type='upper', swap='right_wrist'),
+        10: dict(name='right_wrist', id=10, color=[255, 128, 0], type='upper', swap='left_wrist'),
+        11: dict(name='left_hip', id=11, color=[0, 255, 0], type='lower', swap='right_hip'),
+        12: dict(name='right_hip', id=12, color=[255, 128, 0], type='lower', swap='left_hip'),
+        13: dict(name='left_knee', id=13, color=[0, 255, 0], type='lower', swap='right_knee'),
+        14: dict(name='right_knee', id=14, color=[255, 128, 0], type='lower', swap='left_knee'),
+        15: dict(name='left_ankle', id=15, color=[0, 255, 0], type='lower', swap='right_ankle'),
+        16: dict(name='right_ankle', id=16, color=[255, 128, 0], type='lower', swap='left_ankle')
+    },
+    skeleton_info=[
+        [15, 13], [13, 11], [16, 14], [14, 12], [11, 12],
+        [5, 11], [6, 12], [5, 6], [5, 7], [6, 8], [7, 9],
+        [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6]
+    ],
+    joint_weights=[1.] * 17,
+    sigmas=[
+        0.026, 0.025, 0.025, 0.035, 0.035, 0.079, 0.079, 0.072, 0.072,
+        0.062, 0.062, 0.107, 0.107, 0.087, 0.087, 0.089, 0.089
+    ]
+)
+
+# Model settings
+model = dict(
+    type='TopdownPoseEstimator',
+    data_preprocessor=dict(
+        type='PoseDataPreprocessor',
+        mean=[123.675, 116.28, 103.53],
+        std=[58.395, 57.12, 57.375],
+        bgr_to_rgb=True),
+    backbone=dict(
+        type='CSPNeXt',
+        arch='P5',
+        expand_ratio=0.5,
+        deepen_factor=0.67,
+        widen_factor=0.75,
+        out_indices=(4, ),
+        channel_attention=True,
+        norm_cfg=dict(type='SyncBN'),
+        act_cfg=dict(type='SiLU')),
+    head=dict(
+        type='RTMCCHead',
+        in_channels=768,
+        out_channels=17,
+        input_size=(192, 256),
+        in_featuremap_size=(6, 8),
+        simcc_split_ratio=2.0,
+        final_layer_kernel_size=7,
+        gau_cfg=dict(
+            hidden_dims=256,
+            s=128,
+            expansion_factor=2,
+            dropout_rate=0.,
+            drop_path=0.,
+            act_fn='SiLU',
+            use_rel_bias=False,
+            pos_enc=False),
+        loss=dict(
+            type='KLDiscretLoss',
+            use_target_weight=True,
+            beta=10.,
+            label_softmax=True),
+        decoder=dict(
+            type='SimCCLabel',
+            input_size=(192, 256),
+            sigma=(4.9, 5.66),
+            simcc_split_ratio=2.0,
+            normalize=False,
+            use_dark=False)),
+    test_cfg=dict(flip_test=True, flip_mode='heatmap', shift_heatmap=True))
+
+# Required test pipeline
+test_pipeline = [
+    dict(type='LoadImage'),
+    dict(type='GetBBoxCenterScale'),
+    dict(type='TopdownAffine', input_size=(192, 256)),
+    dict(type='PackPoseInputs')
+]
+
+# Data settings (required for complete config)
+data_root = 'data/coco/'
+data_mode = 'topdown'
+codec = dict(type='SimCCLabel', input_size=(192, 256))
+
+# Additional required metainfo
+metainfo = dict(
+    dataset_name='coco',
+    keypoint_info=dataset_info['keypoint_info'],
+    skeleton_info=dataset_info['skeleton_info'],
+    joint_weights=dataset_info['joint_weights'],
+    sigmas=dataset_info['sigmas']
+)
+
+# Training and validation data (simplified for inference)
+train_dataloader = dict(
+    batch_size=32,
+    num_workers=2,
+    dataset=dict(
+        type='CocoDataset',
+        data_root=data_root,
+        data_mode=data_mode,
+        ann_file='annotations/person_keypoints_train2017.json',
+        data_prefix=dict(img='train2017/'),
+        pipeline=[]))
+
+val_dataloader = dict(
+    batch_size=32,
+    num_workers=2,
+    dataset=dict(
+        type='CocoDataset',
+        data_root=data_root,
+        data_mode=data_mode,
+        ann_file='annotations/person_keypoints_val2017.json',
+        data_prefix=dict(img='val2017/'),
+        pipeline=test_pipeline))
+
+# Evaluation settings
+val_evaluator = dict(
+    type='CocoMetric',
+    ann_file=data_root + 'annotations/person_keypoints_val2017.json')
+
+test_evaluator = val_evaluator
+
+# Default runtime settings
+default_scope = 'mmpose'
+default_hooks = dict(
+    timer=dict(type='IterTimerHook'),
+    logger=dict(type='LoggerHook', interval=50),
+    param_scheduler=dict(type='ParamSchedulerHook'),
+    checkpoint=dict(type='CheckpointHook', interval=10),
+    sampler_seed=dict(type='DistSamplerSeedHook'),
+    visualization=dict(type='PoseVisualizationHook', enable=False))
+
+env_cfg = dict(
+    cudnn_benchmark=False,
+    mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0),
+    dist_cfg=dict(backend='nccl'))
+
+vis_backends = [dict(type='LocalVisBackend')]
+visualizer = dict(
+    type='PoseLocalVisualizer', vis_backends=vis_backends, name='visualizer')
+
+log_processor = dict(
+    type='LogProcessor', window_size=50, by_epoch=True, num_log_smooth=1)
+
+log_level = 'INFO'
+load_from = None
+resume = False

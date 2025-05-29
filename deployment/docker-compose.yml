@@ -15,7 +15,7 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - ./weights:/app/weights:ro
+      - /opt/padel-docker/weights:/app/weights:ro
       - /tmp:/tmp
     environment:
       - YOLO_OFFLINE=1
@@ -50,7 +50,8 @@ services:
     ports:
       - "8003:8003"
     volumes:
-      - ./weights:/app/weights:ro
+      - /opt/padel-docker/weights:/app/weights:ro
+      - ../services/mmpose/configs:/app/configs:ro
       - /tmp:/tmp
     environment:
       - YOLO_OFFLINE=1
@@ -85,7 +86,7 @@ services:
     ports:
       - "8004:8004"
     volumes:
-      - ./weights:/app/weights:ro
+      - /opt/padel-docker/weights:/app/weights:ro
       - /tmp:/tmp
     environment:
       - YOLO_OFFLINE=1

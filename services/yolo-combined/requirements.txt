@@ -1,15 +1,15 @@
 # YOLO Combined Service Requirements (YOLO11 + YOLOv8)
-# Verified compatible versions for Docker container
+# Fixed versions based on production testing - 29-5-25
 
-# --- Core ML/DL with CUDA Support ---
-torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
-torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
-torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121
+# --- Core ML/DL with CUDA Support (pinned together) ---
+torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
+torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 
 # --- YOLO Models ---
-ultralytics==8.2.97        # Latest stable version
+ultralytics==8.2.97
 
-# --- FastAPI Stack ---
+# --- FastAPI Stack (required for API) ---
 fastapi==0.111.0
 pydantic==2.7.4
 uvicorn[standard]==0.30.1

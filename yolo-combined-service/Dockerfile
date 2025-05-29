@@ -40,7 +40,9 @@ COPY requirements.txt .
 
 # Install Python dependencies with setuptools <66 to avoid InvalidVersion errors
 RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    python -c "import ultralytics; print(f'✅ Ultralytics installed: {ultralytics.__version__}')" && \
+    python -c "import torch; print(f'✅ PyTorch installed: {torch.__version__}')"
 
 # Create weights directory and download models BEFORE setting YOLO_OFFLINE
 RUN mkdir -p /app/weights

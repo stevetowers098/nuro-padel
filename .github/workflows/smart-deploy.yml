@@ -117,19 +117,23 @@ jobs:
       - name: 🐳 Build and push YOLO Combined image with retry
         run: |
           BUILD_PATH="./services/yolo-combined"
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}/yolo-combined"
+          TAG="${{ github.ref_name }}-${{ github.sha }}"
+          
           for i in 1 2 3; do
             echo "Attempt $i: Building from $BUILD_PATH"
             docker build \
-              --tag "${{ steps.meta.outputs.tags }}" \
-              --label "${{ steps.meta.outputs.labels }}" \
+              --tag "$IMAGE_NAME:$TAG" \
+              --tag "$IMAGE_NAME:${{ github.ref_name }}" \
               --file "$BUILD_PATH/Dockerfile" \
               "$BUILD_PATH" && break
             echo "Build attempt $i failed, retrying..."
             sleep 15
           done
           
-          # Push the image
-          docker push "${{ steps.meta.outputs.tags }}"
+          # Push both tags
+          docker push "$IMAGE_NAME:$TAG"
+          docker push "$IMAGE_NAME:${{ github.ref_name }}"
 
   build-mmpose:
     name: 🤸 Build MMPose Service
@@ -178,19 +182,23 @@ jobs:
       - name: 🐳 Build and push MMPose image with retry
         run: |
           BUILD_PATH="./services/mmpose"
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}/mmpose"
+          TAG="${{ github.ref_name }}-${{ github.sha }}"
+          
           for i in 1 2 3; do
             echo "Attempt $i: Building from $BUILD_PATH"
             docker build \
-              --tag "${{ steps.meta.outputs.tags }}" \
-              --label "${{ steps.meta.outputs.labels }}" \
+              --tag "$IMAGE_NAME:$TAG" \
+              --tag "$IMAGE_NAME:${{ github.ref_name }}" \
               --file "$BUILD_PATH/Dockerfile" \
               "$BUILD_PATH" && break
             echo "Build attempt $i failed, retrying..."
             sleep 15
           done
           
-          # Push the image
-          docker push "${{ steps.meta.outputs.tags }}"
+          # Push both tags
+          docker push "$IMAGE_NAME:$TAG"
+          docker push "$IMAGE_NAME:${{ github.ref_name }}"
 
   build-yolo-nas:
     name: 🎯 Build YOLO-NAS Service
@@ -239,19 +247,23 @@ jobs:
       - name: 🐳 Build and push YOLO-NAS image with retry
         run: |
           BUILD_PATH="./services/yolo-nas"
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}/yolo-nas"
+          TAG="${{ github.ref_name }}-${{ github.sha }}"
+          
           for i in 1 2 3; do
             echo "Attempt $i: Building from $BUILD_PATH"
             docker build \
-              --tag "${{ steps.meta.outputs.tags }}" \
-              --label "${{ steps.meta.outputs.labels }}" \
+              --tag "$IMAGE_NAME:$TAG" \
+              --tag "$IMAGE_NAME:${{ github.ref_name }}" \
               --file "$BUILD_PATH/Dockerfile" \
               "$BUILD_PATH" && break
             echo "Build attempt $i failed, retrying..."
             sleep 15
           done
           
-          # Push the image
-          docker push "${{ steps.meta.outputs.tags }}"
+          # Push both tags
+          docker push "$IMAGE_NAME:$TAG"
+          docker push "$IMAGE_NAME:${{ github.ref_name }}"
 
   deploy:
     name: 🎯 Smart Deployment Summary

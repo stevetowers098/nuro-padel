@@ -401,21 +401,22 @@ Connection failed [IP: 185.125.190.82 80]
 
 **Root Cause**: Complex `apt-get` patterns with `--fix-missing`, PPA additions, and Ubuntu 20.04 causing network instability.
 
-**Solution**: Use proven simple patterns from working commit `311f2f7` (1:44 AM Sydney time):
-- Ubuntu 22.04 (not 20.04)
-- CUDA 12.1 (not 12.2.0)
-- Simple `apt-get update && apt-get install -y` (no `--fix-missing`)
-- No PPA additions that can cause network timeouts
+**Solution**: Use proven working patterns from commit `c2ea327`:
+- Ubuntu 22.04 (stable)
+- CUDA 12.1.1 (verified working on Docker Hub)
+- Network retry logic with proper PPA handling
+- Service-specific retry patterns
 
 **Working Pattern**:
 ```dockerfile
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04
-RUN apt-get update && apt-get install -y \
-    python3.10 \
-    python3.10-dev \
-    python3-pip \
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+# Enhanced retry logic for network resilience
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update --fix-missing \
+    && apt-get install -y --no-install-recommends python3.10 python3.10-dev python3-pip \
     # ... other packages
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 ```
 
 **Final Network Resilience Pattern** (precisely addresses apt-get failures):
@@ -509,17 +510,30 @@ volumes:
 - **YOLO Models**: `yolo11n-pose.pt`, `yolov8m.pt`, `yolov8n-pose.pt` (~50MB total)
 - **MMPose Models**: `rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth` (~180MB)
 
-### Working Version Restored (1:26 AM Sydney - May 28, 2025)
+### Working Configuration Applied (Commit c2ea327 - May 29, 2025)
 
-**Restored Configuration:**
-- ✅ **CUDA**: `nvidia/cuda:12.2.0-runtime-ubuntu20.04` (verified working)
-- ✅ **Ubuntu 20.04**: Stable package versions, no python3-setuptools conflicts
-- ✅ **Network Resilience**: Simple apt-get patterns without complex PPA operations
-- ✅ **Volume Mounting**: Models managed separately from containers
+**🎯 YOLO-Combined Service: ✅ FULLY WORKING**
+- **Backup Location**: `working/yolo-combined-29-5-25/`
+- **CUDA**: `nvidia/cuda:12.1.1-runtime-ubuntu22.04` (verified working from commit c2ea327)
+- **PyTorch**: `cu121` wheels (compatible with CUDA 12.1.1)
+- **Complete Setup**: Service + deploy scripts + docker-compose + nginx config + model downloader
 
-**Previous Issues Fixed:**
-- ❌ CUDA `12.1-runtime-ubuntu22.04` (doesn't exist) → ✅ `12.2.0-runtime-ubuntu20.04`
-- ❌ Ubuntu 22.04 package conflicts → ✅ Ubuntu 20.04 stable packages
-- ❌ Models baked into images → ✅ Volume mounting best practice
+**Service-Specific Fixes Applied:**
+
+**🔬 MMPose Service:**
+- **Enhanced Retry Logic**: Robust software-properties-common installation
+- **PPA Verification**: Ensures add-apt-repository command availability before execution
+- **MMPose Dependencies**: Complex system packages with comprehensive fallback mechanisms
+
+**🎯 YOLO-NAS Service:**
+- **Connection Recovery**: 5-attempt retry with 15-second delays for archive.ubuntu.com failures
+- **Multi-Retry Installation**: 3-attempt retry cycle with sleep intervals for system dependencies
+- **Robust PPA Setup**: Multiple retry attempts for deadsnakes repository addition
+
+**Universal Improvements:**
+- ✅ **CUDA Compatibility**: All services use `nvidia/cuda:12.1.1-runtime-ubuntu22.04` + `cu121` wheels
+- ✅ **Network Resilience**: Service-specific retry patterns for repository connection issues
+- ✅ **Model Management**: Volume mounting with automated download scripts
+- ✅ **Working Backup**: Complete YOLO-Combined solution preserved in `working/yolo-combined-29-5-25/`
 
 This deployment guide provides comprehensive instructions for reliable deployment of the NuroPadel platform with all services and dependencies properly configured.

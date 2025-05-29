@@ -14,20 +14,33 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Ensure the repository is added successfully and retry if necessary
-RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
-    && add-apt-repository -y ppa:deadsnakes/ppa || \
-    (echo "Retrying repository addition..." && add-apt-repository -y ppa:deadsnakes/ppa) \
-    && apt-get update --fix-missing
+# Fix missing dependencies and connection issues for MMPose
+RUN apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends curl software-properties-common || \
+    (echo "Retrying package installation..." && apt-get install -y --no-install-recommends curl software-properties-common)
 
-# Install packages with retries
+# Ensure add-apt-repository command is available
+RUN if ! command -v add-apt-repository &> /dev/null; then \
+      echo "add-apt-repository command not found, installing..."; \
+      apt-get install -y software-properties-common; \
+    fi && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update --fix-missing
+
+# Install MMPose-specific system dependencies with retries
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 libglib2.0-dev build-essential curl wget git || \
-    (echo "Retrying failed package installations..." && \
+    apt-get install -y --no-install-recommends \
+    python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip \
+    ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 \
+    libglib2.0-dev build-essential curl wget git \
+    || (echo "Retrying failed package installations..." && \
     apt-get update --fix-missing && \
-    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 libglib2.0-dev build-essential curl wget git)
+    apt-get install -y --no-install-recommends \
+    python3.10 python3.10-dev python3.10-distutils python3.10-venv python3-pip \
+    ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 \
+    libglib2.0-dev build-essential curl wget git)
 
-# Clean up apt cache after installation
+# Clean up and create Python symlink
 RUN ln -s /usr/bin/python3.10 /usr/bin/python && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 

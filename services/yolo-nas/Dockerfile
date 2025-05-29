@@ -15,20 +15,21 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ONLINE=False \
     YOLO_TELEMETRY=False
 
-# Ensure the repository is added successfully and retry if necessary
-RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
-    && add-apt-repository -y ppa:deadsnakes/ppa || \
-    (echo "Retrying repository addition..." && add-apt-repository -y ppa:deadsnakes/ppa) \
-    && apt-get update --fix-missing
-
-# Install packages with retries
+# Add a retry mechanism for failed connections to archive.ubuntu.com/security.ubuntu.com
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 build-essential curl wget git || \
-    (echo "Retrying failed package installations..." && \
-    apt-get update --fix-missing && \
-    apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-distutils python3-pip ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 build-essential curl wget git)
+    for i in {1..5}; do apt-get install -y --no-install-recommends software-properties-common && break || sleep 15; done && \
+    add-apt-repository -y ppa:deadsnakes/ppa || \
+    (echo "Retrying repository addition..." && add-apt-repository -y ppa:deadsnakes/ppa) && \
+    apt-get update --fix-missing
 
-# Clean up apt cache after installation
+# Install YOLO-NAS system dependencies with multiple retry attempts
+RUN apt-get update && \
+    for i in {1..3}; do apt-get install -y --no-install-recommends \
+    python3.10 python3.10-dev python3.10-distutils python3-pip \
+    ffmpeg libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgtk-3-0 build-essential curl wget git \
+    && break || (echo "Retry attempt $i failed, waiting..." && sleep 15); done
+
+# Clean up and create Python symlink
 RUN ln -s /usr/bin/python3.10 /usr/bin/python && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 

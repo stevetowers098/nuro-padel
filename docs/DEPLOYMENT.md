@@ -390,4 +390,41 @@ docker builder prune -af
 docker rmi $(docker images -f "dangling=true" -q)
 ```
 
+## 🚨 Network Connection Troubleshooting
+
+### apt-get Connection Failures
+**Issue**: GitHub Actions failing with network connection errors like:
+```
+Failed to fetch libsystemd0 from http://archive.ubuntu.com/ubuntu
+Connection failed [IP: 185.125.190.82 80]
+```
+
+**Root Cause**: Complex `apt-get` patterns with `--fix-missing`, PPA additions, and Ubuntu 20.04 causing network instability.
+
+**Solution**: Use proven simple patterns from working commit `311f2f7` (1:44 AM Sydney time):
+- Ubuntu 22.04 (not 20.04)
+- CUDA 12.1 (not 12.2.0)
+- Simple `apt-get update && apt-get install -y` (no `--fix-missing`)
+- No PPA additions that can cause network timeouts
+
+**Working Pattern**:
+```dockerfile
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    # ... other packages
+    && rm -rf /var/lib/apt/lists/*
+```
+
+**Avoid These Patterns** (cause network failures):
+```dockerfile
+# DON'T USE - causes connection failures
+RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update --fix-missing
+```
+
 This deployment guide provides comprehensive instructions for reliable deployment of the NuroPadel platform with all services and dependencies properly configured.

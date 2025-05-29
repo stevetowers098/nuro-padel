@@ -1,23 +1,23 @@
 # YOLO Combined Service Dockerfile (YOLO11 + YOLOv8)
-# Optimized for fast builds while maintaining complete service isolation
+# Multi-stage build for optimized container size
 
-FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04 as base
 
-# Set environment variables for speed and stability
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install system dependencies in single layer for better caching
-RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
-    software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+# YOLO offline mode for production safety
+ENV YOLO_OFFLINE=1
+ENV ULTRALYTICS_OFFLINE=1
+ENV ONLINE=False
+ENV YOLO_TELEMETRY=False
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
     python3.10 \
     python3.10-dev \
-    python3.10-distutils \
     python3-pip \
     ffmpeg \
     libglib2.0-0 \
@@ -25,49 +25,27 @@ RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    libglib2.0-0 \
     libgtk-3-0 \
     curl \
     wget \
-    && ln -s /usr/bin/python3.10 /usr/bin/python \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symlink for python
+RUN ln -s /usr/bin/python3.10 /usr/bin/python
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for optimal Docker layer caching
+# Copy requirements first for better Docker caching
 COPY requirements.txt .
 
-# Install Python dependencies with setuptools <66 to avoid InvalidVersion errors
-RUN pip install --no-cache-dir --upgrade pip setuptools==65.7.0 wheel && \
-    pip install --no-cache-dir -r requirements.txt && \
-    python -c "import ultralytics; print(f'✅ Ultralytics installed: {ultralytics.__version__}')" && \
-    python -c "import torch; print(f'✅ PyTorch installed: {torch.__version__}')"
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Create weights directory and download models BEFORE setting YOLO_OFFLINE
+# Create weights directory
 RUN mkdir -p /app/weights
-
-# Download required YOLO models (before offline mode)
-RUN python -c "\
-from ultralytics import YOLO; \
-print('Downloading YOLO11 Pose model...'); \
-model = YOLO('yolo11n-pose.pt'); \
-print('Downloading YOLOv8 Medium Object model...'); \
-model = YOLO('yolov8m.pt'); \
-print('Downloading YOLOv8 Nano Pose model...'); \
-model = YOLO('yolov8n-pose.pt'); \
-print('All models downloaded successfully!');"
-
-# Move downloaded models to weights directory
-RUN find /root/.config/Ultralytics -name "*.pt" -exec cp {} /app/weights/ \; 2>/dev/null || true && \
-    find . -maxdepth 1 -name "*.pt" -exec mv {} /app/weights/ \; 2>/dev/null || true && \
-    ls -la /app/weights/
-
-# Now set offline mode for runtime (after downloads)
-ENV YOLO_OFFLINE=1 \
-    ULTRALYTICS_OFFLINE=1 \
-    ONLINE=False \
-    YOLO_TELEMETRY=False
 
 # Copy application code
 COPY . .

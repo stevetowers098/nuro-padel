@@ -11,7 +11,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
-
 # Configuration
 WEIGHTS_DIR="./weights"
 TEMP_DIR="/tmp/nuro-padel-models"
@@ -148,7 +147,7 @@ check_model_exists() {
     return 1  # Model doesn't exist
 }
 
-# Download Google Drive file
+# Download Google Drive file using Docker (no host Python dependencies required)
 download_google_drive() {
     local url="$1"
     local filename="$2"
@@ -174,29 +173,39 @@ download_google_drive() {
         return 1
     fi
     
-    log "Downloading $filename from Google Drive (ID: $file_id)..."
+    log "Downloading $filename from Google Drive using Docker (ID: $file_id)..."
     
-    # Use gdown if available, otherwise provide manual instructions
-    if command -v gdown >/dev/null 2>&1; then
-        if gdown "https://drive.google.com/uc?id=$file_id" -O "$final_path"; then
-            if check_model_exists "$final_path" "$expected_size"; then
-                success "$filename downloaded successfully"
-                return 0
-            else
-                error "Downloaded file $filename is corrupted or incomplete"
-                rm -f "$final_path"
-                return 1
-            fi
-        else
-            error "gdown failed to download $filename"
-            return 1
-        fi
-    else
-        warning "gdown not available. Please manually download TrackNet V2:"
+    # Check if docker is available
+    if ! command -v docker >/dev/null 2>&1; then
+        warning "Docker not available. Please manually download $filename:"
         warning "1. Visit: $url"
         warning "2. Download the file"
         warning "3. Save as: $final_path"
-        warning "4. Install gdown for automatic downloads: pip install gdown"
+        return 1
+    fi
+    
+    # Use Docker with Python + gdown to download
+    if docker run --rm \
+        -v "$(pwd)/$WEIGHTS_DIR:/weights" \
+        python:3.11-slim \
+        bash -c "
+            pip install --quiet gdown &&
+            gdown 'https://drive.google.com/uc?id=$file_id' -O '/weights/$model_type_path/$filename'
+        "; then
+        
+        if check_model_exists "$final_path" "$expected_size"; then
+            success "$filename downloaded successfully via Docker"
+            return 0
+        else
+            error "Downloaded file $filename is corrupted or incomplete"
+            rm -f "$final_path"
+            return 1
+        fi
+    else
+        warning "Docker download failed for $filename. Please manually download:"
+        warning "1. Visit: $url"
+        warning "2. Download the file"
+        warning "3. Save as: $final_path"
         return 1
     fi
 }
@@ -328,17 +337,104 @@ download_vitpose_models() {
     fi
 }
 
-# Download RF-DETR models (placeholder - actual download happens at runtime)
+# Download RF-DETR models using Docker container (no host dependencies required)
 download_rf_detr_models() {
-    log "Setting up RF-DETR model directory..."
+    log "Downloading RF-DETR models using Docker container..."
     
+    # Check if docker is available
+    if ! command -v docker >/dev/null 2>&1; then
+        error "Docker is required for RF-DETR downloads"
+        return 1
+    fi
+    
+    # Setup RF-DETR models directory
     mkdir -p "$WEIGHTS_DIR/rf-detr"
     
-    # Create a placeholder file to indicate the directory is ready
-    echo "RF-DETR models will be downloaded automatically at runtime via Python" > "$WEIGHTS_DIR/rf-detr/README.txt"
-    echo "The RF-DETR service uses rfdetr==0.1.0 which downloads models on first use" >> "$WEIGHTS_DIR/rf-detr/README.txt"
+    # Check if models already exist (RF-DETR typically downloads to ~/.cache/torch/)
+    local rf_detr_model_path="$WEIGHTS_DIR/rf-detr/rf_detr_r50_coco.pth"
     
-    success "RF-DETR model directory prepared (models download at runtime)"
+    if check_model_exists "$rf_detr_model_path" 150; then
+        success "RF-DETR models already exist and are valid"
+        return 0
+    fi
+    
+    # Check if deployment directory exists
+    if [ ! -f "deployment/docker-compose.yml" ]; then
+        error "deployment/docker-compose.yml not found. Run this script from project root."
+        return 1
+    fi
+    
+    log "Building RF-DETR container (ensuring all dependencies are available)..."
+    if ! (cd deployment && docker-compose build rf-detr 2>/dev/null); then
+        error "Failed to build RF-DETR container"
+        return 1
+    fi
+    
+    log "Using RF-DETR container to download models (with dependencies: rfdetr library)..."
+    
+    # Create Python script for the container
+    local container_script='
+import os
+import sys
+import logging
+import torch
+from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+def download_models():
+    try:
+        from rfdetr import RFDETRBase
+        logger.info("✅ RF-DETR library available in container")
+        
+        weights_dir = Path("/app/weights")
+        rf_detr_dir = weights_dir / "rf-detr"
+        rf_detr_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize RF-DETR model (this will download weights)
+        logger.info("📦 Downloading RF-DETR model...")
+        model = RFDETRBase()
+        
+        # Save model state to our weights directory
+        model_path = rf_detr_dir / "rf_detr_r50_coco.pth"
+        torch.save(model.state_dict(), model_path)
+        logger.info(f"✅ RF-DETR model saved: {model_path}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"❌ Download failed: {e}")
+        return False
+
+if __name__ == "__main__":
+    success = download_models()
+    sys.exit(0 if success else 1)
+'
+    
+    # Run the download script in the container
+    if echo "$container_script" | docker run --rm -i \
+        -v "$(pwd)/$WEIGHTS_DIR:/app/weights" \
+        --workdir /app \
+        ghcr.io/stevetowers098/nuro-padel/rf-detr:latest \
+        python3; then
+        
+        # Verify downloads
+        if check_model_exists "$rf_detr_model_path" 150; then
+            success "RF-DETR models downloaded successfully via Docker container"
+            log "📊 Downloaded models:"
+            ls -lh "$WEIGHTS_DIR/rf-detr/"*.pth 2>/dev/null || true
+            return 0
+        else
+            error "RF-DETR models downloaded but verification failed"
+            return 1
+        fi
+    else
+        warning "RF-DETR Docker download failed - service will fall back to runtime download"
+        # Create fallback README
+        echo "RF-DETR models will be downloaded automatically at runtime via Python" > "$WEIGHTS_DIR/rf-detr/README.txt"
+        echo "The RF-DETR service uses rfdetr==0.1.0 which downloads models on first use" >> "$WEIGHTS_DIR/rf-detr/README.txt"
+        return 1
+    fi
 }
 
 # Download TrackNet models (if URLs available)
@@ -367,22 +463,107 @@ download_tracknet_models() {
     fi
 }
 
-# Download YOLO-NAS models using Python script
+# Download YOLO-NAS models using Docker container (no host dependencies required)
 download_yolo_nas_models() {
-    log "Downloading YOLO-NAS models using Python downloader..."
+    log "Downloading YOLO-NAS models using Docker container..."
     
-    # Check if Python script exists
-    if [ ! -f "scripts/download-yolo-nas.py" ]; then
-        error "YOLO-NAS download script not found: scripts/download-yolo-nas.py"
+    # Check if docker is available
+    if ! command -v docker >/dev/null 2>&1; then
+        error "Docker is required for YOLO-NAS downloads"
         return 1
     fi
     
-    # Try to run the Python script
-    if python3 scripts/download-yolo-nas.py; then
-        success "YOLO-NAS models downloaded successfully via Python script"
+    # Setup YOLO-NAS models directory
+    mkdir -p "$WEIGHTS_DIR/super-gradients"
+    
+    # Check if models already exist
+    local pose_model_path="$WEIGHTS_DIR/super-gradients/yolo_nas_pose_n_coco_pose.pth"
+    local object_model_path="$WEIGHTS_DIR/super-gradients/yolo_nas_s_coco.pth"
+    
+    if check_model_exists "$pose_model_path" 30 && check_model_exists "$object_model_path" 60; then
+        success "YOLO-NAS models already exist and are valid"
         return 0
+    fi
+    
+    # Check if deployment directory exists
+    if [ ! -f "deployment/docker-compose.yml" ]; then
+        error "deployment/docker-compose.yml not found. Run this script from project root."
+        return 1
+    fi
+    
+    log "Building YOLO-NAS container (ensuring all dependencies are available)..."
+    if ! (cd deployment && docker-compose build yolo-nas 2>/dev/null); then
+        error "Failed to build YOLO-NAS container"
+        return 1
+    fi
+    
+    log "Using YOLO-NAS container to download models (with dependencies: torch + super-gradients)..."
+    
+    # Create Python script for the container
+    local container_script='
+import os
+import sys
+import logging
+import torch
+from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+def download_models():
+    try:
+        from super_gradients.training import models
+        logger.info("✅ Super Gradients library available in container")
+        
+        weights_dir = Path("/app/weights")
+        super_gradients_dir = weights_dir / "super-gradients"
+        super_gradients_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Download YOLO-NAS Pose Model
+        pose_model_path = super_gradients_dir / "yolo_nas_pose_n_coco_pose.pth"
+        if not pose_model_path.exists():
+            logger.info("📦 Downloading YOLO-NAS Pose model...")
+            pose_model = models.get("yolo_nas_pose_n", pretrained_weights="coco_pose")
+            torch.save(pose_model.state_dict(), pose_model_path)
+            logger.info(f"✅ Pose model saved: {pose_model_path}")
+        
+        # Download YOLO-NAS Object Model
+        object_model_path = super_gradients_dir / "yolo_nas_s_coco.pth"
+        if not object_model_path.exists():
+            logger.info("📦 Downloading YOLO-NAS Object model...")
+            object_model = models.get("yolo_nas_s", pretrained_weights="coco")
+            torch.save(object_model.state_dict(), object_model_path)
+            logger.info(f"✅ Object model saved: {object_model_path}")
+            
+        return True
+    except Exception as e:
+        logger.error(f"❌ Download failed: {e}")
+        return False
+
+if __name__ == "__main__":
+    success = download_models()
+    sys.exit(0 if success else 1)
+'
+    
+    # Run the download script in the container
+    if echo "$container_script" | docker run --rm -i \
+        -v "$(pwd)/$WEIGHTS_DIR:/app/weights" \
+        --workdir /app \
+        ghcr.io/stevetowers098/nuro-padel/yolo-nas:latest \
+        python3; then
+        
+        # Verify downloads
+        if check_model_exists "$pose_model_path" 30 && check_model_exists "$object_model_path" 60; then
+            success "YOLO-NAS models downloaded successfully via Docker container"
+            log "📊 Downloaded models:"
+            ls -lh "$WEIGHTS_DIR/super-gradients/"*.pth 2>/dev/null || true
+            return 0
+        else
+            error "YOLO-NAS models downloaded but verification failed"
+            return 1
+        fi
     else
-        warning "YOLO-NAS Python download failed - this is often due to DNS issues with sghub.deci.ai"
+        warning "YOLO-NAS Docker download failed - may be due to DNS issues with sghub.deci.ai"
         warning "YOLO-NAS services will fall back to online download during startup"
         return 1
     fi
@@ -392,9 +573,42 @@ download_yolo_nas_models() {
 verify_yolo_nas_models() {
     log "Verifying YOLO-NAS models..."
     
-    # Use Python script for verification
-    if [ -f "scripts/download-yolo-nas.py" ]; then
-        if python3 scripts/download-yolo-nas.py --verify-only; then
+    # Check if Python 3 is available for verification
+    if command -v python3 >/dev/null 2>&1; then
+        # Create inline Python verification script
+        local python_verify_script=$(cat << 'EOF'
+import sys
+import logging
+from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Verification logic
+weights_dir = Path("./weights")
+super_gradients_dir = weights_dir / "super-gradients"
+expected_models = ["yolo_nas_pose_n_coco_pose.pth", "yolo_nas_s_coco.pth"]
+
+logger.info("🔍 Verifying YOLO-NAS models...")
+all_valid = True
+for model_name in expected_models:
+    model_path = super_gradients_dir / model_name
+    if model_path.exists():
+        size_mb = model_path.stat().st_size / (1024 * 1024)
+        if size_mb > 10:
+            logger.info(f"✅ {model_name}: {size_mb:.1f} MB")
+        else:
+            logger.warning(f"⚠️ {model_name}: {size_mb:.1f} MB (too small)")
+            all_valid = False
+    else:
+        logger.error(f"❌ {model_name}: Not found")
+        all_valid = False
+
+sys.exit(0 if all_valid else 1)
+EOF
+)
+        
+        if echo "$python_verify_script" | python3; then
             success "YOLO-NAS models verified successfully"
             return 0
         else
@@ -601,6 +815,7 @@ main() {
             download_vitpose_models
             download_rf_detr_models
             download_tracknet_models
+            download_yolo_nas_models
             verify_models
             show_disk_usage
             ;;
@@ -634,7 +849,7 @@ main() {
             echo "  vitpose    Download ViTPose++ models only (to vitpose/)"
             echo "  rf-detr    Set up RF-DETR model directory (models download at runtime)"
             echo "  tracknet   Download TrackNet models only (to tracknet/)"
-            echo "  yolo-nas         Download YOLO-NAS models using Python script (to super-gradients/)"
+            echo "  yolo-nas         Download YOLO-NAS models using integrated downloader (to super-gradients/)"
             echo "  yolo-nas-verify  Verify existing YOLO-NAS models only"
             echo "  verify     Verify all existing models"
             echo "  diagnose   Show diagnostic information about configured models"
@@ -650,7 +865,7 @@ main() {
             echo "  ./weights/super-gradients/ - YOLO-NAS models (super-gradients format)"
             echo ""
             echo "YOLO-NAS Special Notes:"
-            echo "  - Uses Python script (scripts/download-yolo-nas.py) for downloads"
+            echo "  - Uses integrated Python downloader for downloads"
             echo "  - May fail due to DNS issues with sghub.deci.ai"
             echo "  - Services will fall back to online download if models missing"
             echo "  - Try different network/VPN if downloads fail"

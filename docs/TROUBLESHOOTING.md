@@ -2,6 +2,45 @@
 
 ## 🚀 RECENT FIXES - All Issues Resolved ✅
 
+### **YOLO-NAS Service - Model Download Network Issue (FIXED May 30, 2025)**
+
+#### **✅ Critical Issue: SuperGradients Model Download Failure (FIXED)**
+**Problem**: YOLO-NAS containers fail to start because they can't download models from `sghub.deci.ai` at runtime due to DNS resolution issues.
+
+**Error**: `<urlopen error [Errno 11001] getaddrinfo failed>` when trying to access `sghub.deci.ai`
+
+**Root Cause**: Network connectivity prevents SuperGradients from downloading required model files:
+- `yolo_nas_pose_n_coco_pose.pth` (~40MB) - For pose detection
+- `yolo_nas_s_coco.pth` (~76MB) - For object detection
+
+**Complete Solution Applied:**
+
+**1. Download Models from Working Mirror:**
+```bash
+# Use NVIDIA S3 mirror (bypasses DNS issues)
+curl -L -o weights/super-gradients/yolo_nas_s_coco.pth "https://sg-hub-nv.s3.amazonaws.com/models/yolo_nas_s_coco.pth"
+curl -L -o weights/super-gradients/yolo_nas_pose_n_coco_pose.pth "https://sg-hub-nv.s3.amazonaws.com/models/yolo_nas_pose_n_coco_pose.pth"
+```
+
+**2. Service Now Loads Models Locally:**
+```python
+# Service detects and uses local checkpoints
+local_pose_checkpoint = os.path.join(WEIGHTS_DIR, "super-gradients", "yolo_nas_pose_n_coco_pose.pth")
+if os.path.exists(local_pose_checkpoint):
+    yolo_nas_pose_model = models.get("yolo_nas_pose_n", checkpoint_path=local_pose_checkpoint, num_classes=17)
+```
+
+**3. Verification Results:**
+```
+✅ YOLO-NAS Pose model loaded successfully using pytorch backend
+✅ YOLO-NAS Object model loaded successfully using pytorch backend
+INFO: Started server process [1]
+INFO: Application startup complete.
+INFO: 127.0.0.1:37632 - "GET /healthz HTTP/1.1" 200 OK
+```
+
+**Status**: ✅ **COMPLETELY RESOLVED** - YOLO-NAS service now fully functional with local model loading
+
 ### **DEPLOYMENT PIPELINE - Container Startup Issue (FIXED May 30, 2025)**
 
 #### **✅ Critical Issue: Containers Not Starting After Image Pulls (FIXED)**

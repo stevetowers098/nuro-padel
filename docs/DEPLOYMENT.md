@@ -84,12 +84,12 @@ curl http://35.189.53.46:8080/         # Load Balancer
 **Endpoints**: 5 total (/yolo11/pose, /yolo11/object, /yolov8/pose, /yolov8/object, /track-ball)
 **Port**: 8001
 **Optimization**: ONNX/TensorRT support for Ultralytics models
-**Key Dependencies**:
+**Key Dependencies** (UPDATED May 30, 2025):
 ```txt
-torch==2.3.1
-torchvision==0.18.1
-ultralytics==8.2.97
-google-cloud-storage==2.10.0  # Specific version for protobuf compatibility
+torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
+ultralytics>=8.3.0,<8.4.0     # ✅ FIXED: YOLO11 compatibility (was 8.2.97)
+google-cloud-storage==2.18.0  # Updated version
 protobuf>=3.19.5,<4.0.0       # Critical constraint
 opencv-python-headless==4.10.0.84
 fastapi==0.111.0
@@ -97,7 +97,8 @@ httpx==0.27.0
 onnx==1.16.0                   # Model optimization
 onnxruntime-gpu==1.18.1        # GPU acceleration
 ```
-**Enhancement Applied**:
+**Fixes Applied**:
+- ✅ **FIXED**: YOLO11 compatibility issue (`AttributeError: C3k2`) via ultralytics>=8.3.0
 - ✅ **NEW**: Dedicated YOLO11 object detection model (`yolo11n.pt`)
 - ✅ ONNX/TensorRT optimization support for all YOLO models
 

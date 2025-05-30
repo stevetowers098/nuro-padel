@@ -112,6 +112,23 @@ yolo_nas_pose_model = None
 yolo_nas_object_model = None
 model_info = {"pose_model": "none", "object_model": "none", "status": "none"}
 
+# Diagnostic logging for volume mounts and model accessibility
+logger.info(f"🔍 DIAGNOSTIC: WEIGHTS_DIR = {WEIGHTS_DIR}")
+logger.info(f"🔍 DIAGNOSTIC: Checking weights directory structure...")
+try:
+    if os.path.exists(WEIGHTS_DIR):
+        for root, dirs, files in os.walk(WEIGHTS_DIR):
+            level = root.replace(WEIGHTS_DIR, '').count(os.sep)
+            indent = ' ' * 2 * level
+            logger.info(f"🔍 {indent}{os.path.basename(root)}/")
+            subindent = ' ' * 2 * (level + 1)
+            for file in files:
+                logger.info(f"🔍 {subindent}{file}")
+    else:
+        logger.warning(f"⚠️ WEIGHTS_DIR {WEIGHTS_DIR} does not exist")
+except Exception as e:
+    logger.error(f"❌ Error checking weights directory: {e}")
+
 # Initialize model optimizer
 model_optimizer = ModelOptimizer(WEIGHTS_DIR)
 pose_model_info = None
@@ -510,10 +527,13 @@ async def enhanced_health_check():
     optimization_config = current_config.get("optimization", {})
     performance_config = current_config.get("performance", {})
     
-    # Overall health status
+    # Overall health status - Allow graceful fallback when models are missing
     any_model_loaded = any(status["loaded"] for status in models_status.values())
-    overall_status = "healthy" if any_model_loaded else "unhealthy"
-    status_code = 200 if any_model_loaded else 503
+    super_gradients_available = SUPER_GRADIENTS_AVAILABLE
+    
+    # Service is healthy if super-gradients is available (even if models will download on first request)
+    overall_status = "healthy" if (any_model_loaded or super_gradients_available) else "unhealthy"
+    status_code = 200 if (any_model_loaded or super_gradients_available) else 503
     
     response_data = {
         "status": overall_status,

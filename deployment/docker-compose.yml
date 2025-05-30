@@ -16,7 +16,7 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - /opt/padel-docker/weights:/app/weights:ro
+      - ../weights:/app/weights:ro
       - ../services/yolo-combined/config:/app/config:ro
       - ../services/shared:/app/shared:ro
       - /tmp:/tmp
@@ -61,7 +61,7 @@ services:
     ports:
       - "8003:8003"
     volumes:
-      - /opt/padel-docker/weights:/app/weights:ro
+      - ../weights:/app/weights:ro
       - ../services/mmpose/configs:/app/configs:ro
       - ../services/mmpose/config:/app/config:ro
       - ../services/shared:/app/shared:ro
@@ -108,7 +108,7 @@ services:
     ports:
       - "8004:8004"
     volumes:
-      - /opt/padel-docker/weights:/app/weights:ro
+      - ../weights:/app/weights:ro
       - ../services/yolo-nas/config:/app/config:ro
       - ../services/shared:/app/shared:ro
       - /tmp:/tmp

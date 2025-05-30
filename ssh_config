@@ -1,5 +1,0 @@
-Host padel-ai
-    HostName 35.189.53.46
-    User towers
-    Port 22
-    IdentityFile C:\Users\tower\.ssh\google_compute_engine

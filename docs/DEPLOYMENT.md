@@ -16,6 +16,8 @@ The Nuro-Padel system now includes sophisticated upgrade management:
 curl http://localhost:8001/healthz | jq  # YOLO Combined
 curl http://localhost:8003/healthz | jq  # MMPose
 curl http://localhost:8004/healthz | jq  # YOLO-NAS
+curl http://localhost:8005/healthz | jq  # RF-DETR
+curl http://localhost:8006/healthz | jq  # ViTPose++
 
 # Demo all upgrade features
 chmod +x scripts/demo-upgrade-features.sh
@@ -74,6 +76,8 @@ docker-compose restart yolo-combined
 curl http://35.189.53.46:8001/healthz  # YOLO Combined
 curl http://35.189.53.46:8003/healthz  # MMPose
 curl http://35.189.53.46:8004/healthz  # YOLO-NAS
+curl http://35.189.53.46:8005/healthz  # RF-DETR
+curl http://35.189.53.46:8006/healthz  # ViTPose++
 curl http://35.189.53.46:8080/         # Load Balancer
 ```
 
@@ -139,6 +143,60 @@ onnxruntime-gpu==1.18.1       # GPU acceleration
 - ✅ Python virtual environment isolation
 - ✅ Optimized Docker CMD with uvicorn
 
+### **RF-DETR Detection Service** (services/rf-detr/) ✅ **NEW**
+**Models**: RF-DETR Base (stable v0.1.0)
+**Endpoints**: /rf-detr/analyze (object detection with FP16 optimization)
+**Port**: 8005
+**Optimization**: FP16 precision, GPU memory management, resolution constraint (divisible by 56)
+**Key Dependencies**:
+```txt
+torch==2.1.2                  # PyTorch with CUDA 12.1 support
+torchvision==0.16.2
+rfdetr==0.1.0                  # Stable RF-DETR version
+supervision>=0.16.0            # Computer vision utilities
+fastapi==0.111.0               # API framework
+numpy>=1.21.0,<2.0            # Numerical computing
+opencv-python-headless==4.10.0.84
+psutil>=5.9.0                  # Performance monitoring
+```
+**Features**:
+- ✅ **FP16 Optimization**: Automatic half-precision for VRAM efficiency (4-5GB usage)
+- ✅ **Resolution Constraint**: Automatic adjustment to be divisible by 56
+- ✅ **GPU Memory Monitoring**: Real-time VRAM usage tracking and cleanup
+- ✅ **Stable Implementation**: Uses proven RF-DETR v0.1.0 (not development versions)
+
+### **ViTPose++ Pose Service** (services/vitpose/) ✅ **NEW**
+**Models**: ViTPose-Base, HRNet-W48 (fallback)
+**Endpoints**: /vitpose/analyze (advanced pose estimation with joint angles)
+**Port**: 8006
+**Optimization**: FP16 precision, staged MMPose dependency resolution, GPU memory management
+**Key Dependencies** (Staged Installation):
+```txt
+# Stage 1: Core PyTorch
+torch==2.1.2
+torchvision==0.16.2
+numpy>=1.21.0,<2.0
+
+# Stage 2: MMPose via mim (CRITICAL ORDER)
+openmim==0.3.9
+mmengine                       # Via mim install
+mmcv==2.1.0                   # Via mim install (exact version)
+mmdet>=3.0.0,<3.3.0           # Via mim install (version constraint)
+mmpose>=1.3.0                 # Via mim install
+
+# Stage 3: Additional
+fastapi==0.111.0
+xtcocotools>=1.14             # COCO tools
+opencv-python-headless==4.10.0.84
+psutil>=5.9.0
+```
+**Features**:
+- ✅ **Advanced Pose Quality**: Pose quality scoring based on keypoint visibility
+- ✅ **Joint Angle Calculation**: Biomechanical analysis with 6 joint angles
+- ✅ **Dependency Isolation**: Staged installation prevents MMPose conflicts
+- ✅ **FP16 Optimization**: Automatic half-precision for VRAM efficiency (4-5GB usage)
+- ✅ **Fallback Models**: HRNet-W48 fallback if ViTPose fails to load
+
 ## 🔧 Development Workflow
 
 ### Fast Development (Recommended)
@@ -185,13 +243,17 @@ curl http://35.189.53.46:8080/healthz
 
 # Individual services
 curl http://35.189.53.46:8080/yolo-combined/healthz
-curl http://35.189.53.46:8080/mmpose/healthz  
+curl http://35.189.53.46:8080/mmpose/healthz
 curl http://35.189.53.46:8080/yolo-nas/healthz
+curl http://35.189.53.46:8080/rf-detr/healthz
+curl http://35.189.53.46:8080/vitpose/healthz
 
 # Direct service access (when running locally)
 curl http://localhost:8001/healthz  # YOLO Combined
 curl http://localhost:8003/healthz  # MMPose
 curl http://localhost:8004/healthz  # YOLO-NAS
+curl http://localhost:8005/healthz  # RF-DETR
+curl http://localhost:8006/healthz  # ViTPose++
 ```
 
 ### Expected Health Response
@@ -287,12 +349,16 @@ NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ```yaml
 # docker-compose.yml
 services:
-  yolo-combined: 
+  yolo-combined:
     ports: ["8001:8001"]
   mmpose:
-    ports: ["8003:8003"] 
+    ports: ["8003:8003"]
   yolo-nas:
     ports: ["8004:8004"]
+  rf-detr:
+    ports: ["8005:8005"]
+  vitpose:
+    ports: ["8006:8006"]
   nginx:
     ports: ["8080:80", "8443:443"]
 ```
@@ -360,8 +426,22 @@ weights/ultralytics/
 #### MMPose Service (Total: ~9MB)
 ```bash
 # Biomechanical analysis model
-weights/
+weights/mmpose/
 └── rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth  # ~9MB
+```
+
+#### ViTPose++ Service (Total: ~200MB)
+```bash
+# Advanced pose estimation model
+weights/vitpose/
+└── vitpose_base_coco_256x192.pth          # ~200MB - ViTPose++ base model
+```
+
+#### RF-DETR Service (Runtime Download)
+```bash
+# RF-DETR models download automatically at runtime
+weights/rf-detr/
+└── README.txt                            # Setup indicator (models via Python)
 ```
 
 ### **RECOMMENDED** Performance Optimization
@@ -401,15 +481,17 @@ print('✅ Ultralytics cache populated')
 ```
 
 ### Storage Requirements Summary
-- **Base Models**: ~108MB (required)
+- **Base Models**: ~308MB (required)
   - YOLO-NAS: ~72MB
   - YOLO Combined: ~24MB
   - MMPose: ~9MB
+  - ViTPose++: ~200MB
   - TrackNet: ~3MB (optional)
+  - RF-DETR: Runtime download (~50MB estimated)
 - **TensorRT**: ~500MB (recommended for T4)
 - **Optimization Cache**: ~50MB
 - **Python Wheels**: ~200MB
-- **Total**: ~858MB
+- **Total**: ~1.1GB
 
 ### Model Performance Backends
 Services automatically select best available optimization:
@@ -439,6 +521,16 @@ curl -X POST http://localhost:8003/mmpose/pose \
 curl -X POST http://localhost:8004/yolo-nas/pose \
   -H "Content-Type: application/json" \
   -d '{"video_url": "https://example.com/test.mp4", "confidence": 0.5}'
+
+# Test RF-DETR object detection
+curl -X POST http://localhost:8005/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"video_url": "https://example.com/test.mp4", "confidence": 0.3, "resolution": 672}'
+
+# Test ViTPose++ advanced pose estimation
+curl -X POST http://localhost:8006/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"video_url": "https://example.com/test.mp4", "video": true, "confidence": 0.3}'
 ```
 
 ### Import Testing
@@ -447,6 +539,8 @@ curl -X POST http://localhost:8004/yolo-nas/pose \
 docker-compose exec yolo-combined python -c "import ultralytics; print('✅ YOLO OK')"
 docker-compose exec mmpose python -c "import mmpose; print('✅ MMPose OK')"
 docker-compose exec yolo-nas python -c "from super_gradients.training import models; print('✅ Super-gradients OK')"
+docker-compose exec rf-detr python -c "from rfdetr import RFDETRBase; print('✅ RF-DETR OK')"
+docker-compose exec vitpose python -c "import mmpose; print('✅ ViTPose++ OK')"
 ```
 
 ## 🚀 Performance Optimization

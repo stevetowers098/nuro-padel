@@ -30,6 +30,16 @@ declare -A MMPOSE_MODELS=(
     ["rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth"]="https://download.openmmlab.com/mmpose/v1/projects/rtmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth"
 )
 
+# ViTPose++ models for new service - Optimized for efficiency
+declare -A VITPOSE_MODELS=(
+    ["vitpose_base_coco_256x192.pth"]="https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-base_8xb64-210e_coco-256x192-216eae50_20230314.pth"
+)
+
+# RF-DETR models (downloaded via Python during runtime)
+declare -A RF_DETR_MODELS=(
+    ["rf_detr_base.pth"]="python_runtime"
+)
+
 # TrackNet models - V2 available, V4 pending release
 declare -A TRACKNET_MODELS=(
     ["tracknet_v2.pth"]="https://drive.google.com/file/d/1XEYZ4myUN7QT-NeBYJI0xteLsvs-ZAOl/view"
@@ -72,6 +82,16 @@ show_diagnostic_info() {
         echo "  - $model"
     done
     
+    log "Configured ViTPose++ models (will go to vitpose/):"
+    for model in "${!VITPOSE_MODELS[@]}"; do
+        echo "  - $model"
+    done
+    
+    log "Configured RF-DETR models (downloaded at runtime):"
+    for model in "${!RF_DETR_MODELS[@]}"; do
+        echo "  - $model (source: ${RF_DETR_MODELS[$model]})"
+    done
+    
     log "TrackNet models configured: ${#TRACKNET_MODELS[@]}"
     if [ ${#TRACKNET_MODELS[@]} -gt 0 ]; then
         for model in "${!TRACKNET_MODELS[@]}"; do
@@ -87,6 +107,8 @@ show_diagnostic_info() {
     log "Directory structure that will be created:"
     echo "  ./weights/ultralytics/     - YOLO models"
     echo "  ./weights/mmpose/          - MMPose models"
+    echo "  ./weights/vitpose/         - ViTPose++ models"
+    echo "  ./weights/rf-detr/         - RF-DETR models"
     echo "  ./weights/tracknet/        - TrackNet models"
     echo "  ./weights/super-gradients/ - YOLO-NAS models"
     
@@ -100,6 +122,8 @@ setup_directories() {
     mkdir -p "$WEIGHTS_DIR"
     mkdir -p "$WEIGHTS_DIR/ultralytics"
     mkdir -p "$WEIGHTS_DIR/mmpose"
+    mkdir -p "$WEIGHTS_DIR/vitpose"
+    mkdir -p "$WEIGHTS_DIR/rf-detr"
     mkdir -p "$WEIGHTS_DIR/tracknet"
     mkdir -p "$WEIGHTS_DIR/super-gradients"
     mkdir -p "$TEMP_DIR"
@@ -283,6 +307,40 @@ download_mmpose_models() {
     fi
 }
 
+# Download ViTPose++ models - Optimized for efficiency
+download_vitpose_models() {
+    log "Downloading efficient ViTPose++ models to vitpose subdirectory..."
+    
+    local failed_downloads=0
+    
+    for model in "${!VITPOSE_MODELS[@]}"; do
+        # ViTPose Base models are ~200MB - most efficient option
+        if ! download_model "${VITPOSE_MODELS[$model]}" "$model" "vitpose" 180; then
+            ((failed_downloads++))
+        fi
+    done
+    
+    if [ $failed_downloads -eq 0 ]; then
+        success "All efficient ViTPose++ models downloaded successfully to vitpose/"
+    else
+        error "$failed_downloads ViTPose++ model(s) failed to download"
+        return 1
+    fi
+}
+
+# Download RF-DETR models (placeholder - actual download happens at runtime)
+download_rf_detr_models() {
+    log "Setting up RF-DETR model directory..."
+    
+    mkdir -p "$WEIGHTS_DIR/rf-detr"
+    
+    # Create a placeholder file to indicate the directory is ready
+    echo "RF-DETR models will be downloaded automatically at runtime via Python" > "$WEIGHTS_DIR/rf-detr/README.txt"
+    echo "The RF-DETR service uses rfdetr==0.1.0 which downloads models on first use" >> "$WEIGHTS_DIR/rf-detr/README.txt"
+    
+    success "RF-DETR model directory prepared (models download at runtime)"
+}
+
 # Download TrackNet models (if URLs available)
 download_tracknet_models() {
     log "Downloading TrackNet models to tracknet subdirectory..."
@@ -373,6 +431,47 @@ verify_yolo_nas_models() {
     fi
 }
 
+# Verify ViTPose++ models
+verify_vitpose_models() {
+    log "Verifying ViTPose++ models..."
+    
+    local total_models=0
+    local valid_models=0
+    
+    for model in "${!VITPOSE_MODELS[@]}"; do
+        ((total_models++))
+        if check_model_exists "$WEIGHTS_DIR/vitpose/$model" 150; then
+            ((valid_models++))
+            success "✓ vitpose/$model"
+        else
+            error "✗ vitpose/$model (missing or invalid)"
+        fi
+    done
+    
+    log "ViTPose++ verification: $valid_models/$total_models found"
+    
+    if [ $valid_models -eq $total_models ]; then
+        success "All ViTPose++ models verified successfully"
+        return 0
+    else
+        warning "Some ViTPose++ models are missing"
+        return 1
+    fi
+}
+
+# Verify RF-DETR models (check directory setup)
+verify_rf_detr_models() {
+    log "Verifying RF-DETR model setup..."
+    
+    if [ -d "$WEIGHTS_DIR/rf-detr" ] && [ -f "$WEIGHTS_DIR/rf-detr/README.txt" ]; then
+        success "✓ RF-DETR model directory is ready"
+        return 0
+    else
+        warning "✗ RF-DETR model directory not set up"
+        return 1
+    fi
+}
+
 # Verify all models
 verify_models() {
     log "Verifying all models in organized subdirectories..."
@@ -410,6 +509,17 @@ verify_models() {
         fi
     done
     
+    # Check ViTPose++ models in vitpose subdirectory
+    for model in "${!VITPOSE_MODELS[@]}"; do
+        ((total_models++))
+        if check_model_exists "$WEIGHTS_DIR/vitpose/$model" 150; then
+            ((valid_models++))
+            success "✓ vitpose/$model"
+        else
+            error "✗ vitpose/$model (missing or invalid)"
+        fi
+    done
+    
     # Check TrackNet models in tracknet subdirectory
     for model in "${!TRACKNET_MODELS[@]}"; do
         ((total_models++))
@@ -423,7 +533,9 @@ verify_models() {
     
     log "Downloaded model verification: $valid_models/$total_models valid"
     
-    # Also verify YOLO-NAS models (separate since they're manually placed)
+    # Also verify other models
+    verify_vitpose_models
+    verify_rf_detr_models
     verify_yolo_nas_models
     
     if [ $valid_models -eq $total_models ]; then
@@ -445,7 +557,7 @@ cleanup() {
 # Show disk usage
 show_disk_usage() {
     log "Model directory disk usage by subdirectory:"
-    for subdir in ultralytics mmpose tracknet super-gradients; do
+    for subdir in ultralytics mmpose vitpose rf-detr tracknet super-gradients; do
         if [ -d "$WEIGHTS_DIR/$subdir" ]; then
             echo "  $subdir/: $(du -sh "$WEIGHTS_DIR/$subdir" 2>/dev/null | cut -f1)"
         fi
@@ -467,6 +579,16 @@ main() {
             download_mmpose_models
             verify_models
             ;;
+        vitpose)
+            setup_directories
+            download_vitpose_models
+            verify_models
+            ;;
+        rf-detr)
+            setup_directories
+            download_rf_detr_models
+            verify_models
+            ;;
         tracknet)
             setup_directories
             download_tracknet_models
@@ -476,6 +598,8 @@ main() {
             setup_directories
             download_yolo_models
             download_mmpose_models
+            download_vitpose_models
+            download_rf_detr_models
             download_tracknet_models
             verify_models
             show_disk_usage
@@ -507,6 +631,8 @@ main() {
             echo "  all        Download all available models (default)"
             echo "  yolo       Download YOLO models only (to ultralytics/)"
             echo "  mmpose     Download MMPose models only (to mmpose/)"
+            echo "  vitpose    Download ViTPose++ models only (to vitpose/)"
+            echo "  rf-detr    Set up RF-DETR model directory (models download at runtime)"
             echo "  tracknet   Download TrackNet models only (to tracknet/)"
             echo "  yolo-nas         Download YOLO-NAS models using Python script (to super-gradients/)"
             echo "  yolo-nas-verify  Verify existing YOLO-NAS models only"
@@ -518,6 +644,8 @@ main() {
             echo "Models are organized into subdirectories:"
             echo "  ./weights/ultralytics/     - YOLO models"
             echo "  ./weights/mmpose/          - MMPose models"
+            echo "  ./weights/vitpose/         - ViTPose++ models"
+            echo "  ./weights/rf-detr/         - RF-DETR models (downloaded at runtime)"
             echo "  ./weights/tracknet/        - TrackNet models"
             echo "  ./weights/super-gradients/ - YOLO-NAS models (super-gradients format)"
             echo ""

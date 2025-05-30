@@ -1,0 +1,10 @@
+# ViTPose++ Stage 1 Requirements - Core PyTorch
+# MUST be installed first to avoid dependency conflicts
+
+# Core PyTorch with CUDA 12.1 support
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
+
+# Core numerical libraries
+numpy>=1.21.0,<2.0

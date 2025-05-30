@@ -1,5 +1,6 @@
 """
 Model Optimization Utilities for NuroPadel AI Services
+Enhanced with SuperGradients native export capabilities
 Supports PyTorch -> ONNX -> TensorRT optimization pipeline
 """
 
@@ -7,7 +8,7 @@ import os
 import logging
 import torch
 import numpy as np
-from typing import Optional, Union, Tuple, List
+from typing import Optional, Union, Tuple, List, Dict, Any
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,16 @@ try:
 except ImportError:
     TENSORRT_AVAILABLE = False
     logger.warning("⚠️ TensorRT not available")
+
+# SuperGradients imports for native export
+try:
+    from super_gradients.training import models
+    from super_gradients.common.object_names import Models
+    SUPER_GRADIENTS_AVAILABLE = True
+    logger.info("✅ SuperGradients available for native export")
+except ImportError:
+    SUPER_GRADIENTS_AVAILABLE = False
+    logger.warning("⚠️ SuperGradients not available")
 
 class ModelOptimizer:
     """Handles model optimization and inference with fallback support"""

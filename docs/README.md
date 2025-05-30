@@ -8,8 +8,10 @@ NuroPadel is a comprehensive padel analysis platform that combines multiple AI m
 
 ### Services
 - **YOLO Combined Service** (Port 8001) - Main service with TrackNet integration
-- **MMPose Service** (Port 8003) - Advanced pose estimation 
+- **MMPose Service** (Port 8003) - Advanced pose estimation
 - **YOLO-NAS Service** (Port 8004) - High-accuracy object detection
+- **RF-DETR Service** (Port 8005) - Transformer-based object detection with FP16 optimization
+- **ViTPose++ Service** (Port 8006) - Vision Transformer pose estimation with joint angles
 
 ### Key Features
 - **Enhanced Ball Tracking**: YOLO + TrackNet V2 ✅ fusion for superior accuracy (V4 pending release)
@@ -38,6 +40,8 @@ The project includes a comprehensive model download script that handles all requ
 # Download specific model sets
 ./scripts/download-models.sh yolo       # YOLO models only
 ./scripts/download-models.sh mmpose     # MMPose models only
+./scripts/download-models.sh vitpose    # ViTPose++ models only
+./scripts/download-models.sh rf-detr    # RF-DETR models (runtime download)
 ./scripts/download-models.sh tracknet   # TrackNet models only
 ./scripts/download-models.sh yolo-nas   # YOLO-NAS models only
 
@@ -58,6 +62,10 @@ Models are automatically organized into subdirectories:
 │   └── yolo11n-pose.pt
 ├── mmpose/               # MMPose models (~50MB)
 │   └── rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth
+├── vitpose/              # ViTPose++ models (~180MB, efficient)
+│   └── vitpose_base_coco_256x192.pth
+├── rf-detr/              # RF-DETR models (runtime download ~50MB)
+│   └── README.txt
 ├── tracknet/             # TrackNet V2 ✅ models (~3MB, V4 pending release)
 │   └── tracknet_v2.pth
 └── super-gradients/      # YOLO-NAS models (~72MB)
@@ -66,7 +74,7 @@ Models are automatically organized into subdirectories:
 ```
 
 ### Model Download Requirements
-- **Total Size**: ~166MB for all models
+- **Total Size**: ~396MB for all models (including efficient ViTPose++)
 - **Network**: Required for initial download
 - **Storage**: Models are cached locally for offline operation
 
@@ -84,6 +92,12 @@ services:
     volumes:
       - /opt/padel-docker/weights:/app/weights:ro
   yolo-nas:
+    volumes:
+      - /opt/padel-docker/weights:/app/weights:ro
+  rf-detr:
+    volumes:
+      - /opt/padel-docker/weights:/app/weights:ro
+  vitpose:
     volumes:
       - /opt/padel-docker/weights:/app/weights:ro
 ```
@@ -149,12 +163,16 @@ The deployment pipeline has been completely fixed to handle end-to-end container
 ├── services/             # AI service containers
 │   ├── yolo-combined/    # Port 8001
 │   ├── mmpose/          # Port 8003
-│   └── yolo-nas/        # Port 8004
+│   ├── yolo-nas/        # Port 8004
+│   ├── rf-detr/         # Port 8005
+│   └── vitpose/         # Port 8006
 ├── deployment/          # Docker Compose configs
 ├── scripts/             # Deployment scripts
 ├── weights/             # Model weights (organized by subdirectory)
 │   ├── ultralytics/     # YOLO models
 │   ├── mmpose/          # MMPose models
+│   ├── vitpose/         # ViTPose++ models
+│   ├── rf-detr/         # RF-DETR models
 │   ├── tracknet/        # TrackNet models
 │   └── super-gradients/ # YOLO-NAS models
 ├── docs/               # Documentation
@@ -222,6 +240,8 @@ ssh Towers@35.189.53.46
 curl http://35.189.53.46:8001/healthz  # YOLO Combined
 curl http://35.189.53.46:8003/healthz  # MMPose
 curl http://35.189.53.46:8004/healthz  # YOLO-NAS
+curl http://35.189.53.46:8005/healthz  # RF-DETR
+curl http://35.189.53.46:8006/healthz  # ViTPose++
 curl http://35.189.53.46:8080/         # Load Balancer
 ```
 
@@ -293,6 +313,9 @@ All endpoints accept the same JSON format:
 #### YOLO-NAS High-Accuracy Service
 - **YOLO-NAS Pose**: `POST http://35.189.53.46:8080/yolo-nas/pose`
 
+#### ViTPose++ Advanced Service
+- **ViTPose++ Analysis**: `POST http://35.189.53.46:8080/vitpose/analyze`
+
 ### 🎯 Object Detection Endpoints
 
 #### YOLO Combined Service
@@ -301,6 +324,9 @@ All endpoints accept the same JSON format:
 
 #### YOLO-NAS High-Accuracy Service
 - **YOLO-NAS Object**: `POST http://35.189.53.46:8080/yolo-nas/object`
+
+#### RF-DETR Transformer Service
+- **RF-DETR Detection**: `POST http://35.189.53.46:8080/rf-detr/analyze`
 
 ### 🎾 Enhanced Ball Tracking
 - **TrackNet V2 Enhanced**: `POST http://35.189.53.46:8080/track-ball` ✅ **(V4 pending release)**
@@ -312,6 +338,8 @@ All endpoints accept the same JSON format:
   - `GET http://35.189.53.46:8080/yolo-combined/healthz`
   - `GET http://35.189.53.46:8080/mmpose/healthz`
   - `GET http://35.189.53.46:8080/yolo-nas/healthz`
+  - `GET http://35.189.53.46:8080/rf-detr/healthz`
+  - `GET http://35.189.53.46:8080/vitpose/healthz`
 
 ## 📋 Request Parameters
 
@@ -347,6 +375,18 @@ curl -X POST http://35.189.53.46:8080/mmpose/pose \
   }'
 ```
 
+### ViTPose++ Advanced Pose Analysis
+```bash
+curl -X POST http://35.189.53.46:8080/vitpose/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_url": "https://storage.googleapis.com/my-bucket/padel-video.mp4",
+    "video": true,
+    "data": true,
+    "confidence": 0.3
+  }'
+```
+
 ### Object Detection Example
 ```bash
 curl -X POST http://35.189.53.46:8080/yolo11/object \
@@ -356,6 +396,19 @@ curl -X POST http://35.189.53.46:8080/yolo11/object \
     "video": false,
     "data": true,
     "confidence": 0.3
+  }'
+```
+
+### RF-DETR Transformer Detection
+```bash
+curl -X POST http://35.189.53.46:8080/rf-detr/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_url": "https://storage.googleapis.com/my-bucket/padel-video.mp4",
+    "video": false,
+    "data": true,
+    "confidence": 0.3,
+    "resolution": 672
   }'
 ```
 
@@ -381,7 +434,9 @@ nuro-padel/
 │   │   ├── models/           # Model weights
 │   │   └── main.py
 │   ├── mmpose/               # Advanced pose estimation
-│   └── yolo-nas/             # High-accuracy detection
+│   ├── yolo-nas/             # High-accuracy detection
+│   ├── rf-detr/              # Transformer-based detection
+│   └── vitpose/              # Vision Transformer pose
 ├── deployment/               # Nginx configurations
 ├── docs/                     # Documentation
 ├── scripts/                  # Deployment scripts

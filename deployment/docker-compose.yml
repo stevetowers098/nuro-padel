@@ -1,5 +1,5 @@
 # NuroPadel Docker Compose - Production Deployment
-# 3 Isolated AI Services: YOLO Combined, MMPose, YOLO-NAS
+# 5 Isolated AI Services: YOLO Combined, MMPose, YOLO-NAS, RF-DETR, ViTPose++
 
 version: '3.8'
 
@@ -143,6 +143,97 @@ services:
     networks:
       - nuro-padel-network
 
+  # === RF-DETR Detection Service ===
+  rf-detr:
+    build:
+      context: ../services/rf-detr
+      dockerfile: Dockerfile
+    image: ghcr.io/stevetowers098/nuro-padel/rf-detr:latest
+    container_name: nuro-padel-rf-detr
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "8005:8005"
+    volumes:
+      - ../weights:/app/weights:ro
+      - ../services/rf-detr/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
+      - /tmp:/tmp
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HOME=/tmp
+      - TMPDIR=/tmp
+      - YOLO_OFFLINE=1
+      - ULTRALYTICS_OFFLINE=1
+      - ONLINE=False
+      - YOLO_TELEMETRY=False
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      # Model configuration overrides (examples)
+      # - RF_DETR_ENABLED=true
+      # - FEATURE_FP16_OPTIMIZATION_ENABLED=true
+      # - CONFIDENCE_THRESHOLD=0.3
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/healthz"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+    networks:
+      - nuro-padel-network
+
+  # === ViTPose++ Advanced Pose Service ===
+  vitpose:
+    build:
+      context: ../services/vitpose
+      dockerfile: Dockerfile
+    image: ghcr.io/stevetowers098/nuro-padel/vitpose:latest
+    container_name: nuro-padel-vitpose
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "8006:8006"
+    volumes:
+      - ../weights:/app/weights:ro
+      - ../services/vitpose/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
+      - /tmp:/tmp
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HOME=/tmp
+      - TMPDIR=/tmp
+      - MPLCONFIGDIR=/tmp/matplotlib
+      - YOLO_OFFLINE=1
+      - ULTRALYTICS_OFFLINE=1
+      - ONLINE=False
+      - YOLO_TELEMETRY=False
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      # Model configuration overrides (examples)
+      # - VITPOSE_BASE_ENABLED=true
+      # - FEATURE_ADVANCED_POSE_QUALITY_ENABLED=true
+      # - FEATURE_JOINT_ANGLE_CALCULATION_ENABLED=true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/healthz"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+    networks:
+      - nuro-padel-network
+
   # === Nginx Load Balancer & Reverse Proxy ===
   nginx:
     image: nginx:alpine
@@ -158,6 +249,8 @@ services:
       - yolo-combined
       - mmpose
       - yolo-nas
+      - rf-detr
+      - vitpose
     networks:
       - nuro-padel-network
 

@@ -1,0 +1,31 @@
+# ViTPose++ Stage 2 Requirements - Additional dependencies
+# Installed after MMPose via mim
+
+# FastAPI and server
+fastapi==0.111.0
+uvicorn[standard]==0.23.2
+
+# Computer vision and coco tools
+opencv-python-headless==4.10.0.84
+xtcocotools>=1.14
+
+# HTTP client for video downloads
+httpx>=0.25.0
+
+# Google Cloud Storage
+google-cloud-storage>=2.10.0
+
+# Image processing
+Pillow>=9.0.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Async support
+aiofiles>=23.0.0
+
+# Logging and monitoring
+structlog>=23.0.0
+
+# Performance profiling
+psutil>=5.9.0

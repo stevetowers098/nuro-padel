@@ -1,0 +1,85 @@
+{
+  "service": {
+    "name": "vitpose",
+    "version": "1.0.0",
+    "description": "Efficient ViTPose++ pose estimation service with enhanced biomechanical insights",
+    "port": 8006
+  },
+  "models": {
+    "vitpose_base": {
+      "enabled": true,
+      "version": "1.3.0",
+      "description": "Efficient ViTPose-Base model for optimal performance and accuracy balance",
+      "config": "td-hm_ViTPose-base_8xb64-210e_coco-256x192",
+      "checkpoint": "/app/weights/vitpose/vitpose_base_coco_256x192.pth",
+      "model_variant": "ViTPose-Base",
+      "keypoints_type": "full_body",
+      "input_resolution": 256,
+      "precision": "fp16",
+      "max_vram_mb": 3072,
+      "fallback": "hrnet_w48"
+    },
+    "hrnet_w48": {
+      "enabled": true,
+      "version": "1.3.0",
+      "description": "HRNet-W48 fallback model",
+      "config": "td-hm_hrnet-w48_8xb32-210e_coco-256x192",
+      "model_variant": "HRNet-W48",
+      "keypoints_type": "standard",
+      "input_resolution": 256,
+      "precision": "fp16",
+      "max_vram_mb": 2560,
+      "fallback": false
+    }
+  },
+  "features": {
+    "enhanced_keypoint_estimation": {
+      "enabled": true,
+      "description": "Enhanced precision in detecting player poses with efficient ViTPose-Base"
+    },
+    "biomechanical_insights": {
+      "enabled": true,
+      "description": "Advanced performance metrics through biomechanical analytics"
+    },
+    "fp16_optimization": {
+      "enabled": true,
+      "description": "Enable FP16 precision for VRAM efficiency"
+    },
+    "gpu_memory_monitoring": {
+      "enabled": true,
+      "description": "Monitor and report GPU memory usage"
+    },
+    "advanced_pose_quality": {
+      "enabled": true,
+      "description": "Calculate advanced pose quality metrics"
+    },
+    "joint_angle_calculation": {
+      "enabled": true,
+      "description": "Calculate joint angles for biomechanical analysis"
+    },
+    "balance_assessment": {
+      "enabled": true,
+      "description": "Assess player balance and stability"
+    }
+  },
+  "pose": {
+    "default_confidence": 0.3,
+    "keypoint_threshold": 0.5,
+    "num_keypoints": 17,
+    "skeleton_connections": true,
+    "enhanced_precision": true,
+    "efficiency_optimized": true
+  },
+  "biomechanics": {
+    "joint_angle_analysis": true,
+    "balance_assessment": true,
+    "movement_efficiency": true,
+    "power_generation": true,
+    "stability_metrics": true
+  },
+  "performance": {
+    "max_concurrent_requests": 3,
+    "memory_cleanup_interval": 5,
+    "gpu_memory_threshold_mb": 3072
+  }
+}

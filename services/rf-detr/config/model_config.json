@@ -1,0 +1,44 @@
+{
+  "service": {
+    "name": "rf-detr",
+    "version": "1.0.0",
+    "description": "RF-DETR object detection service",
+    "port": 8005
+  },
+  "models": {
+    "rf_detr_base": {
+      "enabled": true,
+      "version": "0.1.0",
+      "description": "RF-DETR Base model for stable object detection",
+      "precision": "fp16",
+      "max_vram_mb": 4096,
+      "fallback": false
+    }
+  },
+  "features": {
+    "fp16_optimization": {
+      "enabled": true,
+      "description": "Enable FP16 precision for VRAM efficiency"
+    },
+    "gpu_memory_monitoring": {
+      "enabled": true,
+      "description": "Monitor and report GPU memory usage"
+    },
+    "auto_resolution_adjustment": {
+      "enabled": true,
+      "description": "Automatically adjust resolution to be divisible by 56"
+    }
+  },
+  "detection": {
+    "default_confidence": 0.3,
+    "default_resolution": 672,
+    "min_resolution": 224,
+    "max_resolution": 1344,
+    "resolution_step": 56
+  },
+  "performance": {
+    "max_concurrent_requests": 2,
+    "memory_cleanup_interval": 5,
+    "gpu_memory_threshold_mb": 3500
+  }
+}

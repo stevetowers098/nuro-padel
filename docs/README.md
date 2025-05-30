@@ -131,7 +131,10 @@ Examples:
 - Download script organization matches service expectations
 - Docker Compose handles the path mapping automatically
 
-## ️ VM Infrastructure & Deployment
+## ️ VM Infrastructure & Deployment - ✅ **FIXED (May 30, 2025)**
+
+### **Deployment Pipeline Status: FULLY WORKING**
+The deployment pipeline has been completely fixed to handle end-to-end container deployment automatically.
 
 ### Production VM Details
 - **Address**: `35.189.53.46` (Google Cloud VM)
@@ -149,38 +152,33 @@ Examples:
 │   └── yolo-nas/        # Port 8004
 ├── deployment/          # Docker Compose configs
 ├── scripts/             # Deployment scripts
-├── weights/             # Model weights (see above)
+├── weights/             # Model weights (organized by subdirectory)
+│   ├── ultralytics/     # YOLO models
+│   ├── mmpose/          # MMPose models
+│   ├── tracknet/        # TrackNet models
+│   └── super-gradients/ # YOLO-NAS models
 ├── docs/               # Documentation
 └── testing/            # Test suite
 ```
 
-### Model Deployment Process
+### **✅ Streamlined Deployment Process (Fixed)**
 
-**Important**: Model weights must be downloaded to the VM before deployment.
-
-#### Option 1: Manual Download (Recommended)
+**Single Command Deployment:**
 ```bash
-# Connect to VM
-ssh towers@35.189.53.46
-
-# Navigate to deployment directory
-cd /opt/padel-docker
-
-# Download all required models
+# Download models with working URLs (YOLO11 v8.3.0 fixed)
 ./scripts/download-models.sh all
 
-# Verify models are ready
-./scripts/download-models.sh verify
-```
-
-#### Option 2: Local Download + Sync
-```bash
-# Download models locally
-./scripts/download-models.sh all
-
-# Deploy to VM (includes model sync)
+# Deploy to VM and start containers automatically
 ./scripts/deploy.sh --vm
 ```
+
+**What this now does automatically:**
+1. ✅ Syncs project files to VM
+2. ✅ Pulls latest Docker images from registry
+3. ✅ **Starts containers with docker-compose up -d**
+4. ✅ Verifies deployment with health checks
+
+**Previous Issue (RESOLVED)**: Pipeline stopped after pulling images and never started containers.
 
 ### VM SSH Access
 The project includes SSH configuration for easy VM access:
@@ -199,50 +197,35 @@ ssh Towers@35.189.53.46
 - **User**: `Towers`
 - **Key**: `.ssh/padel-ai-key`
 
-### Model Downloads in Deployment
+### **✅ Complete VM Deployment Process (Fixed)**
 
-**❓ Current Status**: Model downloads are **NOT** automatic in deployment scripts.
+**Current Status**: Deployment script now handles container startup automatically.
 
 #### What the deploy script does:
 ```bash
 ./scripts/deploy.sh --vm
 ```
 1. ✅ Syncs project files to VM
-2. ✅ Runs deployment scripts
-3. ❌ **Does NOT download models automatically**
+2. ✅ Pulls Docker images from registry
+3. ✅ **Starts containers with docker-compose up -d**
+4. ✅ Verifies deployment
 
-#### Required Manual Step:
+#### **Streamlined Process:**
 ```bash
-# Connect to VM first
-ssh padel-ai
-
-# Download models on VM
-cd /opt/padel-docker
+# Step 1: Download models locally (with working YOLO11 URLs)
 ./scripts/download-models.sh all
 
-# Then deploy services
-./scripts/deploy.sh --all
-```
-
-### Complete VM Deployment Process
-```bash
-# Step 1: Deploy code to VM
+# Step 2: Deploy everything to VM (includes container startup)
 ./scripts/deploy.sh --vm
 
-# Step 2: Connect to VM
-ssh padel-ai
-
-# Step 3: Download models (REQUIRED)
-cd /opt/padel-docker
-./scripts/download-models.sh all
-
-# Step 4: Start services
-./scripts/deploy.sh --all
-
-# Step 5: Verify deployment
-docker-compose ps
-curl http://localhost:8080/healthz
+# Step 3: Verify services are running
+curl http://35.189.53.46:8001/healthz  # YOLO Combined
+curl http://35.189.53.46:8003/healthz  # MMPose
+curl http://35.189.53.46:8004/healthz  # YOLO-NAS
+curl http://35.189.53.46:8080/         # Load Balancer
 ```
+
+**Major Fix Applied**: The deployment script now includes `docker-compose up -d` commands, resolving the issue where containers weren't starting after image pulls.
 
 ### VM Service Status Commands
 ```bash

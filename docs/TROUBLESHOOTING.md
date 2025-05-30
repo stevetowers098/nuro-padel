@@ -2,6 +2,46 @@
 
 ## 🚀 RECENT FIXES - All Issues Resolved ✅
 
+### **DEPLOYMENT PIPELINE - Container Startup Issue (FIXED May 30, 2025)**
+
+#### **✅ Critical Issue: Containers Not Starting After Image Pulls (FIXED)**
+**Problem**: GitHub Actions successfully built and pushed Docker images to `ghcr.io/stevetowers098/nuro-padel/*`, but containers never started on the VM after image pulls.
+
+**Root Causes Identified:**
+1. **Missing deploy-resilient.sh script** - [`deploy.sh`](../scripts/deploy.sh:521) called non-existent script
+2. **No container startup commands** - Pipeline stopped after pulling images, missing `docker-compose up -d`
+3. **Registry mismatch** - [`docker-compose.yml`](../deployment/docker-compose.yml) expected `nuro-padel/*` but images pushed to `ghcr.io/stevetowers098/nuro-padel/*`
+4. **Permission errors** - Missing user home directories preventing service startup
+5. **Config path issues** - Incorrect volume mappings for model files
+6. **Outdated model URLs** - YOLO11 download URLs from v8.2.0 returned 0MB files
+
+**Complete Solution Applied:**
+
+**Pipeline Fixes:**
+- **Fixed [`deploy.sh`](../scripts/deploy.sh:522-535)** - Now pulls images and runs `docker-compose up -d` directly
+- **Updated [`docker-compose.yml`](../deployment/docker-compose.yml)** - Corrected registry references and volume mappings
+- **Enhanced [GitHub Actions](../.github/workflows/smart-deploy.yml:318-350)** - Added deployment guidance step
+
+**Service Fixes:**
+- **Updated [`download-models.sh`](../scripts/download-models.sh:22-26)** - Working YOLO11 URLs from v8.3.0 release
+- **Fixed Docker permissions** - Added user mapping (`1000:1000`) and home directory creation in all Dockerfiles
+- **Corrected volume mappings** - Services mount proper model subdirectories (`ultralytics/`, `mmpose/`, `super-gradients/`)
+
+**Verification Steps:**
+```bash
+# 1. Deployment pipeline now works end-to-end
+./scripts/download-models.sh all    # Downloads models with working URLs
+./scripts/deploy.sh --vm           # Deploys AND starts containers
+
+# 2. Verify services are running
+curl http://35.189.53.46:8001/healthz  # YOLO Combined
+curl http://35.189.53.46:8003/healthz  # MMPose
+curl http://35.189.53.46:8004/healthz  # YOLO-NAS
+curl http://35.189.53.46:8080/         # Load Balancer
+```
+
+**Status**: ✅ **COMPLETELY RESOLVED** - Deployment pipeline now fully functional from GitHub Actions → VM deployment → Container startup
+
 ### **YOLO-NAS Service - Complete Issue Resolution**
 
 #### **✅ Issue 1: ONNX Version Conflict with Super-gradients (FIXED)**

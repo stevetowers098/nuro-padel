@@ -16,11 +16,12 @@ NC='\033[0m' # No Color
 WEIGHTS_DIR="./weights"
 TEMP_DIR="/tmp/nuro-padel-models"
 
-# Model URLs and filenames - Updated based on actual service requirements
+# Model URLs and filenames - Updated with working YOLO11 URLs
 declare -A YOLO_MODELS=(
-    # NOTE: YOLO 11 models URLs are invalid in v8.2.0 release - returning 0MB files
-    # ["yolo11n-pose.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolo11n-pose.pt"  # URL invalid - returns 0MB
-    # ["yolo11n.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolo11n.pt"  # URL invalid - returns 0MB
+    # YOLO 11 models - Now working with v8.3.0 release
+    ["yolo11n.pt"]="https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt"
+    ["yolo11n-pose.pt"]="https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n-pose.pt"
+    # Keep YOLO v8 as fallback
     ["yolov8n.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
     ["yolov8n-pose.pt"]="https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n-pose.pt"
 )

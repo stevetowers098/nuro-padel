@@ -58,7 +58,15 @@ RUN chmod +x /app/main.py
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /app
+
+# Create required directories with proper permissions
+RUN mkdir -p /home/appuser && \
+    chown -R appuser:appuser /home/appuser && \
+    chown -R appuser:appuser /app && \
+    chmod 755 /home/appuser
+
+USER root
+ENV HOME=/tmp
 USER appuser
 
 # Verify super-gradients installation (with fallback)

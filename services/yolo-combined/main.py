@@ -109,7 +109,7 @@ async def upload_to_gcs(video_path: str, folder: str, object_name: Optional[str]
 
 def load_model(model_name: str, description: str) -> Optional[YOLO]:
     """Load YOLO model with error handling"""
-    model_path = os.path.join(WEIGHTS_DIR, model_name)
+    model_path = os.path.join(WEIGHTS_DIR, "ultralytics", model_name)
     try:
         logger.info(f"Loading {description} from: {model_path}")
         if not os.path.exists(model_path):

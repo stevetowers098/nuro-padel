@@ -54,7 +54,12 @@ RUN chmod +x /app/main.py
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /app
+
+# Create required directories with proper permissions
+RUN mkdir -p /home/appuser && \
+    chown -R appuser:appuser /home/appuser && \
+    chown -R appuser:appuser /app
+
 USER appuser
 
 # Health check

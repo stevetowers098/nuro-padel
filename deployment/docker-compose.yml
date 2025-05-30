@@ -9,9 +9,10 @@ services:
     build:
       context: ../services/yolo-combined
       dockerfile: Dockerfile
-    image: nuro-padel/yolo-combined:latest
+    image: ghcr.io/stevetowers098/nuro-padel/yolo-combined:latest
     container_name: nuro-padel-yolo-combined
     restart: unless-stopped
+    user: "1000:1000"
     ports:
       - "8001:8001"
     volumes:
@@ -50,9 +51,10 @@ services:
     build:
       context: ../services/mmpose
       dockerfile: Dockerfile
-    image: nuro-padel/mmpose:latest
+    image: ghcr.io/stevetowers098/nuro-padel/mmpose:latest
     container_name: nuro-padel-mmpose
     restart: unless-stopped
+    user: "1000:1000"
     ports:
       - "8003:8003"
     volumes:
@@ -92,9 +94,10 @@ services:
     build:
       context: ../services/yolo-nas
       dockerfile: Dockerfile
-    image: nuro-padel/yolo-nas:latest
+    image: ghcr.io/stevetowers098/nuro-padel/yolo-nas:latest
     container_name: nuro-padel-yolo-nas
     restart: unless-stopped
+    user: "1000:1000"
     ports:
       - "8004:8004"
     volumes:

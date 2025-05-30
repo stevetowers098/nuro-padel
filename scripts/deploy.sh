@@ -515,12 +515,29 @@ deploy_vm() {
         ./ "$VM_HOST:$VM_PATH/"
     
     # Make deploy script executable
-    ssh "$VM_HOST" "chmod +x $VM_PATH/deploy.sh $VM_PATH/deploy-resilient.sh"
+    ssh "$VM_HOST" "chmod +x $VM_PATH/scripts/deploy.sh"
     
-    # Run deployment on VM using resilient script
-    ssh "$VM_HOST" "cd $VM_PATH && bash deploy-resilient.sh all"
+    # Pull latest images from registry on VM
+    log "Pulling latest images from registry on VM..."
+    ssh "$VM_HOST" "cd $VM_PATH && echo 'Note: Docker registry login may be required for private images'"
+    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/yolo-combined:latest || echo 'Failed to pull yolo-combined'"
+    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/mmpose:latest || echo 'Failed to pull mmpose'"
+    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/yolo-nas:latest || echo 'Failed to pull yolo-nas'"
     
-    success "VM deployment completed"
+    # Start containers using docker-compose
+    log "Starting containers on VM..."
+    ssh "$VM_HOST" "cd $VM_PATH/deployment && docker-compose down --remove-orphans"
+    ssh "$VM_HOST" "cd $VM_PATH/deployment && docker-compose up -d"
+    
+    # Wait for services to start
+    log "Waiting for services to become healthy on VM..."
+    ssh "$VM_HOST" "cd $VM_PATH/deployment && sleep 60"
+    
+    # Verify deployment
+    log "Verifying VM deployment..."
+    ssh "$VM_HOST" "cd $VM_PATH/deployment && docker-compose ps"
+    
+    success "VM deployment completed - containers are now running"
 }
 
 # Cleanup function

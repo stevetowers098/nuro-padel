@@ -39,7 +39,43 @@ docker-compose restart yolo-combined
 ## 🌍 Environments
 - **Development**: `localhost:8080` (docker-compose.dev.yml)
 - **Production**: `35.189.53.46:8080` (docker-compose.yml)
-- **CI/CD**: GitHub Actions → Auto-deploy on push to `docker-containers`
+- **CI/CD**: GitHub Actions → Build images → Manual VM deploy
+
+## 🚀 **DEPLOYMENT PIPELINE - FIXED (May 30, 2025)**
+
+### **Issue Resolved: Containers Not Starting After Image Pulls**
+**Root Cause**: GitHub Actions built and pushed images successfully, but containers weren't starting because:
+- Missing `docker-compose up -d` commands in deployment pipeline
+- deploy.sh called non-existent `deploy-resilient.sh` script
+- Registry mismatch between build (`ghcr.io/stevetowers098/nuro-padel/*`) and compose files
+- Permission errors preventing service startup
+
+### **✅ Complete Fix Applied:**
+
+**Pipeline Fixes:**
+- **Fixed [`deploy.sh`](../scripts/deploy.sh)** - Now includes container startup commands
+- **Updated [`docker-compose.yml`](../deployment/docker-compose.yml)** - Corrected registry references and volume mappings
+- **Enhanced GitHub Actions** - Added deployment guidance step
+
+**Service Fixes:**
+- **Updated [`download-models.sh`](../scripts/download-models.sh)** - Working YOLO11 URLs from v8.3.0 release
+- **Fixed Docker permissions** - Added user mapping (1000:1000) and home directory creation
+- **Corrected volume mappings** - Services mount proper model subdirectories
+
+### **Current Deployment Process:**
+```bash
+# 1. Download models (with working YOLO11 URLs)
+./scripts/download-models.sh all
+
+# 2. Deploy to VM (now includes container startup)
+./scripts/deploy.sh --vm
+
+# 3. Verify services are running
+curl http://35.189.53.46:8001/healthz  # YOLO Combined
+curl http://35.189.53.46:8003/healthz  # MMPose
+curl http://35.189.53.46:8004/healthz  # YOLO-NAS
+curl http://35.189.53.46:8080/         # Load Balancer
+```
 
 ## 📦 Service Details
 
@@ -309,14 +345,16 @@ weights/super-gradients/
 
 #### YOLO Combined Service (Total: ~24MB + TrackNet)
 ```bash
-# ✅ NEW: Complete YOLO11 + YOLOv8 + TrackNet model set
-weights/
-├── yolo11n-pose.pt                    # ~6MB - YOLO11 pose detection
-├── yolo11n.pt                         # ~6MB - ✅ NEW: YOLO11 object detection
+# ✅ UPDATED: Complete YOLO11 + YOLOv8 + TrackNet model set (Fixed URLs May 30, 2025)
+weights/ultralytics/
+├── yolo11n-pose.pt                    # ~6MB - YOLO11 pose detection (v8.3.0)
+├── yolo11n.pt                         # ~6MB - ✅ FIXED: YOLO11 object detection (v8.3.0)
 ├── yolov8n.pt                         # ~6MB - YOLOv8 object detection
 ├── yolov8n-pose.pt                    # ~6MB - YOLOv8 pose detection
-└── tracknet_v2.pth                    # ~3MB - ✅ TrackNet ball tracking (optional)
+└── tracknet_v2.pth                    # ~3MB - TrackNet ball tracking (optional)
 ```
+
+**Model URLs Fixed**: Updated download script with working YOLO11 URLs from `v8.3.0` release (previous `v8.2.0` URLs returned 0MB files).
 
 #### MMPose Service (Total: ~9MB)
 ```bash

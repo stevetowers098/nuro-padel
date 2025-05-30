@@ -115,7 +115,7 @@ if MMPOSE_AVAILABLE:
         logger.info(f"Initializing MMPose model on device: {model_device}")
 
         # Try Method 1: Use local standalone config with local checkpoint
-        local_checkpoint = '/app/weights/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
+        local_checkpoint = '/app/weights/mmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
         local_config = '/app/configs/rtmpose_complete.py'
         
         # Debug: List available weight files

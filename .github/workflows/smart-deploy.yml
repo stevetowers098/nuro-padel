@@ -314,3 +314,37 @@ jobs:
           else
             echo "  🔄 Standard build completed!"
           fi
+
+  deploy-to-vm:
+    name: 🚀 Deploy to VM
+    needs: [detect-changes, build-summary]
+    if: always() && (needs.build-yolo-combined.result == 'success' || needs.build-mmpose.result == 'success' || needs.build-yolo-nas.result == 'success' || needs.build-yolo-combined.result == 'skipped' || needs.build-mmpose.result == 'skipped' || needs.build-yolo-nas.result == 'skipped')
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Deployment Instructions
+        run: |
+          echo "🚀 Images built and pushed successfully!"
+          echo "📋 To deploy to your VM, run the following commands:"
+          echo ""
+          echo "# Deploy to VM and start containers:"
+          echo "./scripts/deploy.sh --vm"
+          echo ""
+          echo "# Or deploy locally:"
+          echo "./scripts/deploy.sh --fast"
+          echo ""
+          echo "🔗 Your services will be available at:"
+          echo "  - YOLO Combined: http://35.189.53.46:8001/healthz"
+          echo "  - MMPose:        http://35.189.53.46:8003/healthz"
+          echo "  - YOLO-NAS:      http://35.189.53.46:8004/healthz"
+          echo "  - Load Balancer: http://35.189.53.46:8080/"
+          
+      # Uncomment the section below to enable automatic VM deployment
+      # - name: Deploy to VM (Automatic)
+      #   run: |
+      #     echo "🚀 Deploying to VM automatically..."
+      #     # Add your VM SSH key to GitHub secrets as VM_SSH_KEY
+      #     # mkdir -p ~/.ssh
+      #     # echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
+      #     # chmod 600 ~/.ssh/id_rsa
+      #     # ssh-keyscan -H 35.189.53.46 >> ~/.ssh/known_hosts
+      #     # ./scripts/deploy.sh --vm

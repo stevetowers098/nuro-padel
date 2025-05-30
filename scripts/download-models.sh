@@ -241,10 +241,10 @@ download_yolo_models() {
     
     for model in "${!YOLO_MODELS[@]}"; do
         # Determine expected size based on model type
-        local expected_size=6  # Default for nano models
+        local expected_size=5  # Default for nano models (5.9MB actual)
         case "$model" in
             "yolo11n-pose.pt") expected_size=5 ;;  # Actually downloads as 5MB
-            *"yolo11n"*) expected_size=6 ;;
+            *"yolo11n"*) expected_size=5 ;;  # YOLO11n is 5.9MB, accept 5MB+
             *"yolov8n"*) expected_size=6 ;;
             *) expected_size=10 ;;  # For larger models if any
         esac

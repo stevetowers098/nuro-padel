@@ -21,8 +21,11 @@ services:
       - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
+      - PYTHONUNBUFFERED=1
       - YOLO_OFFLINE=1
       - ULTRALYTICS_OFFLINE=1
+      - HOME=/tmp
+      - TMPDIR=/tmp
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
@@ -40,9 +43,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
       interval: 30s
-      timeout: 10s
+      timeout: 30s
       retries: 3
-      start_period: 60s
+      start_period: 120s
     networks:
       - nuro-padel-network
 
@@ -64,6 +67,10 @@ services:
       - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
+      - PYTHONUNBUFFERED=1
+      - HOME=/tmp
+      - TMPDIR=/tmp
+      - MPLCONFIGDIR=/tmp/matplotlib
       - YOLO_OFFLINE=1
       - ULTRALYTICS_OFFLINE=1
       - ONLINE=False
@@ -83,7 +90,7 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/healthz"]
       interval: 30s
-      timeout: 10s
+      timeout: 30s
       retries: 3
       start_period: 120s
     networks:
@@ -106,6 +113,10 @@ services:
       - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
+      - HOME=/tmp
+      - TMPDIR=/tmp
+      - SG_LOG_LEVEL=ERROR
+      - SUPER_GRADIENTS_LOG_DIR=/tmp/sg_logs
       - YOLO_OFFLINE=1
       - ULTRALYTICS_OFFLINE=1
       - ONLINE=False
@@ -126,9 +137,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/healthz"]
       interval: 30s
-      timeout: 10s
+      timeout: 30s
       retries: 3
-      start_period: 180s
+      start_period: 120s
     networks:
       - nuro-padel-network
 

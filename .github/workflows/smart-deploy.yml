@@ -16,6 +16,8 @@ jobs:
       yolo-combined: ${{ steps.changes.outputs.yolo-combined }}
       mmpose: ${{ steps.changes.outputs.mmpose }}
       yolo-nas: ${{ steps.changes.outputs.yolo-nas }}
+      rf-detr: ${{ steps.changes.outputs.rf-detr }}
+      vitpose: ${{ steps.changes.outputs.vitpose }}
       nginx: ${{ steps.changes.outputs.nginx }}
       docker-compose: ${{ steps.changes.outputs.docker-compose }}
       docs-only: ${{ steps.changes.outputs.docs-only }}
@@ -35,6 +37,10 @@ jobs:
               - 'services/mmpose/**'
             yolo-nas:
               - 'services/yolo-nas/**'
+            rf-detr:
+              - 'services/rf-detr/**'
+            vitpose:
+              - 'services/vitpose/**'
             nginx:
               - 'deployment/nginx*.conf'
             docker-compose:
@@ -256,9 +262,133 @@ jobs:
           echo "🚨 YOLO-NAS build failed after 3 attempts"
           exit 1
 
+  build-rf-detr:
+    name: 🎯 Build RF-DETR Service
+    needs: detect-changes
+    if: needs.detect-changes.outputs.rf-detr == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}/rf-detr
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push RF-DETR image
+        run: |
+          TAGS="${{ steps.meta.outputs.tags }}"
+          LABELS="${{ steps.meta.outputs.labels }}"
+          
+          for attempt in 1 2 3; do
+            echo "🔨 Building RF-DETR (attempt $attempt/3)..."
+            
+            if docker buildx build \
+              --push \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              $(echo "$TAGS" | sed 's/^/--tag /' | tr '\n' ' ') \
+              $(echo "$LABELS" | sed 's/^/--label /' | tr '\n' ' ') \
+              ./services/rf-detr; then
+              echo "✅ RF-DETR build successful"
+              exit 0
+            fi
+            
+            echo "❌ Build attempt $attempt failed"
+            if [ $attempt -lt 3 ]; then
+              echo "⏳ Retrying in 30 seconds..."
+              sleep 30
+            fi
+          done
+          
+          echo "🚨 RF-DETR build failed after 3 attempts"
+          exit 1
+
+  build-vitpose:
+    name: 💪 Build ViTPose Service
+    needs: detect-changes
+    if: needs.detect-changes.outputs.vitpose == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}/vitpose
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push ViTPose image
+        run: |
+          TAGS="${{ steps.meta.outputs.tags }}"
+          LABELS="${{ steps.meta.outputs.labels }}"
+          
+          for attempt in 1 2 3; do
+            echo "🔨 Building ViTPose (attempt $attempt/3)..."
+            
+            if docker buildx build \
+              --push \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              $(echo "$TAGS" | sed 's/^/--tag /' | tr '\n' ' ') \
+              $(echo "$LABELS" | sed 's/^/--label /' | tr '\n' ' ') \
+              ./services/vitpose; then
+              echo "✅ ViTPose build successful"
+              exit 0
+            fi
+            
+            echo "❌ Build attempt $attempt failed"
+            if [ $attempt -lt 3 ]; then
+              echo "⏳ Retrying in 30 seconds..."
+              sleep 30
+            fi
+          done
+          
+          echo "🚨 ViTPose build failed after 3 attempts"
+          exit 1
+
   build-summary:
     name: 📊 Build Summary
-    needs: [detect-changes, build-yolo-combined, build-mmpose, build-yolo-nas]
+    needs: [detect-changes, build-yolo-combined, build-mmpose, build-yolo-nas, build-rf-detr, build-vitpose]
     if: always()
     runs-on: ubuntu-22.04
     steps:
@@ -269,14 +399,18 @@ jobs:
           YOLO_COMBINED_RESULT="${{ needs.build-yolo-combined.result }}"
           MMPOSE_RESULT="${{ needs.build-mmpose.result }}"
           YOLO_NAS_RESULT="${{ needs.build-yolo-nas.result }}"
+          RF_DETR_RESULT="${{ needs.build-rf-detr.result }}"
+          VITPOSE_RESULT="${{ needs.build-vitpose.result }}"
           
           echo "Build Results:"
           echo "  🚀 YOLO Combined: $YOLO_COMBINED_RESULT"
           echo "  🤸 MMPose: $MMPOSE_RESULT"
           echo "  🎯 YOLO-NAS: $YOLO_NAS_RESULT"
+          echo "  🎯 RF-DETR: $RF_DETR_RESULT"
+          echo "  💪 ViTPose: $VITPOSE_RESULT"
           
           # Fail workflow if any build failed
-          if [[ "$YOLO_COMBINED_RESULT" == "failure" ]] || [[ "$MMPOSE_RESULT" == "failure" ]] || [[ "$YOLO_NAS_RESULT" == "failure" ]]; then
+          if [[ "$YOLO_COMBINED_RESULT" == "failure" ]] || [[ "$MMPOSE_RESULT" == "failure" ]] || [[ "$YOLO_NAS_RESULT" == "failure" ]] || [[ "$RF_DETR_RESULT" == "failure" ]] || [[ "$VITPOSE_RESULT" == "failure" ]]; then
             echo ""
             echo "🚨 BUILD FAILED!"
             echo "❌ One or more container builds failed"
@@ -291,14 +425,16 @@ jobs:
           echo "=============================================="
           
           # Calculate build efficiency
-          total_services=3
-          changed_services=$(( ${{ needs.detect-changes.outputs.yolo-combined == 'true' && 1 || 0 }} + ${{ needs.detect-changes.outputs.mmpose == 'true' && 1 || 0 }} + ${{ needs.detect-changes.outputs.yolo-nas == 'true' && 1 || 0 }} ))
+          total_services=5
+          changed_services=$(( ${{ needs.detect-changes.outputs.yolo-combined == 'true' && 1 || 0 }} + ${{ needs.detect-changes.outputs.mmpose == 'true' && 1 || 0 }} + ${{ needs.detect-changes.outputs.yolo-nas == 'true' && 1 || 0 }} + ${{ needs.detect-changes.outputs.rf-detr == 'true' && 1 || 0 }} + ${{ needs.detect-changes.outputs.vitpose == 'true' && 1 || 0 }} ))
           skipped_services=$((total_services - changed_services))
           
           echo "📦 Container Images Built:"
           echo "  🚀 YOLO Combined: ${{ needs.detect-changes.outputs.yolo-combined == 'true' && '✅ Built' || '⏭️ Skipped' }}"
           echo "  🤸 MMPose: ${{ needs.detect-changes.outputs.mmpose == 'true' && '✅ Built' || '⏭️ Skipped' }}"
           echo "  🎯 YOLO-NAS: ${{ needs.detect-changes.outputs.yolo-nas == 'true' && '✅ Built' || '⏭️ Skipped' }}"
+          echo "  🎯 RF-DETR: ${{ needs.detect-changes.outputs.rf-detr == 'true' && '✅ Built' || '⏭️ Skipped' }}"
+          echo "  💪 ViTPose: ${{ needs.detect-changes.outputs.vitpose == 'true' && '✅ Built' || '⏭️ Skipped' }}"
           
           echo ""
           echo "📈 Build Efficiency:"
@@ -318,33 +454,201 @@ jobs:
   deploy-to-vm:
     name: 🚀 Deploy to VM
     needs: [detect-changes, build-summary]
-    if: always() && (needs.build-yolo-combined.result == 'success' || needs.build-mmpose.result == 'success' || needs.build-yolo-nas.result == 'success' || needs.build-yolo-combined.result == 'skipped' || needs.build-mmpose.result == 'skipped' || needs.build-yolo-nas.result == 'skipped')
+    if: always() && (needs.build-yolo-combined.result == 'success' || needs.build-mmpose.result == 'success' || needs.build-yolo-nas.result == 'success' || needs.build-rf-detr.result == 'success' || needs.build-vitpose.result == 'success' || needs.build-yolo-combined.result == 'skipped' || needs.build-mmpose.result == 'skipped' || needs.build-yolo-nas.result == 'skipped' || needs.build-rf-detr.result == 'skipped' || needs.build-vitpose.result == 'skipped')
     runs-on: ubuntu-22.04
     steps:
-      - name: Deployment Instructions
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: 🚀 Deploy to VM and Verify Health
         run: |
-          echo "🚀 Images built and pushed successfully!"
-          echo "📋 To deploy to your VM, run the following commands:"
-          echo ""
-          echo "# Deploy to VM and start containers:"
-          echo "./scripts/deploy.sh --vm"
-          echo ""
-          echo "# Or deploy locally:"
-          echo "./scripts/deploy.sh --fast"
-          echo ""
-          echo "🔗 Your services will be available at:"
-          echo "  - YOLO Combined: http://35.189.53.46:8001/healthz"
-          echo "  - MMPose:        http://35.189.53.46:8003/healthz"
-          echo "  - YOLO-NAS:      http://35.189.53.46:8004/healthz"
-          echo "  - Load Balancer: http://35.189.53.46:8080/"
+          echo "🚀 Deploying all 5 AI services to VM..."
+          echo "⏰ Deployment started at: $(date)"
           
-      # Uncomment the section below to enable automatic VM deployment
-      # - name: Deploy to VM (Automatic)
-      #   run: |
-      #     echo "🚀 Deploying to VM automatically..."
-      #     # Add your VM SSH key to GitHub secrets as VM_SSH_KEY
-      #     # mkdir -p ~/.ssh
-      #     # echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
-      #     # chmod 600 ~/.ssh/id_rsa
-      #     # ssh-keyscan -H 35.189.53.46 >> ~/.ssh/known_hosts
-      #     # ./scripts/deploy.sh --vm
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_IP }} >> ~/.ssh/known_hosts
+          
+          # Deploy using smart deployment
+          echo "📦 Starting smart deployment to VM..."
+          ./scripts/deploy.sh --vm
+          
+          echo "✅ Deployment completed - VM deployment successful!"
+
+  health-check:
+    name: 🏥 Health Check & Validation
+    needs: [deploy-to-vm]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: ⏳ Wait for services to stabilize
+        run: |
+          echo "⏳ Waiting 180 seconds for all 5 AI services to fully start and load models..."
+          echo "🔄 This includes GPU initialization and model loading time"
+          echo "📊 Services starting: YOLO Combined, MMPose, YOLO-NAS, RF-DETR, ViTPose"
+          
+          # Incremental wait with progress updates
+          for i in {1..6}; do
+            echo "⏱️  Wait progress: ${i}/6 (30 seconds each)"
+            sleep 30
+          done
+          
+          echo "✅ 180-second wait period completed - proceeding with health checks"
+
+      - name: 🏥 Comprehensive Health Check
+        run: |
+          echo "🏥 Starting comprehensive health checks..."
+          echo "⏰ Health check started at: $(date)"
+          
+          # Setup SSH for health checks
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_IP }} >> ~/.ssh/known_hosts
+          
+          # Run comprehensive health checks on VM
+          ssh -o StrictHostKeyChecking=no towers@${{ secrets.VM_IP }} << 'EOF'
+            cd /opt/padel-docker
+            
+            echo "🐳 Docker Container Status:"
+            echo "================================"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            echo ""
+            
+            echo "📋 Docker Compose Service Status:"
+            echo "======================================"
+            cd deployment
+            docker-compose ps
+            echo ""
+            
+            # Health check function with retries
+            check_service_health() {
+              local service_name=$1
+              local port=$2
+              local endpoint="http://localhost:${port}/healthz"
+              local max_attempts=3
+              local attempt=1
+              
+              echo "🔍 Testing ${service_name} on port ${port}..."
+              
+              while [ $attempt -le $max_attempts ]; do
+                echo "   Attempt ${attempt}/${max_attempts}..."
+                
+                if timeout 45 curl -f -s "$endpoint" > /dev/null 2>&1; then
+                  echo "✅ ${service_name} health check PASSED"
+                  local response=$(curl -s "$endpoint" 2>/dev/null || echo "No response")
+                  echo "📊 ${service_name} response: $response"
+                  return 0
+                else
+                  echo "⚠️  ${service_name} attempt ${attempt}/${max_attempts} failed"
+                  
+                  if [ $attempt -lt $max_attempts ]; then
+                    echo "⏳ Waiting 30 seconds before retry..."
+                    sleep 30
+                  fi
+                  
+                  ((attempt++))
+                fi
+              done
+              
+              echo "❌ ${service_name} health check FAILED after ${max_attempts} attempts"
+              docker-compose logs --tail 15 "$service_name" || echo "Could not retrieve logs"
+              return 1
+            }
+            
+            # Test all 5 services
+            echo "🧪 Testing all 5 AI services..."
+            echo "================================="
+            
+            health_check_failed=false
+            
+            if ! check_service_health "yolo-combined" 8001; then
+              health_check_failed=true
+            fi
+            echo ""
+            
+            if ! check_service_health "mmpose" 8003; then
+              health_check_failed=true
+            fi
+            echo ""
+            
+            if ! check_service_health "yolo-nas" 8004; then
+              health_check_failed=true
+            fi
+            echo ""
+            
+            if ! check_service_health "rf-detr" 8005; then
+              health_check_failed=true
+            fi
+            echo ""
+            
+            if ! check_service_health "vitpose" 8006; then
+              health_check_failed=true
+            fi
+            echo ""
+            
+            # GPU Access Verification
+            echo "⚡ Verifying GPU access and memory..."
+            echo "==================================="
+            if command -v nvidia-smi >/dev/null 2>&1; then
+              echo "🖥️  GPU Status:"
+              nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader,nounits
+              echo ""
+              
+              echo "🐳 Testing GPU access in containers..."
+              for service in yolo-combined mmpose yolo-nas rf-detr vitpose; do
+                echo "Testing GPU access in $service..."
+                if docker-compose exec -T "$service" nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits >/dev/null 2>&1; then
+                  echo "✅ $service has GPU access"
+                else
+                  echo "❌ $service lacks GPU access"
+                  health_check_failed=true
+                fi
+              done
+            else
+              echo "⚠️  nvidia-smi not available"
+            fi
+            echo ""
+            
+            # Final health check summary
+            echo "📊 HEALTH CHECK SUMMARY"
+            echo "======================="
+            if [ "$health_check_failed" = true ]; then
+              echo "❌ Some services failed health checks!"
+              exit 1
+            else
+              echo "✅ ALL 5 SERVICES ARE HEALTHY!"
+              echo "🎉 Deployment completed successfully!"
+            fi
+          EOF
+
+  deployment-summary:
+    name: 📈 Deployment Summary
+    needs: [deploy-to-vm, health-check]
+    runs-on: ubuntu-22.04
+    if: always()
+    steps:
+      - name: 📈 Generate Deployment Summary
+        run: |
+          echo "# 🚀 Smart Deployment Summary Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Deployment Status" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.deploy-to-vm.result }}" = "success" ] && [ "${{ needs.health-check.result }}" = "success" ]; then
+            echo "✅ **DEPLOYMENT SUCCESSFUL** - All 5 AI services are healthy and operational!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **DEPLOYMENT FAILED** - Check individual job logs for details" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔗 Service URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **YOLO Combined**: http://${{ secrets.VM_IP }}:8001/healthz" >> $GITHUB_STEP_SUMMARY
+          echo "- **MMPose**: http://${{ secrets.VM_IP }}:8003/healthz" >> $GITHUB_STEP_SUMMARY
+          echo "- **YOLO-NAS**: http://${{ secrets.VM_IP }}:8004/healthz" >> $GITHUB_STEP_SUMMARY
+          echo "- **RF-DETR**: http://${{ secrets.VM_IP }}:8005/healthz" >> $GITHUB_STEP_SUMMARY
+          echo "- **ViTPose**: http://${{ secrets.VM_IP }}:8006/healthz" >> $GITHUB_STEP_SUMMARY
+          echo "- **Load Balancer**: http://${{ secrets.VM_IP }}:8080/" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎉 Smart deployment with change detection completed!"

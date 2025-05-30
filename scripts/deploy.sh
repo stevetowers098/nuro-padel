@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 PROJECT_NAME="nuro-padel"
-SERVICES=("yolo-combined" "mmpose" "yolo-nas")
+SERVICES=("yolo-combined" "mmpose" "yolo-nas" "rf-detr" "vitpose")
 REGISTRY="ghcr.io/stevetowers098/nuro-padel"  # Updated for registry support
 COMPOSE_FILE="deployment/docker-compose.yml"  # Use the fixed compose file
 VM_HOST="towers@35.189.53.46"
@@ -463,6 +463,32 @@ deploy_production() {
                         $DOCKER_COMPOSE logs --tail 20 "$service" || echo "Could not retrieve logs"
                     fi
                     ;;
+                "rf-detr")
+                    log "Testing ${service} health endpoint: http://localhost:8005/healthz"
+                    if curl -f -m 10 http://localhost:8005/healthz 2>/dev/null; then
+                        success "${service} health check PASSED"
+                    else
+                        error "${service} health check FAILED - service not responding"
+                        failed_services+=("$service")
+                        services_healthy=false
+                        # Show logs for debugging
+                        log "Last 20 lines of ${service} logs:"
+                        $DOCKER_COMPOSE logs --tail 20 "$service" || echo "Could not retrieve logs"
+                    fi
+                    ;;
+                "vitpose")
+                    log "Testing ${service} health endpoint: http://localhost:8006/healthz"
+                    if curl -f -m 10 http://localhost:8006/healthz 2>/dev/null; then
+                        success "${service} health check PASSED"
+                    else
+                        error "${service} health check FAILED - service not responding"
+                        failed_services+=("$service")
+                        services_healthy=false
+                        # Show logs for debugging
+                        log "Last 20 lines of ${service} logs:"
+                        $DOCKER_COMPOSE logs --tail 20 "$service" || echo "Could not retrieve logs"
+                    fi
+                    ;;
             esac
         else
             success "${service} is healthy according to docker-compose"
@@ -481,6 +507,8 @@ deploy_production() {
         echo "  - YOLO Combined: http://localhost:8001/healthz"
         echo "  - MMPose:        http://localhost:8003/healthz"
         echo "  - YOLO-NAS:      http://localhost:8004/healthz"
+        echo "  - RF-DETR:       http://localhost:8005/healthz"
+        echo "  - ViTPose:       http://localhost:8006/healthz"
         echo "  - Load Balancer: http://localhost:8080/"
         
     else
@@ -523,11 +551,12 @@ deploy_vm() {
     ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/yolo-combined:latest || echo 'Failed to pull yolo-combined'"
     ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/mmpose:latest || echo 'Failed to pull mmpose'"
     ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/yolo-nas:latest || echo 'Failed to pull yolo-nas'"
+    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/rf-detr:latest || echo 'Failed to pull rf-detr'"
+    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/vitpose:latest || echo 'Failed to pull vitpose'"
     
-    # Start containers using docker-compose
-    log "Starting containers on VM..."
-    ssh "$VM_HOST" "cd $VM_PATH/deployment && docker-compose down --remove-orphans"
-    ssh "$VM_HOST" "cd $VM_PATH/deployment && docker-compose up -d"
+    # Use smart deployment on VM (only update changed services)
+    log "Starting smart deployment on VM..."
+    ssh "$VM_HOST" "cd $VM_PATH && ./scripts/deploy.sh --deploy"
     
     # Wait for services to start
     log "Waiting for services to become healthy on VM..."
@@ -594,6 +623,8 @@ deploy_sequential() {
             "yolo-combined") test_service_endpoint "localhost:8001" ;;
             "mmpose") test_service_endpoint "localhost:8003" ;;
             "yolo-nas") test_service_endpoint "localhost:8004" ;;
+            "rf-detr") test_service_endpoint "localhost:8005" ;;
+            "vitpose") test_service_endpoint "localhost:8006" ;;
         esac
         
         # Clean up after successful deployment

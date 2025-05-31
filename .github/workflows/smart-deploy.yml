@@ -521,18 +521,36 @@ jobs:
             echo "❌ SSH test failed - proceeding anyway (deployment may still work)"
           fi
 
-      - name: 🚀 Deploy to VM
+      - name: 🔧 Fix Script Permissions & Deploy
         env:
           VM_IP: ${{ secrets.VM_IP }}
         run: |
+          # Fix script permissions first
+          echo "🔧 Making scripts executable..."
+          chmod +x scripts/deploy.sh 2>/dev/null || echo "deploy.sh not found locally"
+          chmod +x scripts/*.sh 2>/dev/null || echo "No scripts found locally"
+          
+          CLEAN_VM_IP=$(echo "$VM_IP" | tr -d '[:space:]')
           echo "🚀 Deploying all 5 AI services to VM..."
           echo "⏰ Deployment started at: $(date)"
           
-          CLEAN_VM_IP=$(echo "$VM_IP" | tr -d '[:space:]')
-          
-          # Deploy using smart deployment
-          echo "📦 Starting smart deployment to VM..."
-          ./scripts/deploy.sh --vm --ip "$CLEAN_VM_IP"
+          # Option 1: Try local script if it exists
+          if [ -f "./scripts/deploy.sh" ]; then
+            echo "📦 Running local deploy script..."
+            ./scripts/deploy.sh --vm --ip "$CLEAN_VM_IP"
+          else
+            # Option 2: Direct SSH deployment commands
+            echo "📦 Running direct SSH deployment..."
+            ssh -o StrictHostKeyChecking=no Towers@$CLEAN_VM_IP "
+              cd /opt/padel-docker
+              echo '🔄 Pulling latest images...'
+              docker-compose pull
+              echo '🚀 Restarting services...'
+              docker-compose up -d
+              echo '✅ Deployment complete!'
+              docker-compose ps
+            "
+          fi
           
           echo "✅ Deployment completed - VM deployment successful!"
 

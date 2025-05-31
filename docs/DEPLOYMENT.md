@@ -312,16 +312,26 @@ Each build job includes Docker Buildx setup for cache support:
 ## 🛠️ VM SSH Access
 ```bash
 # Connect to production VM
-gcloud compute ssh nuro-vm --zone=us-central1-a
+gcloud compute ssh padel-ai --zone=australia-southeast1-a
 
-# Or using IP directly
-ssh user@35.189.53.46
+# Or using IP directly (check VM_HOST secret for current IP)
+ssh Towers@$VM_HOST
 
 # Check services on VM
 docker ps
 docker-compose ps
 docker-compose logs -f
 ```
+
+**⚠️ IMPORTANT**: The VM instance details are:
+- **Instance Name**: `padel-ai` ✅
+- **Zone**: `australia-southeast1-a` ✅
+- **Username**: `Towers` ✅
+
+**Previous Configuration (WRONG)**:
+- ❌ Instance: `nuro-padel-vm`
+- ❌ Zone: `us-central1-a`
+- ❌ Username: `user`
 
 ## ⚙️ Environment Configuration
 

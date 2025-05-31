@@ -12,8 +12,19 @@ You need to configure these secrets in your GitHub repository:
 
 | Secret Name | Value | Description |
 |-------------|-------|-------------|
-| `VM_IP` | `35.189.53.46` | Your VM's IP address |
+| `VM_HOST` | `[Your VM's IP address]` | Your VM's IP address (check VM external IP) |
 | `VM_SSH_KEY` | `[Your private SSH key]` | Private key matching the public key in `/home/Towers/.ssh/authorized_keys` |
+| `GCP_SA_KEY` | `[Service Account JSON]` | Google Cloud service account key for VM management |
+
+**⚠️ CRITICAL**: The VM instance details must match exactly:
+- **Instance Name**: `padel-ai` ✅
+- **Zone**: `australia-southeast1-a` ✅
+- **Username**: `Towers` ✅
+
+**Previous Configuration (WRONG)**:
+- ❌ Instance: `nuro-padel-vm`
+- ❌ Zone: `us-central1-a`
+- ❌ Secret: `VM_IP` (should be `VM_HOST`)
 
 ### 2. VM Setup
 
@@ -123,13 +134,42 @@ curl http://35.189.53.46:8004/         # YOLO-NAS API
 
 ### Common Issues
 
-#### 1. SSH Connection Fails
+#### 🚨 1. SSH Timeout Error (CRITICAL - FIXED May 31, 2025)
+**Problem**: GitHub Actions fails with SSH timeout when trying to connect to VM.
+
+**Error Messages**:
+```
+🚨 SSH Timeout Error! This means your VM is likely stopped or not accessible.
+Connection timeout when attempting SSH to VM
+```
+
+**Root Cause**: VM configuration mismatch in GitHub Actions workflow.
+
+**✅ SOLUTION APPLIED**:
+The workflow has been updated with correct VM details:
+- **Instance Name**: `padel-ai` ✅ (was: `nuro-padel-vm` ❌)
+- **Zone**: `australia-southeast1-a` ✅ (was: `us-central1-a` ❌)
+- **Secret Name**: `VM_HOST` ✅ (was: `VM_IP` ❌)
+
+**Enhanced Features Added**:
+- 🔍 **SSH Diagnostics**: Comprehensive connectivity testing with verbose output
+- 🚀 **VM Auto-Start**: Automatically starts stopped preemptible VMs
+- ⏱️ **Extended Timeout**: 7.5-minute VM startup timeout with incremental logging
+- 🛡️ **Critical SSH Validation**: Deployment fails if SSH connectivity issues detected
+
+#### 2. SSH Connection Troubleshooting
 ```bash
 # Check SSH key format (should be OpenSSH format)
 ssh-keygen -f ~/.ssh/id_rsa -e -m OpenSSH
 
-# Test SSH connection manually
-ssh -i ~/.ssh/id_rsa Towers@35.189.53.46
+# Test SSH connection manually with correct details
+ssh -i ~/.ssh/id_rsa Towers@$VM_HOST
+
+# Check VM status via gcloud
+gcloud compute instances describe padel-ai --zone=australia-southeast1-a --format="value(status)"
+
+# Start VM if stopped
+gcloud compute instances start padel-ai --zone=australia-southeast1-a
 ```
 
 #### 2. Docker Build Fails

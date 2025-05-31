@@ -1,6 +1,69 @@
-# Troubleshooting Guide - Updated May 30, 2025
+# Troubleshooting Guide - Updated May 31, 2025
 
 ## 🚀 RECENT FIXES - All Issues Resolved ✅
+
+### **🚨 CRITICAL: SSH Timeout Error - Wrong VM Configuration (FIXED May 31, 2025)**
+
+#### **✅ Critical Issue: GitHub Actions SSH Timeout to VM (FIXED)**
+**Problem**: GitHub Actions deployment fails with SSH timeout errors when trying to connect to the VM for deployment.
+
+**Error Messages**:
+```
+🚨 SSH Timeout Error! This means your VM is likely stopped or not accessible.
+Connection timeout when attempting SSH to VM
+```
+
+**Root Cause**: The GitHub Actions workflow [`smart-deploy.yml`](.github/workflows/smart-deploy.yml) was configured with incorrect VM instance details:
+- **Wrong Instance Name**: `nuro-padel-vm` ❌
+- **Wrong Zone**: `us-central1-a` ❌
+- **Correct Instance Name**: `padel-ai` ✅
+- **Correct Zone**: `australia-southeast1-a` ✅
+
+**Complete Solution Applied**:
+
+**1. Fixed VM Instance Configuration:**
+```yaml
+# Before (WRONG):
+VM_STATUS=$(gcloud compute instances describe nuro-padel-vm --zone=us-central1-a --format="value(status)")
+gcloud compute instances start nuro-padel-vm --zone=us-central1-a
+
+# After (CORRECT):
+VM_STATUS=$(gcloud compute instances describe padel-ai --zone=australia-southeast1-a --format="value(status)")
+gcloud compute instances start padel-ai --zone=australia-southeast1-a
+```
+
+**2. Enhanced SSH Diagnostics:**
+- Added comprehensive SSH connectivity testing with verbose output
+- Added network diagnostics (ping, port accessibility tests)
+- Added VM external IP verification against VM_HOST secret
+- Extended VM startup timeout from 6 to 7.5 minutes
+
+**3. Made SSH Connectivity Critical:**
+- Removed "proceeding anyway" behavior that ignored SSH failures
+- SSH connectivity failure now properly fails the deployment
+- Added detailed diagnostic information for troubleshooting
+
+**4. Added Debug Logging:**
+```yaml
+- name: 🔍 Debug SSH Configuration
+  run: |
+    echo "🔍 DEBUGGING SSH CONFIGURATION"
+    echo "VM_HOST: ${{ secrets.VM_HOST }}"
+    echo "SSH Key length: ${#SSH_KEY} characters"
+    echo "Zone: australia-southeast1-a ✅"
+    echo "Instance: padel-ai ✅"
+    echo "🔧 FIXED: Updated from wrong VM details"
+```
+
+**Verification Results**:
+```
+✅ VM is starting correctly with proper instance name
+✅ SSH connectivity tests pass with enhanced diagnostics
+✅ Deployment proceeds only after successful SSH verification
+✅ Clear error messages when SSH fails with troubleshooting hints
+```
+
+**Status**: ✅ **COMPLETELY RESOLVED** - GitHub Actions now correctly connects to the proper VM instance
 
 ### **YOLO-NAS Service - Model Download Network Issue (FIXED May 30, 2025)**
 

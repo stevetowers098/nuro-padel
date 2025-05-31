@@ -1,7 +1,6 @@
 # NuroPadel Docker Compose - Production Deployment
 # 5 Isolated AI Services: YOLO Combined, MMPose, YOLO-NAS, RF-DETR, ViTPose++
 
-version: '3.8'
 
 services:
   # === YOLO Combined Service (YOLO11 + YOLOv8) ===
@@ -126,7 +125,6 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
-      - YOLO_OFFLINE=false
       - MODEL_CACHE_DIR=/app/weights/super-gradients
       # Model configuration overrides (examples)
       # - YOLO_NAS_S_ENABLED=true

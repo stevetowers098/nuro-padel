@@ -747,8 +747,35 @@ usage() {
     echo "  $0 --vm               # Deploy to VM"
 }
 
+# Parse arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --ip)
+                if [ -z "${2:-}" ]; then
+                    error "IP address required for --ip"
+                    exit 1
+                fi
+                VM_HOST="Towers@$2"
+                log "VM host set to: $VM_HOST"
+                shift 2
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+}
+
 # Main execution
 main() {
+    # Parse IP argument first if present
+    if [[ "$*" == *"--ip"* ]]; then
+        parse_args "$@"
+        # Remove --ip and its value from arguments
+        set -- $(echo "$@" | sed 's/--ip [^ ]* *//')
+    fi
+    
     case "${1:-}" in
         --build)
             check_prerequisites

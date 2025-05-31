@@ -67,12 +67,6 @@
 
 - **TrackNet V2**: `POST /track-ball`
 
-### 🎓 **NEW: Model Training**
-
-- **YOLO-NAS Training**: `POST /yolo-nas/train`
-- **YOLO Combined Training**: `POST /yolo-combined/train`
-- **Training Status**: `GET /yolo-nas/training-status`, `GET /yolo-combined/training-status`
-
 ### Health Monitoring
 
 - **Global Health**: `GET /healthz`
@@ -144,11 +138,11 @@ Total: ~396MB across all services
 - ✅ **Video Output Failures**: Enhanced FFmpeg stdin handling to prevent "flush of closed file" errors across all services
 - ✅ **YOLO-NAS Model Downloads**: Enhanced offline mode with local model loading prioritization from [`/opt/padel-docker/weights/super-gradients/`](services/yolo-nas/main.py:222)
 
-### **NEW: Training Capabilities**
+### **NEW: Pre-trained COCO Model Integration**
 
-- ✅ **YOLO-NAS Training**: Custom model training for pose and object detection with automatic model management
-- ✅ **YOLO Combined Training**: YOLO11/YOLOv8 model training support for both detection and pose estimation  
-- ✅ **Custom Model Auto-Loading**: Trained models automatically detected and prioritized over pretrained models
+- ✅ **YOLO-NAS**: Uses pre-trained COCO models ([`"coco_pose"`](services/yolo-nas/main.py:233), [`"coco"`](services/yolo-nas/main.py:280)) from super-gradients
+- ✅ **YOLO Combined**: Uses pre-trained COCO models ([`yolo11n-pose.pt`](services/yolo-combined/main.py:77), [`yolo11n.pt`](services/yolo-combined/main.py:78)) from ultralytics
+- ✅ **Enhanced Offline Mode**: Models loaded locally from [`/app/weights/`](services/yolo-nas/main.py:222) to prevent download failures
 
 ## 🎾 Use Cases
 

@@ -1,0 +1,6 @@
+## START THE VM:
+gcloud compute instances start padel-ai --zone=australia-southeast1-a
+
+## **SSH INTO THE VM:
+ssh -i ~/.ssh/padel-ai-key Towers@35.189.53.46
+

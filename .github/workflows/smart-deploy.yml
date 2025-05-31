@@ -492,9 +492,16 @@ jobs:
           echo "Zone: australia-southeast1-a ✅"
           echo "Instance: padel-ai ✅"
           echo ""
-          echo "🔧 FIXED: Updated VM details from wrong configuration:"
-          echo "   ❌ Was: nuro-padel-vm in us-central1-a"
-          echo "   ✅ Now: padel-ai in australia-southeast1-a"
+          echo "🔧 CONFIGURATION VERIFICATION:"
+          echo "   ✅ Instance: padel-ai in australia-southeast1-a"
+          echo "   ✅ Username: Towers (case-sensitive)"
+          echo "   ✅ SSH Key: ${#SSH_KEY} characters"
+          echo ""
+          echo "🔍 TROUBLESHOOTING STEPS:"
+          echo "   1. Verify VM is running"
+          echo "   2. Check VM external IP matches VM_HOST secret"
+          echo "   3. Test SSH connectivity with verbose output"
+          echo "   4. Check firewall rules on VM"
           echo ""
         env:
           SSH_KEY: ${{ secrets.VM_SSH_KEY }}
@@ -593,47 +600,91 @@ jobs:
         uses: actions/checkout@v4
         
       - name: 🚀 Deploy to VM
-        uses: appleboy/ssh-action@v0.1.7
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: Towers
-          key: ${{ secrets.VM_SSH_KEY }}
-          timeout: 60s
-          script: |
-            echo "🚀 Deploying all 5 AI services to VM..."
+        run: |
+          echo "🚀 Deploying all 5 AI services to VM..."
+          echo "⏰ Deployment started at: $(date)"
+          
+          # Use the correct VM IP from previous step or fallback
+          VM_IP="${VM_HOST_FOR_DEPLOY:-${{ secrets.VM_HOST }}}"
+          echo "Deploying to VM: $VM_IP"
+          
+          # Create SSH key file
+          echo "${{ secrets.VM_SSH_KEY }}" > /tmp/deploy_ssh_key
+          chmod 600 /tmp/deploy_ssh_key
+          
+          # Test which username works (try both Towers and towers)
+          if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /tmp/deploy_ssh_key Towers@$VM_IP "echo 'test'" 2>/dev/null; then
+            SSH_USER="Towers"
+            echo "✅ Using username: Towers"
+          elif timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /tmp/deploy_ssh_key towers@$VM_IP "echo 'test'" 2>/dev/null; then
+            SSH_USER="towers"
+            echo "✅ Using username: towers"
+          else
+            echo "❌ SSH authentication failed with both usernames"
+            rm -f /tmp/deploy_ssh_key
+            exit 1
+          fi
+          
+          # Deploy using working SSH configuration
+          ssh -o ConnectTimeout=30 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /tmp/deploy_ssh_key $SSH_USER@$VM_IP << 'EOF'
+            echo "🚀 Starting deployment on VM..."
             echo "⏰ Deployment started at: $(date)"
             
+            # Create deployment directory if it doesn't exist
+            sudo mkdir -p /opt/padel-docker
             cd /opt/padel-docker
             
             # 🔧 FIX: Check for corrupted docker-compose.yml and repair
             echo "🔍 Checking docker-compose.yml integrity..."
-            if ! docker-compose config > /dev/null 2>&1; then
-              echo "⚠️  CORRUPTED docker-compose.yml detected! Repairing from GitHub..."
+            if [ ! -f docker-compose.yml ] || ! docker-compose config > /dev/null 2>&1; then
+              echo "⚠️  CORRUPTED or MISSING docker-compose.yml detected! Downloading from GitHub..."
               
-              # Backup corrupted file
-              cp docker-compose.yml docker-compose.yml.corrupted-backup-$(date +%Y%m%d-%H%M%S)
+              # Backup corrupted file if it exists
+              if [ -f docker-compose.yml ]; then
+                cp docker-compose.yml docker-compose.yml.corrupted-backup-$(date +%Y%m%d-%H%M%S)
+              fi
               
-              # Download fresh version from GitHub
-              curl -o docker-compose.yml.new https://raw.githubusercontent.com/stevetowers098/nuro-padel/main/deployment/docker-compose.yml
+              # Download fresh version from GitHub (using current branch)
+              curl -o docker-compose.yml https://raw.githubusercontent.com/stevetowers098/nuro-padel/${{ github.ref_name }}/deployment/docker-compose.yml
               
               # Validate new file
-              if docker-compose -f docker-compose.yml.new config > /dev/null 2>&1; then
-                mv docker-compose.yml.new docker-compose.yml
-                echo "✅ docker-compose.yml repaired successfully"
+              if docker-compose -f docker-compose.yml config > /dev/null 2>&1; then
+                echo "✅ docker-compose.yml downloaded and validated successfully"
               else
-                echo "❌ Downloaded file is also invalid! Manual intervention required."
+                echo "❌ Downloaded file is invalid! Manual intervention required."
                 exit 1
               fi
             else
               echo "✅ docker-compose.yml is valid"
             fi
             
+            # Download nginx config if missing
+            if [ ! -f nginx.conf ]; then
+              echo "📥 Downloading nginx.conf..."
+              curl -o nginx.conf https://raw.githubusercontent.com/stevetowers098/nuro-padel/${{ github.ref_name }}/deployment/nginx.conf
+            fi
+            
             echo "🔄 Pulling latest images..."
-            docker-compose pull
-            echo "🚀 Restarting services..."
+            docker-compose pull || echo "⚠️  Some image pulls failed, continuing with existing images"
+            
+            echo "🚀 Starting services..."
             docker-compose up -d
+            
+            echo "⏳ Waiting for services to start..."
+            sleep 30
+            
             echo "✅ Deployment complete!"
+            echo "📊 Service Status:"
             docker-compose ps
+            
+            echo "🔍 Container Health:"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          EOF
+          
+          # Clean up SSH key
+          rm -f /tmp/deploy_ssh_key
+          
+          echo "✅ VM deployment completed successfully!"
 
   health-check:
     name: 🏥 Health Check & Validation

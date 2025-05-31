@@ -756,7 +756,7 @@ parse_args() {
                     error "IP address required for --ip"
                     exit 1
                 fi
-                VM_HOST="Towers@$2"
+                VM_HOST="towers@$2"  # Use lowercase 'towers' for consistency
                 log "VM host set to: $VM_HOST"
                 shift 2
                 ;;

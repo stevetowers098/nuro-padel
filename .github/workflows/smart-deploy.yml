@@ -451,10 +451,138 @@ jobs:
             echo "  🔄 Standard build completed!"
           fi
 
-  deploy-to-vm:
-    name: 🚀 Deploy to VM
+  start-vm:
+    name: 🟢 Start GCP VM
     needs: [detect-changes, build-summary]
     if: always() && (needs.build-yolo-combined.result == 'success' || needs.build-mmpose.result == 'success' || needs.build-yolo-nas.result == 'success' || needs.build-rf-detr.result == 'success' || needs.build-vitpose.result == 'success' || needs.build-yolo-combined.result == 'skipped' || needs.build-mmpose.result == 'skipped' || needs.build-yolo-nas.result == 'skipped' || needs.build-rf-detr.result == 'skipped' || needs.build-vitpose.result == 'skipped')
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 🔍 Debug Job Conditions
+        run: |
+          echo "🔍 DEBUGGING START-VM JOB CONDITIONS"
+          echo "====================================="
+          echo "Build Results:"
+          echo "  YOLO Combined: ${{ needs.build-yolo-combined.result }}"
+          echo "  MMPose: ${{ needs.build-mmpose.result }}"
+          echo "  YOLO-NAS: ${{ needs.build-yolo-nas.result }}"
+          echo "  RF-DETR: ${{ needs.build-rf-detr.result }}"
+          echo "  ViTPose: ${{ needs.build-vitpose.result }}"
+          echo "  Build Summary: ${{ needs.build-summary.result }}"
+          echo ""
+          echo "✅ start-vm job is running - conditions were met!"
+          
+      - name:  Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔐 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: ☁️ Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: 🔍 Debug SSH Configuration
+        run: |
+          echo "🔍 DEBUGGING SSH CONFIGURATION"
+          echo "=============================="
+          echo "VM_HOST: ${{ secrets.VM_HOST }}"
+          echo "SSH Key length: ${#SSH_KEY} characters"
+          echo "Username: Towers"
+          echo "Zone: us-central1-a"
+          echo "Instance: nuro-padel-vm"
+          echo ""
+        env:
+          SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+
+      - name:  Start VM if stopped
+        run: |
+          echo "🔍 Checking VM status..."
+          VM_STATUS=$(gcloud compute instances describe nuro-padel-vm --zone=us-central1-a --format="value(status)")
+          echo "Current VM status: $VM_STATUS"
+          
+          if [ "$VM_STATUS" = "TERMINATED" ] || [ "$VM_STATUS" = "STOPPED" ]; then
+            echo "� Starting VM (currently $VM_STATUS)..."
+            gcloud compute instances start nuro-padel-vm --zone=us-central1-a
+            echo "⏳ Waiting for VM to be ready..."
+            
+            # Wait for VM to start and be ready for SSH
+            for i in {1..12}; do
+              echo "⏱️  Wait attempt $i/12 (30 seconds each)"
+              sleep 30
+              
+              VM_STATUS=$(gcloud compute instances describe nuro-padel-vm --zone=us-central1-a --format="value(status)")
+              if [ "$VM_STATUS" = "RUNNING" ]; then
+                echo "✅ VM is running, testing SSH connectivity..."
+                
+                # Test SSH connectivity with timeout
+                if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i <(echo "${{ secrets.VM_SSH_KEY }}") Towers@${{ secrets.VM_HOST }} "echo 'SSH test successful'" 2>/dev/null; then
+                  echo "✅ VM is ready for deployment!"
+                  break
+                else
+                  echo "⏳ VM running but SSH not ready yet..."
+                fi
+              else
+                echo "⏳ VM status: $VM_STATUS, continuing to wait..."
+              fi
+              
+              if [ $i -eq 12 ]; then
+                echo "❌ VM failed to become ready after 6 minutes"
+                exit 1
+              fi
+            done
+          else
+            echo "✅ VM is already running ($VM_STATUS)"
+            echo "🔍 Testing SSH connectivity on already-running VM..."
+            
+            # Create temporary SSH key file for diagnostics
+            echo "${{ secrets.VM_SSH_KEY }}" > /tmp/ssh_key
+            chmod 600 /tmp/ssh_key
+            
+            echo "🔍 Detailed SSH test with verbose output..."
+            if timeout 15 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -v -i /tmp/ssh_key Towers@${{ secrets.VM_HOST }} "echo 'SSH test successful - $(date)'" 2>&1; then
+              echo "✅ VM is ready for deployment!"
+            else
+              echo "❌ CRITICAL: SSH connectivity failed on running VM!"
+              echo "🔍 Running additional diagnostics..."
+              
+              # Get VM external IP for diagnostics
+              VM_EXTERNAL_IP=$(gcloud compute instances describe nuro-padel-vm --zone=us-central1-a --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
+              echo "VM External IP: $VM_EXTERNAL_IP"
+              echo "Expected VM_HOST: ${{ secrets.VM_HOST }}"
+              
+              # Test basic connectivity
+              if ping -c 3 ${{ secrets.VM_HOST }} >/dev/null 2>&1; then
+                echo "✅ VM is reachable via ping"
+              else
+                echo "❌ VM is not reachable via ping"
+              fi
+              
+              # Test SSH port
+              if timeout 5 bash -c "echo >/dev/tcp/${{ secrets.VM_HOST }}/22" 2>/dev/null; then
+                echo "✅ SSH port 22 is open"
+                echo "❌ SSH key or authentication issue"
+              else
+                echo "❌ SSH port 22 is not accessible"
+                echo "❌ Network or firewall issue"
+              fi
+              
+              echo "🚨 FAILING DEPLOYMENT - SSH must work for deployment to succeed"
+              echo "💡 Possible causes:"
+              echo "   - SSH key is incorrect, expired, or doesn't match VM"
+              echo "   - VM_HOST secret points to wrong IP address"
+              echo "   - VM firewall blocking SSH access"
+              echo "   - Wrong username (should be 'Towers')"
+              rm -f /tmp/ssh_key
+              exit 1
+            fi
+            
+            rm -f /tmp/ssh_key
+          fi
+
+  deploy-to-vm:
+    name: 🚀 Deploy to VM
+    needs: [start-vm]
     runs-on: ubuntu-22.04
     steps:
       - name: 📥 Checkout repository
@@ -466,7 +594,7 @@ jobs:
           host: ${{ secrets.VM_HOST }}
           username: Towers
           key: ${{ secrets.VM_SSH_KEY }}
-          timeout: 30s
+          timeout: 60s
           script: |
             echo "🚀 Deploying all 5 AI services to VM..."
             echo "⏰ Deployment started at: $(date)"

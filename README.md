@@ -14,9 +14,9 @@
 
 | Service | Port | Technology | Purpose |
 |---------|------|------------|---------|
-| [**YOLO Combined**](services/yolo-combined/) | 8001 | YOLO11/v8 + TrackNet | Enhanced ball tracking & pose detection |
+| [**YOLO Combined**](services/yolo-combined/) | 8001 | YOLO11/v8 + TrackNet | Enhanced ball tracking & pose detection + Training |
 | [**MMPose**](services/mmpose/) | 8003 | MMPose Framework | Advanced biomechanical analysis |
-| [**YOLO-NAS**](services/yolo-nas/) | 8004 | Super-Gradients | High-accuracy object detection |
+| [**YOLO-NAS**](services/yolo-nas/) | 8004 | Super-Gradients | High-accuracy object detection + Training |
 | [**RF-DETR**](services/rf-detr/) | 8005 | Transformer + FP16 | Transformer-based detection |
 | [**ViTPose++**](services/vitpose/) | 8006 | Vision Transformer | Joint angle & pose analysis |
 | **Load Balancer** | 8080 | Nginx | API Gateway & routing |
@@ -24,12 +24,14 @@
 ## 🌐 VM Infrastructure
 
 ### Production Environment
+
 - **VM**: `35.189.53.46` (Google Cloud - Ubuntu 22.04 + NVIDIA T4)
 - **User**: `towers`
 - **Deployment Path**: `/opt/padel-docker`
 - **SSH**: `ssh padel-ai` (see [`.ssh/config`](.ssh/config))
 
 ### Directory Structure
+
 ```
 /opt/padel-docker/
 ├── services/         # Microservices (Docker containers)
@@ -47,6 +49,7 @@
 ## 🎯 API Endpoints
 
 ### Pose Detection
+
 - **YOLO11 Pose**: `POST /yolo11/pose`
 - **YOLOv8 Pose**: `POST /yolov8/pose`  
 - **MMPose**: `POST /mmpose/pose`
@@ -54,15 +57,24 @@
 - **ViTPose++**: `POST /vitpose/analyze`
 
 ### Object Detection
+
 - **YOLO11 Object**: `POST /yolo11/object`
 - **YOLOv8 Object**: `POST /yolov8/object`
 - **YOLO-NAS**: `POST /yolo-nas/object`
 - **RF-DETR**: `POST /rf-detr/analyze`
 
 ### Enhanced Ball Tracking
+
 - **TrackNet V2**: `POST /track-ball`
 
+### 🎓 **NEW: Model Training**
+
+- **YOLO-NAS Training**: `POST /yolo-nas/train`
+- **YOLO Combined Training**: `POST /yolo-combined/train`
+- **Training Status**: `GET /yolo-nas/training-status`, `GET /yolo-combined/training-status`
+
 ### Health Monitoring
+
 - **Global Health**: `GET /healthz`
 - **Load Balancer**: `GET /`
 
@@ -116,12 +128,27 @@ curl http://35.189.53.46:8080/healthz
 ## 📊 Model Weights
 
 Total: ~396MB across all services
+
 - **YOLO Models**: ~24MB (ultralytics/)
 - **MMPose Models**: ~50MB (mmpose/)  
 - **ViTPose Models**: ~180MB (vitpose/)
 - **RF-DETR Models**: ~50MB (rf-detr/)
 - **TrackNet Models**: ~3MB (tracknet/)
 - **YOLO-NAS Models**: ~72MB (super-gradients/)
+
+## ✅ **Latest Updates (June 2025)**
+
+### **FIXED: Critical System Issues**
+
+- ✅ **ConfigDict Errors**: Fixed MMPose [`inference_topdown()`](services/mmpose/main.py:168) → [`MMPoseInferencer`](services/mmpose/main.py:142) across all pose services
+- ✅ **Video Output Failures**: Enhanced FFmpeg stdin handling to prevent "flush of closed file" errors across all services
+- ✅ **YOLO-NAS Model Downloads**: Enhanced offline mode with local model loading prioritization from [`/opt/padel-docker/weights/super-gradients/`](services/yolo-nas/main.py:222)
+
+### **NEW: Training Capabilities**
+
+- ✅ **YOLO-NAS Training**: Custom model training for pose and object detection with automatic model management
+- ✅ **YOLO Combined Training**: YOLO11/YOLOv8 model training support for both detection and pose estimation  
+- ✅ **Custom Model Auto-Loading**: Trained models automatically detected and prioritized over pretrained models
 
 ## 🎾 Use Cases
 

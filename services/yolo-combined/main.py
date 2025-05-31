@@ -94,13 +94,6 @@ class VideoAnalysisURLRequest(BaseModel):
     data: bool = True
     confidence: float = 0.3
 
-class TrainingRequest(BaseModel):
-    dataset_yaml: HttpUrl  # URL to dataset.yaml file
-    model_type: str = "yolo11n"  # yolo11n, yolo11s, yolov8n, yolov8s, etc.
-    epochs: int = 100
-    batch_size: int = 16
-    learning_rate: float = 0.01
-    task: str = "detect"  # detect, pose, segment
 
 # Helper Functions
 async def upload_to_gcs(video_path: str, folder: str, object_name: Optional[str] = None) -> str:

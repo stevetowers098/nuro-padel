@@ -148,12 +148,6 @@ class VideoAnalysisURLRequest(BaseModel):
     data: bool = True
     confidence: float = 0.3
 
-class TrainingRequest(BaseModel):
-    dataset_url: HttpUrl
-    model_type: str = "pose"  # "pose" or "object"
-    epochs: int = 10
-    learning_rate: float = 0.001
-    batch_size: int = 16
 
 class EnhancedAnalysisRequest(BaseModel):
     video_url: HttpUrl
@@ -901,90 +895,6 @@ async def process_object_detection(payload: VideoAnalysisURLRequest):
         if temp_downloaded_path and os.path.exists(temp_downloaded_path):
             os.unlink(temp_downloaded_path)
 
-# 🎯 HIGH PRIORITY: Training Endpoint
-@app.post("/train")
-async def train_custom_model(payload: TrainingRequest):
-    """
-    🎯 HIGH PRIORITY: Train custom YOLO-NAS model for padel-specific data
-    
-    Supports both pose and object detection model training
-    """
-    try:
-        logger.info(f"Training request received: {payload.model_type} model, {payload.epochs} epochs")
-        
-        # Download and extract dataset
-        dataset_path = "/tmp/training_data"
-        os.makedirs(dataset_path, exist_ok=True)
-        
-        # Download dataset (assuming zip format)
-        response = requests.get(payload.dataset_url)
-        response.raise_for_status()
-        
-        with open(f"{dataset_path}/dataset.zip", "wb") as f:
-            f.write(response.content)
-        
-        with zipfile.ZipFile(f"{dataset_path}/dataset.zip", 'r') as zip_ref:
-            zip_ref.extractall(dataset_path)
-        
-        # Initialize trainer
-        trainer = Trainer(experiment_name=f"padel_{payload.model_type}")
-        
-        # Load model based on type
-        if payload.model_type == "pose":
-            model = models.get("yolo_nas_pose_n", num_classes=1)  # Person class
-            model_name = "custom_padel_pose"
-        else:
-            model = models.get("yolo_nas_s", num_classes=4)  # person, racket, ball, court
-            model_name = "custom_padel_object"
-        
-        # Training parameters
-        training_params = {
-            "max_epochs": payload.epochs,
-            "lr_mode": "cosine",
-            "initial_lr": payload.learning_rate,
-            "batch_size": payload.batch_size,
-            "mixed_precision": True,
-            "save_ckpt_epoch_list": [payload.epochs]
-        }
-        
-        # Train model
-        trainer.train(model=model, training_params=training_params)
-        
-        # Save trained model to weights directory
-        checkpoint_path = os.path.join(WEIGHTS_DIR, f"{model_name}.pth")
-        shutil.copy(
-            os.path.join(trainer.ckpt_dir, f"ckpt_epoch_{payload.epochs}.pth"),
-            checkpoint_path
-        )
-        
-        logger.info(f"✅ Training completed: {checkpoint_path}")
-        
-        return {
-            "status": "complete",
-            "checkpoint": checkpoint_path,
-            "model_type": payload.model_type,
-            "epochs": payload.epochs,
-            "message": "Model trained successfully and saved"
-        }
-        
-    except Exception as e:
-        logger.error(f"Training failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Training error: {str(e)}")
-
-# 🎯 HIGH PRIORITY: Training Status Endpoint
-@app.get("/training-status")
-async def get_training_status():
-    """Get status of custom trained models"""
-    custom_models = {
-        "pose": os.path.exists(os.path.join(WEIGHTS_DIR, "custom_padel_pose.pth")),
-        "object": os.path.exists(os.path.join(WEIGHTS_DIR, "custom_padel_object.pth"))
-    }
-    
-    return {
-        "custom_models_available": custom_models,
-        "weights_directory": WEIGHTS_DIR,
-        "training_supported": SUPER_GRADIENTS_AVAILABLE
-    }
 
 # 🎯 HIGH PRIORITY: Enhanced Analysis Endpoint
 @app.post("/yolo-nas/enhanced-analysis")

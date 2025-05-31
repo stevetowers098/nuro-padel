@@ -120,7 +120,11 @@ mv docker-compose.yml.new docker-compose.yml
 docker-compose up -d
 ```
 
-**Prevention Solution**: Enhanced GitHub Actions will include YAML validation step to prevent future corruption.
+**Automated Prevention & Fix**: The GitHub Actions workflow ([`.github/workflows/smart-deploy.yml`](../.github/workflows/smart-deploy.yml)) now includes a step in the `deploy-to-vm` job that automatically checks for a corrupted or missing `docker-compose.yml` on the VM. If an issue is detected, it attempts to download a fresh copy from the currently deploying branch (`${{ github.ref_name }}`) before proceeding. This should prevent most instances of this error.
+
+**Manual Fix (if needed)**: The manual steps above can still be used if the automated fix fails or for direct intervention.
+
+**Further Prevention**: Consider adding a YAML linting step to the CI pipeline for the `docker-compose.yml` file itself to catch syntax errors before they can be deployed.
 
 **Next Steps**:
 
@@ -693,28 +697,38 @@ except Exception as e:
 ```bash
 # Check individual service health
 curl http://localhost:8001/healthz | jq .  # YOLO Combined
-curl http://localhost:8003/healthz | jq .  # MMPose  
+curl http://localhost:8003/healthz | jq .  # MMPose
 curl http://localhost:8004/healthz | jq .  # YOLO-NAS
+curl http://localhost:8005/healthz | jq .  # RF-DETR
+curl http://localhost:8006/healthz | jq .  # ViTPose
 
 # Check via load balancer
 curl http://localhost:8080/yolo-combined/healthz
 curl http://localhost:8080/mmpose/healthz
 curl http://localhost:8080/yolo-nas/healthz
+curl http://localhost:8080/rf-detr/healthz
+curl http://localhost:8080/vitpose/healthz
 
 # Check service logs
 docker logs nuro-padel-yolo-combined
 docker logs nuro-padel-mmpose
 docker logs nuro-padel-yolo-nas
+docker logs nuro-padel-rf-detr
+docker logs nuro-padel-vitpose
 
 # Follow logs in real-time
 docker-compose logs -f yolo-combined
 docker-compose logs -f mmpose
 docker-compose logs -f yolo-nas
+docker-compose logs -f rf-detr
+docker-compose logs -f vitpose
 
 # Shell into containers
 docker exec -it nuro-padel-yolo-combined bash
 docker exec -it nuro-padel-mmpose bash
 docker exec -it nuro-padel-yolo-nas bash
+docker exec -it nuro-padel-rf-detr bash
+docker exec -it nuro-padel-vitpose bash
 ```
 
 ### **Dependency Verification**
@@ -810,9 +824,17 @@ docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
 
 ```bash
 # Quick health check all services
-for port in 8001 8003 8004; do
-  echo "=== Port $port ===" 
-  curl -s http://localhost:$port/healthz | jq .status || echo "FAILED"
+for port in 8001 8003 8004 8005 8006; do
+  echo "=== Port $port ==="
+  # Determine service name by port for display (optional, could just use port)
+  service_name=""
+  if [ "$port" = "8001" ]; then service_name="yolo-combined";
+  elif [ "$port" = "8003" ]; then service_name="mmpose";
+  elif [ "$port" = "8004" ]; then service_name="yolo-nas";
+  elif [ "$port" = "8005" ]; then service_name="rf-detr";
+  elif [ "$port" = "8006" ]; then service_name="vitpose"; fi
+  echo "Checking $service_name (port $port)..."
+  curl -s http://localhost:$port/healthz | jq .status || echo "FAILED for $service_name (port $port)"
 done
 
 # Load balancer health
@@ -830,8 +852,10 @@ docker-compose logs -f
 
 # Service-specific logs with timestamps
 docker-compose logs -f --timestamps yolo-combined
-docker-compose logs -f --timestamps mmpose  
+docker-compose logs -f --timestamps mmpose
 docker-compose logs -f --timestamps yolo-nas
+docker-compose logs -f --timestamps rf-detr
+docker-compose logs -f --timestamps vitpose
 
 # Error filtering
 docker-compose logs | grep -i error
@@ -847,8 +871,22 @@ docker-compose logs --tail=100
 # Create health check script
 cat > health_check.sh << 'EOF'
 #!/bin/bash
-for service in yolo-combined mmpose yolo-nas; do
-  status=$(curl -s http://localhost:8080/$service/healthz | jq -r .status 2>/dev/null)
+for service in yolo-combined mmpose yolo-nas rf-detr vitpose; do
+  # Determine port by service name for direct health check
+  port=""
+  if [ "$service" = "yolo-combined" ]; then port="8001";
+  elif [ "$service" = "mmpose" ]; then port="8003";
+  elif [ "$service" = "yolo-nas" ]; then port="8004";
+  elif [ "$service" = "rf-detr" ]; then port="8005";
+  elif [ "$service" = "vitpose" ]; then port="8006";
+  fi
+  
+  if [ -z "$port" ]; then
+    echo "⚠️ Unknown service: $service"
+    continue
+  fi
+
+  status=$(curl -s http://localhost:$port/healthz | jq -r .status 2>/dev/null)
   if [ "$status" = "healthy" ]; then
     echo "✅ $service: healthy"
   else

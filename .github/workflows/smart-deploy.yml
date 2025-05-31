@@ -527,12 +527,16 @@ jobs:
                 echo "✅ VM is running, testing SSH connectivity..."
                 
                 # Test SSH connectivity with timeout
-                if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i <(echo "${{ secrets.VM_SSH_KEY }}") Towers@${{ secrets.VM_HOST }} "echo 'SSH test successful'" 2>/dev/null; then
-                  echo "✅ VM is ready for deployment!"
-                  break
-                else
-                  echo "⏳ VM running but SSH not ready yet..."
-                fi
+                                echo "${{ secrets.VM_SSH_KEY }}" > /tmp/ssh_key
+                                chmod 600 /tmp/ssh_key
+                                if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i /tmp/ssh_key Towers@${{ secrets.VM_HOST }} "echo 'SSH test successful'" 2>/dev/null; then
+                                  rm -f /tmp/ssh_key
+                                  echo "✅ VM is ready for deployment!"
+                                  break
+                                else
+                                  rm -f /tmp/ssh_key
+                                  echo "⏳ VM running but SSH not ready yet..."
+                                fi
               else
                 echo "⏳ VM status: $VM_STATUS, continuing to wait..."
               fi

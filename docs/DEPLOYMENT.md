@@ -94,7 +94,7 @@ torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
 ultralytics>=8.3.0,<8.4.0     # ✅ FIXED: YOLO11 compatibility (was 8.2.97)
 google-cloud-storage==2.18.0  # Updated version
-protobuf>=3.19.5,<4.0.0       # Critical constraint
+# protobuf (version managed by google-cloud-storage and onnx dependencies; ensure compatibility if issues arise)
 opencv-python-headless==4.10.0.84
 fastapi==0.111.0
 httpx==0.27.0

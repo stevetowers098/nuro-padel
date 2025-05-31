@@ -17,11 +17,13 @@ You need to configure these secrets in your GitHub repository:
 | `GCP_SA_KEY` | `[Service Account JSON]` | Google Cloud service account key for VM management |
 
 **⚠️ CRITICAL**: The VM instance details must match exactly:
+
 - **Instance Name**: `padel-ai` ✅
 - **Zone**: `australia-southeast1-a` ✅
 - **Username**: `Towers` ✅
 
 **Previous Configuration (WRONG)**:
+
 - ❌ Instance: `nuro-padel-vm`
 - ❌ Zone: `us-central1-a`
 - ❌ Secret: `VM_IP` (should be `VM_HOST`)
@@ -63,33 +65,40 @@ sudo systemctl restart docker
 The GitHub Actions workflow consists of 5 comprehensive stages:
 
 ### 1. 🔨 Build & Push Docker Images
-- Builds 3 services: `yolo-combined`, `mmpose`, `yolo-nas`
+
+- Builds 5 services: `yolo-combined`, `mmpose`, `yolo-nas`, `rf-detr`, `vitpose`
 - Pushes to GitHub Container Registry (GHCR)
 - Uses BuildKit for optimized caching
 - Tags with both `latest` and commit SHA
 
 ### 2. 🚀 Deploy to Production VM
+
 - SSH into your VM using the configured secrets
 - Navigates to `/opt/padel-docker`
-- Runs `./scripts/deploy.sh --vm`
+- Executes deployment commands (e.g., `docker-compose pull`, `docker-compose up`) on the VM via SSH.
 - Provides detailed logging of each step
 
 ### 3. 🏥 Health Check & Validation
+
 - Waits 90 seconds for services to stabilize
 - Tests each service health endpoint:
   - **YOLO Combined**: `http://localhost:8001/healthz`
   - **MMPose**: `http://localhost:8003/healthz`
   - **YOLO-NAS**: `http://localhost:8004/healthz`
+  - **RF-DETR**: `http://localhost:8005/healthz`
+  - **ViTPose**: `http://localhost:8006/healthz`
   - **Load Balancer**: `http://localhost:8080`
 - Shows Docker container status and logs
 
-### 4. 🧪 Integration Tests
-- Tests service endpoints with sample requests
-- Checks system resource usage (CPU, memory, disk)
-- Monitors Docker container resource consumption
-- Validates load balancer functionality
+### 4. 🧪 Service & System Validation (as part of Health Check job)
+
+- Verifies service endpoint responses (via `/healthz`).
+- Checks Docker container status and resource usage (basic).
+- Validates GPU accessibility within containers.
+- Confirms load balancer is routing.
 
 ### 5. 📈 Deployment Summary
+
 - Generates comprehensive summary report
 - Shows status of all jobs
 - Provides service URLs for easy access
@@ -98,6 +107,7 @@ The GitHub Actions workflow consists of 5 comprehensive stages:
 ## 📊 Monitoring & Logging
 
 ### Real-time Monitoring
+
 You can monitor the deployment in real-time by:
 
 1. **GitHub Actions Tab**: See live logs of each step
@@ -122,6 +132,8 @@ After successful deployment, these endpoints will be available:
 curl http://35.189.53.46:8001/healthz  # YOLO Combined
 curl http://35.189.53.46:8003/healthz  # MMPose  
 curl http://35.189.53.46:8004/healthz  # YOLO-NAS
+curl http://35.189.53.46:8005/healthz  # RF-DETR
+curl http://35.189.53.46:8006/healthz  # ViTPose
 curl http://35.189.53.46:8080/         # Load Balancer
 
 # Detailed service info
@@ -135,9 +147,11 @@ curl http://35.189.53.46:8004/         # YOLO-NAS API
 ### Common Issues
 
 #### 🚨 1. SSH Timeout Error (CRITICAL - FIXED May 31, 2025)
+
 **Problem**: GitHub Actions fails with SSH timeout when trying to connect to VM.
 
 **Error Messages**:
+
 ```
 🚨 SSH Timeout Error! This means your VM is likely stopped or not accessible.
 Connection timeout when attempting SSH to VM
@@ -147,17 +161,20 @@ Connection timeout when attempting SSH to VM
 
 **✅ SOLUTION APPLIED**:
 The workflow has been updated with correct VM details:
+
 - **Instance Name**: `padel-ai` ✅ (was: `nuro-padel-vm` ❌)
 - **Zone**: `australia-southeast1-a` ✅ (was: `us-central1-a` ❌)
 - **Secret Name**: `VM_HOST` ✅ (was: `VM_IP` ❌)
 
 **Enhanced Features Added**:
+
 - 🔍 **SSH Diagnostics**: Comprehensive connectivity testing with verbose output
 - 🚀 **VM Auto-Start**: Automatically starts stopped preemptible VMs
 - ⏱️ **Extended Timeout**: 7.5-minute VM startup timeout with incremental logging
 - 🛡️ **Critical SSH Validation**: Deployment fails if SSH connectivity issues detected
 
 #### 2. SSH Connection Troubleshooting
+
 ```bash
 # Check SSH key format (should be OpenSSH format)
 ssh-keygen -f ~/.ssh/id_rsa -e -m OpenSSH
@@ -173,11 +190,13 @@ gcloud compute instances start padel-ai --zone=australia-southeast1-a
 ```
 
 #### 2. Docker Build Fails
+
 - Check available disk space on GitHub Actions runner
 - Verify Dockerfile syntax in affected service
 - Check for dependency conflicts in requirements.txt
 
 #### 3. Health Checks Fail
+
 ```bash
 # SSH into VM and check services manually
 ssh Towers@35.189.53.46
@@ -187,6 +206,7 @@ docker-compose logs [service-name]
 ```
 
 #### 4. GPU Issues
+
 ```bash
 # Check NVIDIA Docker runtime
 docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
@@ -217,10 +237,12 @@ docker-compose ps
 ## 🎯 Triggering Deployments
 
 ### Automatic Triggers
+
 - **Push to main branch**: Automatically triggers full CI/CD pipeline
 - **Pull Request merge**: When PR is merged to main
 
 ### Manual Triggers
+
 1. Go to **Actions** tab in your GitHub repository
 2. Select **🚀 CI & Deploy to VM** workflow
 3. Click **Run workflow** button
@@ -231,16 +253,19 @@ docker-compose ps
 The workflow provides detailed performance metrics:
 
 ### Build Metrics
+
 - Docker build times for each service
 - Cache hit rates for optimized builds
 - Image sizes and registry push times
 
 ### Deployment Metrics
+
 - SSH connection time
 - Service startup time (90-second stabilization period)
 - Health check response times
 
 ### System Metrics
+
 - CPU usage across all containers
 - Memory consumption per service
 - GPU utilization (if available)

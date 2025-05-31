@@ -489,8 +489,12 @@ jobs:
           echo "VM_HOST: ${{ secrets.VM_HOST }}"
           echo "SSH Key length: ${#SSH_KEY} characters"
           echo "Username: Towers"
-          echo "Zone: us-central1-a"
-          echo "Instance: nuro-padel-vm"
+          echo "Zone: australia-southeast1-a ✅"
+          echo "Instance: padel-ai ✅"
+          echo ""
+          echo "🔧 FIXED: Updated VM details from wrong configuration:"
+          echo "   ❌ Was: nuro-padel-vm in us-central1-a"
+          echo "   ✅ Now: padel-ai in australia-southeast1-a"
           echo ""
         env:
           SSH_KEY: ${{ secrets.VM_SSH_KEY }}
@@ -498,12 +502,12 @@ jobs:
       - name:  Start VM if stopped
         run: |
           echo "🔍 Checking VM status..."
-          VM_STATUS=$(gcloud compute instances describe nuro-padel-vm --zone=us-central1-a --format="value(status)")
+          VM_STATUS=$(gcloud compute instances describe padel-ai --zone=australia-southeast1-a --format="value(status)")
           echo "Current VM status: $VM_STATUS"
           
           if [ "$VM_STATUS" = "TERMINATED" ] || [ "$VM_STATUS" = "STOPPED" ]; then
             echo "� Starting VM (currently $VM_STATUS)..."
-            gcloud compute instances start nuro-padel-vm --zone=us-central1-a
+            gcloud compute instances start padel-ai --zone=australia-southeast1-a
             echo "⏳ Waiting for VM to be ready..."
             
             # Wait for VM to start and be ready for SSH
@@ -511,7 +515,7 @@ jobs:
               echo "⏱️  Wait attempt $i/12 (30 seconds each)"
               sleep 30
               
-              VM_STATUS=$(gcloud compute instances describe nuro-padel-vm --zone=us-central1-a --format="value(status)")
+              VM_STATUS=$(gcloud compute instances describe padel-ai --zone=australia-southeast1-a --format="value(status)")
               if [ "$VM_STATUS" = "RUNNING" ]; then
                 echo "✅ VM is running, testing SSH connectivity..."
                 
@@ -547,7 +551,7 @@ jobs:
               echo "🔍 Running additional diagnostics..."
               
               # Get VM external IP for diagnostics
-              VM_EXTERNAL_IP=$(gcloud compute instances describe nuro-padel-vm --zone=us-central1-a --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
+              VM_EXTERNAL_IP=$(gcloud compute instances describe padel-ai --zone=australia-southeast1-a --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
               echo "VM External IP: $VM_EXTERNAL_IP"
               echo "Expected VM_HOST: ${{ secrets.VM_HOST }}"
               

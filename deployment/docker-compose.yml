@@ -11,6 +11,7 @@ services:
       dockerfile: Dockerfile
     image: nuro-padel-yolo-combined:latest
     container_name: nuro-padel-yolo-combined
+    runtime: nvidia
     restart: unless-stopped
     user: "1000:1000"
     ports:
@@ -29,6 +30,7 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - NVIDIA_VISIBLE_DEVICES=all
       # Model configuration overrides (examples)
       # - YOLO11_POSE_ENABLED=true
       # - FEATURE_ENHANCED_BALL_TRACKING_ENABLED=true
@@ -56,6 +58,7 @@ services:
       dockerfile: Dockerfile
     image: nuro-padel-mmpose:latest
     container_name: nuro-padel-mmpose
+    runtime: nvidia
     restart: unless-stopped
     user: "1000:1000"
     ports:
@@ -76,6 +79,7 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - NVIDIA_VISIBLE_DEVICES=all
       # Model configuration overrides (examples)
       # - RTMPOSE_M_ENABLED=true
       # - FEATURE_BIOMECHANICAL_ANALYSIS_ENABLED=true
@@ -103,6 +107,7 @@ services:
       dockerfile: Dockerfile
     image: nuro-padel-yolo-nas:latest
     container_name: nuro-padel-yolo-nas
+    runtime: nvidia
     restart: unless-stopped
     user: root
     ports:
@@ -126,6 +131,7 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - NVIDIA_VISIBLE_DEVICES=all
       - MODEL_CACHE_DIR=/app/weights/super-gradients
       # Model configuration overrides (examples)
       # - YOLO_NAS_S_ENABLED=true
@@ -158,6 +164,7 @@ services:
       dockerfile: Dockerfile
     image: nuro-padel-rf-detr:latest
     container_name: nuro-padel-rf-detr
+    runtime: nvidia
     restart: unless-stopped
     user: "1000:1000"
     ports:
@@ -176,6 +183,7 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - NVIDIA_VISIBLE_DEVICES=all
       # Model configuration overrides (examples)
       # - RF_DETR_ENABLED=true
       # - FEATURE_FP16_OPTIMIZATION_ENABLED=true
@@ -203,6 +211,7 @@ services:
       dockerfile: Dockerfile
     image: nuro-padel-vitpose:latest
     container_name: nuro-padel-vitpose
+    runtime: nvidia
     restart: unless-stopped
     user: "1000:1000"
     ports:
@@ -222,6 +231,7 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - NVIDIA_VISIBLE_DEVICES=all
       # Model configuration overrides (examples)
       # - VITPOSE_BASE_ENABLED=true
       # - FEATURE_ADVANCED_POSE_QUALITY_ENABLED=true
@@ -246,6 +256,12 @@ services:
   nginx:
     image: nginx:alpine
     container_name: nuro-padel-nginx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
     ports:
       - "8080:80"

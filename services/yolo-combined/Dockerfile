@@ -12,7 +12,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     YOLO_OFFLINE=1 \
     ULTRALYTICS_OFFLINE=1 \
     ONLINE=False \
-    YOLO_TELEMETRY=False
+    YOLO_TELEMETRY=False \
+    MPLCONFIGDIR=/tmp/matplotlib_config \
+    ULTRALYTICS_CONFIG_DIR=/tmp/ultralytics_config
 
 # Use faster mirrors + retry logic
 RUN sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list && \

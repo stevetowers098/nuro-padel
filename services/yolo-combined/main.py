@@ -271,17 +271,32 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict,
             except Exception as e:
                 logger.warning(f"Error closing stdin: {e}")
 
+        # Close stdin and handle ffmpeg completion robustly
+        if process.stdin and not process.stdin.closed:
+            try:
+                process.stdin.close()
+            except Exception as e:
+                logger.warning(f"Error closing stdin: {e}")
+
         try:
             stdout, stderr = process.communicate(timeout=120)
-            if process.returncode == 0:
-                logger.info("Video created successfully")
-                return await upload_to_gcs(output_video_path, folder)
-            else:
-                logger.error(f"FFMPEG failed with code {process.returncode}")
-                return None
         except subprocess.TimeoutExpired:
             process.kill()
             logger.error("FFMPEG timed out")
+            return None
+        except ValueError as e:
+            # Handle flush of closed file during communicate
+            stdout, stderr = ("", "")
+            logger.warning(f"FFmpeg communicate ValueError: {e}")
+
+        # Log ffmpeg stderr if failure
+        if process.returncode == 0:
+            logger.info("Video created successfully")
+            return await upload_to_gcs(output_video_path, folder)
+        else:
+            logger.error(f"FFMPEG failed with code {process.returncode}")
+            if stderr:
+                logger.error(f"FFmpeg stderr: {stderr}")
             return None
     finally:
         if output_video_path and os.path.exists(output_video_path):

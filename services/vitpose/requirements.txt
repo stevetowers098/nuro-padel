@@ -1,5 +1,13 @@
-# ViTPose++ Stage 2 Requirements - Additional dependencies
-# Installed after MMPose via mim
+# ViTPose++ Pose Estimation Service Requirements
+# Consolidated from stage1 and stage2 files
+
+# Core PyTorch with CUDA 12.1 support
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
+
+# Core numerical libraries
+numpy>=1.21.0,<2.0
 
 # FastAPI and server
 fastapi==0.111.0

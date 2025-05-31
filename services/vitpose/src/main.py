@@ -137,64 +137,78 @@ model_info = {"name": "none", "source": "none"}
 
 if MMPOSE_AVAILABLE:
     try:
-        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-        logger.info(f"Initializing ViTPose++ model on device: {device}")
+        # Check configuration to see if models are enabled
+        models_config = service_config.get("models", {})
+        vitpose_enabled = models_config.get("vitpose_base", {}).get("enabled", True)
+        hrnet_enabled = models_config.get("hrnet_w48", {}).get("enabled", True)
         
-        # Try efficient ViTPose-Base checkpoint for optimal performance
-        local_checkpoint = '/app/weights/vitpose/vitpose_base_coco_256x192.pth'
+        logger.info(f"Model configuration - ViTPose enabled: {vitpose_enabled}, HRNet enabled: {hrnet_enabled}")
         
-        # Method 1: Try efficient ViTPose-Base config
-        if os.path.exists(local_checkpoint):
-            logger.info(f"🔄 Attempting Method 1: Efficient ViTPose-Base checkpoint")
-            try:
-                config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192'
-                logger.info(f"Loading with config: {config_name}, checkpoint: {local_checkpoint}")
-                vitpose_model = init_model(config_name, local_checkpoint, device=device)
-                
-                # Enable FP16 if CUDA available for VRAM efficiency
-                if torch.cuda.is_available():
-                    vitpose_model.half()
-                    logger.info("Enabled FP16 precision for VRAM efficiency")
-                
-                model_info = {"name": "ViTPose-Base", "source": "local_checkpoint", "precision": "fp16" if torch.cuda.is_available() else "fp32", "variant": "Efficient"}
-                logger.info("✅ Efficient ViTPose-Base model loaded successfully from local checkpoint")
-            except Exception as e_local:
-                logger.error(f"❌ Failed Method 1 (efficient ViTPose-Base): {e_local}")
-        
-        # Method 2: Use MMPose model zoo if local fails
-        if vitpose_model is None:
-            logger.info("🔄 Attempting Method 2: MMPose model zoo download")
-            try:
-                config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192'
-                logger.info(f"Loading from model zoo: {config_name}")
-                vitpose_model = init_model(config_name, None, device=device)
-                
-                # Enable FP16 if CUDA available
-                if torch.cuda.is_available():
-                    vitpose_model.half()
-                    logger.info("Enabled FP16 precision for VRAM efficiency")
-                
-                model_info = {"name": "ViTPose-Base", "source": "mmpose_zoo", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
-                logger.info("✅ ViTPose++ model loaded successfully from model zoo")
-            except Exception as e_zoo:
-                logger.error(f"❌ Failed Method 2 (model zoo): {e_zoo}")
-        
-        # Method 3: Fallback to HRNet if ViTPose fails
-        if vitpose_model is None:
-            logger.info("🔄 Attempting Method 3: HRNet fallback")
-            try:
-                config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
-                logger.info(f"Loading HRNet fallback: {config_name}")
-                vitpose_model = init_model(config_name, None, device=device)
-                
-                if torch.cuda.is_available():
-                    vitpose_model.half()
-                    logger.info("Enabled FP16 precision for VRAM efficiency")
-                
-                model_info = {"name": "HRNet-W48", "source": "mmpose_zoo_fallback", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
-                logger.info("✅ HRNet model loaded successfully (fallback)")
-            except Exception as e_hrnet:
-                logger.error(f"❌ Failed Method 3 (HRNet fallback): {e_hrnet}")
+        if not vitpose_enabled and not hrnet_enabled:
+            logger.info("🔕 All models disabled in configuration - running in fallback mode")
+        else:
+            device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+            logger.info(f"Initializing ViTPose++ model on device: {device}")
+            
+            # Try efficient ViTPose-Base checkpoint for optimal performance
+            local_checkpoint = '/app/weights/vitpose/vitpose_base_coco_256x192.pth'
+            
+            # Method 1: Try efficient ViTPose-Base config (only if enabled)
+            if vitpose_enabled and os.path.exists(local_checkpoint):
+                logger.info(f"🔄 Attempting Method 1: Efficient ViTPose-Base checkpoint")
+                try:
+                    config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192.py'
+                    logger.info(f"Loading with config: {config_name}, checkpoint: {local_checkpoint}")
+                    vitpose_model = init_model(config_name, local_checkpoint, device=device)
+                    
+                    # Enable FP16 if CUDA available for VRAM efficiency
+                    if torch.cuda.is_available():
+                        vitpose_model.half()
+                        logger.info("Enabled FP16 precision for VRAM efficiency")
+                    
+                    model_info = {"name": "ViTPose-Base", "source": "local_checkpoint", "precision": "fp16" if torch.cuda.is_available() else "fp32", "variant": "Efficient"}
+                    logger.info("✅ Efficient ViTPose-Base model loaded successfully from local checkpoint")
+                except Exception as e_local:
+                    logger.error(f"❌ Failed Method 1 (efficient ViTPose-Base): {e_local}")
+            elif not vitpose_enabled:
+                logger.info("🔕 ViTPose-Base model disabled in configuration, skipping")
+            
+            # Method 2: Use MMPose model zoo if local fails (only if enabled)
+            if vitpose_enabled and vitpose_model is None:
+                logger.info("🔄 Attempting Method 2: MMPose model zoo download")
+                try:
+                    config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192.py'
+                    logger.info(f"Loading from model zoo: {config_name}")
+                    vitpose_model = init_model(config_name, None, device=device)
+                    
+                    # Enable FP16 if CUDA available
+                    if torch.cuda.is_available():
+                        vitpose_model.half()
+                        logger.info("Enabled FP16 precision for VRAM efficiency")
+                    
+                    model_info = {"name": "ViTPose-Base", "source": "mmpose_zoo", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
+                    logger.info("✅ ViTPose++ model loaded successfully from model zoo")
+                except Exception as e_zoo:
+                    logger.error(f"❌ Failed Method 2 (model zoo): {e_zoo}")
+            
+            # Method 3: Fallback to HRNet if ViTPose fails (only if enabled)
+            if hrnet_enabled and vitpose_model is None:
+                logger.info("🔄 Attempting Method 3: HRNet fallback")
+                try:
+                    config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
+                    logger.info(f"Loading HRNet fallback: {config_name}")
+                    vitpose_model = init_model(config_name, None, device=device)
+                    
+                    if torch.cuda.is_available():
+                        vitpose_model.half()
+                        logger.info("Enabled FP16 precision for VRAM efficiency")
+                    
+                    model_info = {"name": "HRNet-W48", "source": "mmpose_zoo_fallback", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
+                    logger.info("✅ HRNet model loaded successfully (fallback)")
+                except Exception as e_hrnet:
+                    logger.error(f"❌ Failed Method 3 (HRNet fallback): {e_hrnet}")
+            elif not hrnet_enabled:
+                logger.info("🔕 HRNet model disabled in configuration, skipping")
 
     except Exception as e_init:
         logger.error(f"ViTPose++ model initialization failed: {e_init}", exc_info=True)
@@ -650,17 +664,31 @@ async def health_check():
     model_loaded = vitpose_model is not None
     gpu_info = get_gpu_memory_info()
     
+    # Check if models are intentionally disabled in config
+    models_config = service_config.get("models", {})
+    vitpose_enabled = models_config.get("vitpose_base", {}).get("enabled", True)
+    hrnet_enabled = models_config.get("hrnet_w48", {}).get("enabled", True)
+    models_intentionally_disabled = not vitpose_enabled and not hrnet_enabled
+    
+    # Service is healthy if:
+    # 1. Models are loaded, OR
+    # 2. Models are intentionally disabled in config (fallback mode)
+    is_healthy = model_loaded or models_intentionally_disabled
+    
     # System info
     cpu_percent = psutil.cpu_percent()
     memory = psutil.virtual_memory()
     
     response_data = {
-        "status": "healthy" if model_loaded else "unhealthy",
+        "status": "healthy" if is_healthy else "unhealthy",
         "service": config_loader.get_service_info(),
         "models": {
             "model_loaded": model_loaded,
             "model_info": model_info,
-            "mmpose_available": MMPOSE_AVAILABLE
+            "mmpose_available": MMPOSE_AVAILABLE,
+            "vitpose_enabled": vitpose_enabled,
+            "hrnet_enabled": hrnet_enabled,
+            "fallback_mode": models_intentionally_disabled
         },
         "gpu_memory": gpu_info,
         "system": {
@@ -675,8 +703,8 @@ async def health_check():
         }
     }
     
-    status_code = 200 if model_loaded else 503
-    if not model_loaded:
+    status_code = 200 if is_healthy else 503
+    if not is_healthy:
         return JSONResponse(content=response_data, status_code=status_code)
     
     return response_data

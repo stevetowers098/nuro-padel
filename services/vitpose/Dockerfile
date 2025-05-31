@@ -34,25 +34,26 @@ RUN ln -s /usr/bin/python3.10 /usr/bin/python && \
 # Set working directory
 WORKDIR /app
 
-# Copy staged requirements for optimal dependency resolution
-COPY requirements-stage1.txt .
-COPY requirements-stage2.txt .
+# Copy requirements file
+COPY requirements.txt .
 
 # CRITICAL STAGED INSTALLATION for MMPose compatibility
 # Stage 1: Core PyTorch (MUST be installed first)
 RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
     pip uninstall torch torchvision torchaudio triton numpy xtcocotools pycocotools -y --quiet 2>/dev/null || true && \
-    pip install --no-cache-dir -r requirements-stage1.txt
+    pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 && \
+    pip install --no-cache-dir "numpy>=1.21.0,<2.0"
 
 # Stage 2: Install via mim (CRITICAL ORDER to avoid dependency conflicts)
 RUN pip install --no-cache-dir openmim==0.3.9 && \
     mim install mmengine && \
     mim install "mmcv==2.1.0" && \
     mim install "mmdet>=3.0.0,<3.3.0" && \
+    mim install "mmpretrain>=1.0.0" && \
     mim install mmpose>=1.3.0
 
 # Stage 3: Additional dependencies
-RUN pip install --no-cache-dir -r requirements-stage2.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create weights directory for volume mounting
 RUN mkdir -p /app/weights/vitpose

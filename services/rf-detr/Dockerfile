@@ -43,7 +43,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
     pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 
 # Stage 2: RF-DETR with exact stable version
-RUN pip install --no-cache-dir rfdetr==0.1.0
+RUN pip install --no-cache-dir rfdetr==1.1.0
 
 # Stage 3: Additional dependencies
 RUN pip install --no-cache-dir -r requirements.txt

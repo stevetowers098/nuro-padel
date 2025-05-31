@@ -454,7 +454,7 @@ jobs:
   start-vm:
     name: 🟢 Start GCP VM
     needs: [detect-changes, build-summary]
-    if: always() && (needs.build-yolo-combined.result == 'success' || needs.build-mmpose.result == 'success' || needs.build-yolo-nas.result == 'success' || needs.build-rf-detr.result == 'success' || needs.build-vitpose.result == 'success' || needs.build-yolo-combined.result == 'skipped' || needs.build-mmpose.result == 'skipped' || needs.build-yolo-nas.result == 'skipped' || needs.build-rf-detr.result == 'skipped' || needs.build-vitpose.result == 'skipped')
+    if: always() && (needs.detect-changes.outputs.docker-compose == 'true' || needs.build-yolo-combined.result == 'success' || needs.build-mmpose.result == 'success' || needs.build-yolo-nas.result == 'success' || needs.build-rf-detr.result == 'success' || needs.build-vitpose.result == 'success' || needs.build-yolo-combined.result == 'skipped' || needs.build-mmpose.result == 'skipped' || needs.build-yolo-nas.result == 'skipped' || needs.build-rf-detr.result == 'skipped' || needs.build-vitpose.result == 'skipped')
     runs-on: ubuntu-22.04
     steps:
       - name: 🔍 Debug Job Conditions
@@ -674,7 +674,6 @@ jobs:
             
             echo "📋 Docker Compose Service Status:"
             echo "======================================"
-            cd deployment
             docker-compose ps
             echo ""
             
@@ -709,7 +708,8 @@ jobs:
               done
               
               echo "❌ ${service_name} health check FAILED after ${max_attempts} attempts"
-              docker-compose logs --tail 15 "$service_name" || echo "Could not retrieve logs"
+              echo "🔍 Checking container logs for ${service_name}..."
+              docker-compose logs --tail 15 "$service_name" 2>/dev/null || echo "Could not retrieve logs for $service_name"
               return 1
             }
             

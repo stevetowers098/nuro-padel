@@ -27,7 +27,7 @@ import subprocess
 
 # MMPose v1.x API imports
 try:
-    from mmpose.apis import init_model, inference_topdown
+    from mmpose.apis import init_model, MMPoseInferencer
     MMPOSE_AVAILABLE = True
 except ImportError:
     MMPOSE_AVAILABLE = False
@@ -107,6 +107,7 @@ async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> s
 
 # Model Loading
 mmpose_model = None
+mmpose_inferencer = None
 model_info = {"name": "none", "source": "none"}
 
 if MMPOSE_AVAILABLE:
@@ -138,6 +139,7 @@ if MMPOSE_AVAILABLE:
             try:
                 logger.info(f"Loading with config: {local_config}, checkpoint: {local_checkpoint}")
                 mmpose_model = init_model(local_config, local_checkpoint, device=model_device)
+                mmpose_inferencer = MMPoseInferencer(model=mmpose_model)
                 model_info = {"name": "RTMPose-M", "source": "local_config_checkpoint"}
                 logger.info("✅ RTMPose-M model loaded successfully from local config + checkpoint")
             except Exception as e_local_config:
@@ -151,6 +153,7 @@ if MMPOSE_AVAILABLE:
                 config_name = 'rtmpose-m_8xb256-420e_aic-coco-256x192'
                 logger.info(f"Loading with OpenMMLab config: {config_name}, checkpoint: {local_checkpoint}")
                 mmpose_model = init_model(config_name, local_checkpoint, device=model_device)
+                mmpose_inferencer = MMPoseInferencer(model=mmpose_model)
                 model_info = {"name": "RTMPose-M", "source": "openmmlab_config_local_checkpoint"}
                 logger.info("✅ RTMPose-M model loaded successfully from OpenMMLab config + local checkpoint")
             except Exception as e_local:
@@ -164,6 +167,7 @@ if MMPOSE_AVAILABLE:
                 config_name = 'rtmpose-m_8xb256-420e_aic-coco-256x192'
                 logger.info(f"Trying OpenMMLab config: {config_name}")
                 mmpose_model = init_model(config_name, None, device=model_device)
+                mmpose_inferencer = MMPoseInferencer(model=mmpose_model)
                 model_info = {"name": "RTMPose-M", "source": "openmmlab_zoo"}
                 logger.info("✅ RTMPose-M model loaded successfully from OpenMMLab zoo")
             except Exception as e_zoo:
@@ -177,6 +181,7 @@ if MMPOSE_AVAILABLE:
                 config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
                 logger.info(f"Trying HRNet config: {config_name}")
                 mmpose_model = init_model(config_name, None, device=model_device)
+                mmpose_inferencer = MMPoseInferencer(model=mmpose_model)
                 model_info = {"name": "HRNet-W48", "source": "openmmlab_zoo"}
                 logger.info("✅ HRNet-W48 model loaded successfully (fallback)")
             except Exception as e_hrnet:
@@ -321,8 +326,27 @@ def analyze_frame_biomechanics(frame_content: np.ndarray) -> Dict[str, Any]:
     biomechanical_metrics = {}
 
     try:
-        # Run MMPose inference
-        pose_data_samples = inference_topdown(mmpose_model, frame_content)
+        # Run MMPose inference using inferencer
+        if mmpose_inferencer is None:
+            logger.warning("MMPose inferencer not initialized")
+            return {
+                "keypoints": {},
+                "joint_angles": {},
+                "biomechanical_metrics": {
+                    "error_processing_frame": True,
+                    "error_message": "inferencer_not_initialized",
+                    "model_status": "inferencer_failed"
+                }
+            }
+        
+        pose_results = mmpose_inferencer(frame_content)
+        
+        if pose_results and 'predictions' in pose_results:
+            pose_data_samples = pose_results['predictions']
+        elif pose_results:
+            pose_data_samples = [pose_results]
+        else:
+            pose_data_samples = []
 
         if pose_data_samples:
             data_sample = pose_data_samples[0]
@@ -472,19 +496,23 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict) -
 
         try:
             for frame in frames:
-                if process.poll() is None:  # Check if process is still running
+                if process.poll() is None and process.stdin and not process.stdin.closed:
                     try:
                         process.stdin.write(frame.tobytes())
-                    except (IOError, BrokenPipeError):
-                        logger.warning("FFmpeg stdin pipe broken, stopping frame writing")
+                        process.stdin.flush()
+                    except (IOError, BrokenPipeError, OSError) as e:
+                        logger.warning(f"FFmpeg stdin pipe error: {e}, stopping frame writing")
                         break
                 else:
-                    logger.warning("FFmpeg process terminated early")
+                    logger.warning("FFmpeg process terminated early or stdin unavailable")
                     break
             
             # Safely close stdin
             if process.stdin and not process.stdin.closed:
-                process.stdin.close()
+                try:
+                    process.stdin.close()
+                except Exception as e:
+                    logger.warning(f"Error closing stdin: {e}")
 
             stdout, stderr = process.communicate(timeout=120)
             if process.returncode == 0:

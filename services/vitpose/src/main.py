@@ -29,7 +29,7 @@ import math
 
 # MMPose ViTPose++ imports
 try:
-    from mmpose.apis import init_model, inference_topdown
+    from mmpose.apis import init_model, MMPoseInferencer
     from mmpose.utils import register_all_modules
     register_all_modules()
     MMPOSE_AVAILABLE = True
@@ -133,6 +133,7 @@ async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> s
 
 # Model Loading
 vitpose_model = None
+vitpose_inferencer = None
 model_info = {"name": "none", "source": "none"}
 
 if MMPOSE_AVAILABLE:
@@ -160,6 +161,7 @@ if MMPOSE_AVAILABLE:
                     config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192.py'
                     logger.info(f"Loading with config: {config_name}, checkpoint: {local_checkpoint}")
                     vitpose_model = init_model(config_name, local_checkpoint, device=device)
+                    vitpose_inferencer = MMPoseInferencer(model=vitpose_model)
                     
                     # Enable FP16 if CUDA available for VRAM efficiency
                     if torch.cuda.is_available():
@@ -180,6 +182,7 @@ if MMPOSE_AVAILABLE:
                     config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192.py'
                     logger.info(f"Loading from model zoo: {config_name}")
                     vitpose_model = init_model(config_name, None, device=device)
+                    vitpose_inferencer = MMPoseInferencer(model=vitpose_model)
                     
                     # Enable FP16 if CUDA available
                     if torch.cuda.is_available():
@@ -198,6 +201,7 @@ if MMPOSE_AVAILABLE:
                     config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
                     logger.info(f"Loading HRNet fallback: {config_name}")
                     vitpose_model = init_model(config_name, None, device=device)
+                    vitpose_inferencer = MMPoseInferencer(model=vitpose_model)
                     
                     if torch.cuda.is_available():
                         vitpose_model.half()
@@ -403,13 +407,27 @@ def analyze_frame_pose(frame_content: np.ndarray, confidence_threshold: float = 
     pose_metrics = {}
 
     try:
-        # Run ViTPose++ inference with FP16
-        with torch.no_grad():
-            if torch.cuda.is_available():
-                with torch.cuda.amp.autocast():
-                    pose_data_samples = inference_topdown(vitpose_model, frame_content)
-            else:
-                pose_data_samples = inference_topdown(vitpose_model, frame_content)
+        # Run ViTPose++ inference using inferencer
+        if vitpose_inferencer is None:
+            logger.warning("ViTPose inferencer not initialized")
+            return {
+                "keypoints": {},
+                "joint_angles": {},
+                "pose_metrics": {
+                    "error_processing_frame": True,
+                    "error_message": "inferencer_not_initialized",
+                    "model_status": "inferencer_failed"
+                }
+            }
+        
+        pose_results = vitpose_inferencer(frame_content)
+        
+        if pose_results and 'predictions' in pose_results:
+            pose_data_samples = pose_results['predictions']
+        elif pose_results:
+            pose_data_samples = [pose_results]
+        else:
+            pose_data_samples = []
 
         if pose_data_samples:
             data_sample = pose_data_samples[0]
@@ -620,18 +638,22 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict) -
 
         try:
             for frame in frames:
-                if process.poll() is None:
+                if process.poll() is None and process.stdin and not process.stdin.closed:
                     try:
                         process.stdin.write(frame.tobytes())
-                    except (IOError, BrokenPipeError):
-                        logger.warning("FFmpeg stdin pipe broken, stopping frame writing")
+                        process.stdin.flush()
+                    except (IOError, BrokenPipeError, OSError) as e:
+                        logger.warning(f"FFmpeg stdin pipe error: {e}, stopping frame writing")
                         break
                 else:
-                    logger.warning("FFmpeg process terminated early")
+                    logger.warning("FFmpeg process terminated early or stdin unavailable")
                     break
             
             if process.stdin and not process.stdin.closed:
-                process.stdin.close()
+                try:
+                    process.stdin.close()
+                except Exception as e:
+                    logger.warning(f"Error closing stdin: {e}")
 
             stdout, stderr = process.communicate(timeout=120)
             if process.returncode == 0:

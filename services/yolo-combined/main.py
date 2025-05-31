@@ -24,6 +24,10 @@ from datetime import datetime
 from google.cloud import storage
 from ultralytics import YOLO
 import subprocess
+import requests
+import zipfile
+import shutil
+import yaml
 
 # Setup for utils and shared config
 try:
@@ -41,13 +45,14 @@ try:
     from shared.config_loader import ConfigLoader, merge_env_overrides
 except ImportError:
     # Fallback if shared module not available
-    class ConfigLoader:
+    class FallbackConfigLoader:
         def __init__(self, service_name: str, config_dir: str = "/app/config"):
             pass
         def load_config(self): return {}
         def get_feature_flags(self): return {}
         def is_feature_enabled(self, feature_name: str): return False
         def get_service_info(self): return {"service": "yolo_combined", "version": "2.0.0"}
+    ConfigLoader = FallbackConfigLoader
     def merge_env_overrides(config): return config
 
 # Configure logging
@@ -89,6 +94,14 @@ class VideoAnalysisURLRequest(BaseModel):
     data: bool = True
     confidence: float = 0.3
 
+class TrainingRequest(BaseModel):
+    dataset_yaml: HttpUrl  # URL to dataset.yaml file
+    model_type: str = "yolo11n"  # yolo11n, yolo11s, yolov8n, yolov8s, etc.
+    epochs: int = 100
+    batch_size: int = 16
+    learning_rate: float = 0.01
+    task: str = "detect"  # detect, pose, segment
+
 # Helper Functions
 async def upload_to_gcs(video_path: str, folder: str, object_name: Optional[str] = None) -> str:
     if not object_name:
@@ -108,7 +121,39 @@ async def upload_to_gcs(video_path: str, folder: str, object_name: Optional[str]
         return ""
 
 def load_model(model_name: str, description: str) -> Optional[YOLO]:
-    """Load YOLO model with error handling"""
+    """Load YOLO model with error handling, prioritizing custom trained models"""
+    
+    # Check for custom trained model first
+    if "yolo11" in model_name and "pose" in model_name:
+        custom_model_path = os.path.join(WEIGHTS_DIR, "custom_yolo11n_pose.pt")
+    elif "yolo11" in model_name:
+        custom_model_path = os.path.join(WEIGHTS_DIR, "custom_yolo11n_detect.pt")
+    elif "yolov8" in model_name and "pose" in model_name:
+        custom_model_path = os.path.join(WEIGHTS_DIR, "custom_yolov8n_pose.pt")
+    elif "yolov8" in model_name:
+        custom_model_path = os.path.join(WEIGHTS_DIR, "custom_yolov8n_detect.pt")
+    else:
+        custom_model_path = None
+    
+    # Try custom model first
+    if custom_model_path and os.path.exists(custom_model_path):
+        try:
+            logger.info(f"Loading custom {description} from: {custom_model_path}")
+            model = YOLO(custom_model_path)
+            logger.info(f"✅ Custom {description} loaded successfully")
+            
+            if torch.cuda.is_available():
+                model.to('cuda')
+                try:
+                    model.fuse()
+                    logger.info(f"Custom {description} on CUDA and fused")
+                except Exception:
+                    logger.warning(f"Could not fuse custom {description}")
+            return model
+        except Exception as e:
+            logger.warning(f"Failed to load custom model, falling back to pretrained: {e}")
+    
+    # Fallback to pretrained model
     model_path = os.path.join(WEIGHTS_DIR, "ultralytics", model_name)
     try:
         logger.info(f"Loading {description} from: {model_path}")
@@ -216,14 +261,22 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         for frame in frames:
-            if process.stdin and not process.stdin.closed:
+            if process.poll() is None and process.stdin and not process.stdin.closed:
                 try:
                     process.stdin.write(frame.tobytes())
-                except (IOError, BrokenPipeError):
+                    process.stdin.flush()
+                except (IOError, BrokenPipeError, OSError) as e:
+                    logger.warning(f"FFmpeg stdin pipe error: {e}, stopping frame writing")
                     break
+            else:
+                logger.warning("FFmpeg process terminated early or stdin unavailable")
+                break
 
         if process.stdin and not process.stdin.closed:
-            process.stdin.close()
+            try:
+                process.stdin.close()
+            except Exception as e:
+                logger.warning(f"Error closing stdin: {e}")
 
         try:
             stdout, stderr = process.communicate(timeout=120)
@@ -560,5 +613,114 @@ async def process_object_detection(payload: VideoAnalysisURLRequest, model: YOLO
     finally:
         if temp_downloaded_path and os.path.exists(temp_downloaded_path):
             os.unlink(temp_downloaded_path)
+
+# Training Endpoints
+@app.post("/train")
+async def train_yolo_model(payload: TrainingRequest):
+    """
+    Train custom YOLO11/YOLOv8 model for padel-specific data
+    
+    Supports both detection and pose estimation model training
+    """
+    try:
+        logger.info(f"Training request received: {payload.model_type} model, {payload.epochs} epochs")
+        
+        # Create training directory
+        training_dir = "/tmp/yolo_training"
+        os.makedirs(training_dir, exist_ok=True)
+        
+        # Download dataset configuration
+        dataset_yaml_path = os.path.join(training_dir, "dataset.yaml")
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(str(payload.dataset_yaml))
+            response.raise_for_status()
+        
+        with open(dataset_yaml_path, "wb") as f:
+            f.write(response.content)
+        
+        # Initialize model
+        model = YOLO(f"{payload.model_type}.pt")
+        
+        # Training parameters
+        training_args = {
+            "data": dataset_yaml_path,
+            "epochs": payload.epochs,
+            "batch": payload.batch_size,
+            "lr0": payload.learning_rate,
+            "device": 0 if torch.cuda.is_available() else "cpu",
+            "project": os.path.join(WEIGHTS_DIR, "custom"),
+            "name": f"{payload.model_type}_{payload.task}",
+            "save": True,
+            "verbose": True
+        }
+        
+        # Add task-specific settings
+        if payload.task == "pose":
+            training_args["task"] = "pose"
+        
+        # Train model
+        logger.info(f"Starting training with args: {training_args}")
+        results = model.train(**training_args)
+        
+        # Get best model path - handle different result types
+        save_dir = getattr(results, 'save_dir', None)
+        if save_dir is None:
+            # Fallback to project/name structure
+            save_dir = os.path.join(WEIGHTS_DIR, "custom", f"{payload.model_type}_{payload.task}")
+        
+        best_model_path = os.path.join(save_dir, "weights", "best.pt")
+        
+        # Copy to standardized location
+        custom_model_name = f"custom_{payload.model_type}_{payload.task}.pt"
+        custom_model_path = os.path.join(WEIGHTS_DIR, custom_model_name)
+        
+        if os.path.exists(best_model_path):
+            shutil.copy(best_model_path, custom_model_path)
+            logger.info(f"✅ Training completed: {custom_model_path}")
+        else:
+            raise Exception(f"Best model not found at expected path: {best_model_path}")
+        
+        return {
+            "status": "complete",
+            "model_path": custom_model_path,
+            "model_type": payload.model_type,
+            "task": payload.task,
+            "epochs": payload.epochs,
+            "results_dir": str(save_dir),
+            "message": "Model trained successfully and saved"
+        }
+        
+    except Exception as e:
+        logger.error(f"Training failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Training error: {str(e)}")
+
+@app.get("/training-status")
+async def get_training_status():
+    """Get status of custom trained models"""
+    
+    # Check for various custom model types
+    custom_models = {}
+    
+    model_patterns = [
+        ("yolo11n_detect", "custom_yolo11n_detect.pt"),
+        ("yolo11n_pose", "custom_yolo11n_pose.pt"),
+        ("yolo11s_detect", "custom_yolo11s_detect.pt"),
+        ("yolo11s_pose", "custom_yolo11s_pose.pt"),
+        ("yolov8n_detect", "custom_yolov8n_detect.pt"),
+        ("yolov8n_pose", "custom_yolov8n_pose.pt"),
+        ("yolov8s_detect", "custom_yolov8s_detect.pt"),
+        ("yolov8s_pose", "custom_yolov8s_pose.pt")
+    ]
+    
+    for model_name, filename in model_patterns:
+        custom_models[model_name] = os.path.exists(os.path.join(WEIGHTS_DIR, filename))
+    
+    return {
+        "custom_models_available": custom_models,
+        "weights_directory": WEIGHTS_DIR,
+        "training_supported": True,
+        "supported_models": ["yolo11n", "yolo11s", "yolov8n", "yolov8s"],
+        "supported_tasks": ["detect", "pose"]
+    }
 
 # NOTE: Removed if __name__ == "__main__": block for uvicorn CMD compatibility

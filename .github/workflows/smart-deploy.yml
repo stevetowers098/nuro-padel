@@ -604,6 +604,30 @@ jobs:
             echo "⏰ Deployment started at: $(date)"
             
             cd /opt/padel-docker
+            
+            # 🔧 FIX: Check for corrupted docker-compose.yml and repair
+            echo "🔍 Checking docker-compose.yml integrity..."
+            if ! docker-compose config > /dev/null 2>&1; then
+              echo "⚠️  CORRUPTED docker-compose.yml detected! Repairing from GitHub..."
+              
+              # Backup corrupted file
+              cp docker-compose.yml docker-compose.yml.corrupted-backup-$(date +%Y%m%d-%H%M%S)
+              
+              # Download fresh version from GitHub
+              curl -o docker-compose.yml.new https://raw.githubusercontent.com/stevetowers098/nuro-padel/main/deployment/docker-compose.yml
+              
+              # Validate new file
+              if docker-compose -f docker-compose.yml.new config > /dev/null 2>&1; then
+                mv docker-compose.yml.new docker-compose.yml
+                echo "✅ docker-compose.yml repaired successfully"
+              else
+                echo "❌ Downloaded file is also invalid! Manual intervention required."
+                exit 1
+              fi
+            else
+              echo "✅ docker-compose.yml is valid"
+            fi
+            
             echo "🔄 Pulling latest images..."
             docker-compose pull
             echo "🚀 Restarting services..."

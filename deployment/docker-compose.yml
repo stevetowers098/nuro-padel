@@ -9,7 +9,7 @@ services:
     build:
       context: ../services/yolo-combined
       dockerfile: Dockerfile
-    image: ghcr.io/stevetowers098/nuro-padel/yolo-combined:latest
+    image: nuro-padel-yolo-combined:latest
     container_name: nuro-padel-yolo-combined
     restart: unless-stopped
     user: "1000:1000"
@@ -54,7 +54,7 @@ services:
     build:
       context: ../services/mmpose
       dockerfile: Dockerfile
-    image: ghcr.io/stevetowers098/nuro-padel/mmpose:latest
+    image: nuro-padel-mmpose:latest
     container_name: nuro-padel-mmpose
     restart: unless-stopped
     user: "1000:1000"
@@ -101,10 +101,10 @@ services:
     build:
       context: ../services/yolo-nas
       dockerfile: Dockerfile
-    image: ghcr.io/stevetowers098/nuro-padel/yolo-nas:latest
+    image: nuro-padel-yolo-nas:latest
     container_name: nuro-padel-yolo-nas
     restart: unless-stopped
-    user: "root"
+    user: root
     ports:
       - "8004:8004"
     volumes:
@@ -113,8 +113,12 @@ services:
       - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0
       - HOME=/tmp
+      - USER=root
       - TMPDIR=/tmp
+      - LOGDIR=/tmp
       - SG_LOG_LEVEL=ERROR
       - SUPER_GRADIENTS_LOG_DIR=/tmp/sg_logs
       - YOLO_OFFLINE=1
@@ -122,6 +126,8 @@ services:
       - ONLINE=False
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - YOLO_OFFLINE=false
+      - MODEL_CACHE_DIR=/app/weights/super-gradients
       # Model configuration overrides (examples)
       # - YOLO_NAS_S_ENABLED=true
       # - FEATURE_HIGH_ACCURACY_MODE_ENABLED=true
@@ -140,6 +146,9 @@ services:
       timeout: 30s
       retries: 3
       start_period: 120s
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     networks:
       - nuro-padel-network
 
@@ -148,7 +157,7 @@ services:
     build:
       context: ../services/rf-detr
       dockerfile: Dockerfile
-    image: ghcr.io/stevetowers098/nuro-padel/rf-detr:latest
+    image: nuro-padel-rf-detr:latest
     container_name: nuro-padel-rf-detr
     restart: unless-stopped
     user: "1000:1000"
@@ -193,7 +202,7 @@ services:
     build:
       context: ../services/vitpose
       dockerfile: Dockerfile
-    image: ghcr.io/stevetowers098/nuro-padel/vitpose:latest
+    image: nuro-padel-vitpose:latest
     container_name: nuro-padel-vitpose
     restart: unless-stopped
     user: "1000:1000"

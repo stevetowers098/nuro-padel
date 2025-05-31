@@ -3,6 +3,8 @@
 
 # --- YOLO-NAS (auto-manages PyTorch compatibility) ---
 super-gradients==3.7.1
+torch>=1.13.0
+torchvision>=0.14.0
 
 # --- Core Dependencies ---
 numpy==1.23.0

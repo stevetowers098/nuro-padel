@@ -27,39 +27,43 @@ import psutil
 import gc
 import math
 
+# Configure logging (moved to top for early availability)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
 # MMPose ViTPose++ imports
+MMPOSE_AVAILABLE = False
 try:
     from mmpose.apis import init_model, inference_topdown
     from mmpose.utils import register_all_modules
     register_all_modules()
     MMPOSE_AVAILABLE = True
-except ImportError:
-    MMPOSE_AVAILABLE = False
-    logging.warning("MMPose not available - service will run in fallback mode")
-
+    logger.info("MMPose imports successful.")
+except ImportError as e:
+    logger.error(f"MMPose import failed: {e}. ViTPose service will run in fallback mode.", exc_info=True)
+except Exception as e:
+    logger.critical(f"Unexpected error during MMPose import: {e}", exc_info=True)
+ 
 # Setup for shared config
 try:
     sys.path.append('/app')
     sys.path.append('../shared')
     from shared.config_loader import ConfigLoader, merge_env_overrides
 except ImportError:
-    # Fallback if shared module not available
-    class ConfigLoader:
+    # Fallback if shared module not available - renamed to avoid conflict
+    class FallbackConfigLoaderViTPose:
         def __init__(self, service_name: str, config_dir: str = "/app/config"):
             pass
         def load_config(self): return {}
         def get_feature_flags(self): return {}
         def is_feature_enabled(self, feature_name: str): return False
         def get_service_info(self): return {"service": "vitpose", "version": "1.0.0"}
+    ConfigLoader = FallbackConfigLoaderViTPose # Assign fallback to main ConfigLoader name
     def merge_env_overrides(config): return config
-
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s', 
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
 
 logger.info("--- VITPOSE++ POSE ESTIMATION SERVICE STARTED ---")
 
@@ -137,6 +141,17 @@ vitpose_inferencer = None
 model_info = {"name": "none", "source": "none"}
 
 if MMPOSE_AVAILABLE:
+    logger.info("Attempting to load ViTPose++ model.")
+    
+    if torch.cuda.is_available():
+        logger.info(f"CUDA is available. Device count: {torch.cuda.device_count()}")
+        for i in range(torch.cuda.device_count()):
+            logger.info(f"Device {i}: {torch.cuda.get_device_name(i)}")
+        device = 'cuda:0'
+    else:
+        logger.warning("CUDA is NOT available. ViTPose++ model will run on CPU if loaded.")
+        device = 'cpu'
+
     try:
         # Check configuration to see if models are enabled
         models_config = service_config.get("models", {})
@@ -148,7 +163,6 @@ if MMPOSE_AVAILABLE:
         if not vitpose_enabled and not hrnet_enabled:
             logger.info("🔕 All models disabled in configuration - running in fallback mode")
         else:
-            device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
             logger.info(f"Initializing ViTPose++ model on device: {device}")
             
             # Try efficient ViTPose-Base checkpoint for optimal performance
@@ -171,7 +185,7 @@ if MMPOSE_AVAILABLE:
                     model_info = {"name": "ViTPose-Base", "source": "local_checkpoint", "precision": "fp16" if torch.cuda.is_available() else "fp32", "variant": "Efficient"}
                     logger.info("✅ Efficient ViTPose-Base model loaded successfully from local checkpoint")
                 except Exception as e_local:
-                    logger.error(f"❌ Failed Method 1 (efficient ViTPose-Base): {e_local}")
+                    logger.error(f"❌ Failed Method 1 (efficient ViTPose-Base): {e_local}", exc_info=True)
             elif not vitpose_enabled:
                 logger.info("🔕 ViTPose-Base model disabled in configuration, skipping")
             
@@ -192,7 +206,7 @@ if MMPOSE_AVAILABLE:
                     model_info = {"name": "ViTPose-Base", "source": "mmpose_zoo", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
                     logger.info("✅ ViTPose++ model loaded successfully from model zoo")
                 except Exception as e_zoo:
-                    logger.error(f"❌ Failed Method 2 (model zoo): {e_zoo}")
+                    logger.error(f"❌ Failed Method 2 (model zoo): {e_zoo}", exc_info=True)
             
             # Method 3: Fallback to HRNet if ViTPose fails (only if enabled)
             if hrnet_enabled and vitpose_model is None:
@@ -210,12 +224,13 @@ if MMPOSE_AVAILABLE:
                     model_info = {"name": "HRNet-W48", "source": "mmpose_zoo_fallback", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
                     logger.info("✅ HRNet model loaded successfully (fallback)")
                 except Exception as e_hrnet:
-                    logger.error(f"❌ Failed Method 3 (HRNet fallback): {e_hrnet}")
+                    logger.error(f"❌ Failed Method 3 (HRNet fallback): {e_hrnet}", exc_info=True)
             elif not hrnet_enabled:
                 logger.info("🔕 HRNet model disabled in configuration, skipping")
-
+ 
     except Exception as e_init:
         logger.error(f"ViTPose++ model initialization failed: {e_init}", exc_info=True)
+        vitpose_model = None # Ensure model is None on failure
 
 if vitpose_model is None:
     logger.critical("❌ No ViTPose++ model could be loaded - service will run in fallback mode")

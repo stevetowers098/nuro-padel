@@ -11,6 +11,7 @@ opencv-python-headless==4.10.0.84
 
 # Computer vision utilities
 supervision>=0.16.0
+rfdetr==0.1.0 # Assuming a stable version for RF-DETR
 
 # HTTP client for video downloads
 httpx>=0.25.0

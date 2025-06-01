@@ -15,6 +15,9 @@ numpy>=1.21.0,<2.0
 fastapi==0.111.0
 uvicorn[standard]==0.23.2
 
+# MMPose
+mmpose==1.2.0 # Assuming a stable version for MMPose
+
 # Computer vision and coco tools
 opencv-python-headless==4.10.0.84
 xtcocotools>=1.14

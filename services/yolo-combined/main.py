@@ -116,6 +116,16 @@ async def upload_to_gcs(video_path: str, folder: str, object_name: Optional[str]
 def load_model(model_name: str, description: str) -> Optional[YOLO]:
     """Load YOLO model with error handling, prioritizing custom trained models"""
     
+    logger.info(f"Attempting to load model: {description} ({model_name})")
+    
+    # Check CUDA availability and device count
+    if torch.cuda.is_available():
+        logger.info(f"CUDA is available. Device count: {torch.cuda.device_count()}")
+        for i in range(torch.cuda.device_count()):
+            logger.info(f"Device {i}: {torch.cuda.get_device_name(i)}")
+    else:
+        logger.warning("CUDA is NOT available. Models will run on CPU if loaded.")
+
     # Check for custom trained model first
     if "yolo11" in model_name and "pose" in model_name:
         custom_model_path = os.path.join(WEIGHTS_DIR, "custom_yolo11n_pose.pt")
@@ -136,45 +146,54 @@ def load_model(model_name: str, description: str) -> Optional[YOLO]:
             logger.info(f"✅ Custom {description} loaded successfully")
             
             if torch.cuda.is_available():
-                model.to('cuda')
                 try:
+                    model.to('cuda')
+                    logger.info(f"Custom {description} moved to CUDA")
                     model.fuse()
                     logger.info(f"Custom {description} on CUDA and fused")
-                except Exception:
-                    logger.warning(f"Could not fuse custom {description}")
+                except Exception as e:
+                    logger.error(f"Error moving/fusing custom {description} on CUDA: {e}", exc_info=True)
             return model
         except Exception as e:
-            logger.warning(f"Failed to load custom model, falling back to pretrained: {e}")
+            logger.warning(f"Failed to load custom model '{custom_model_path}', falling back to pretrained: {e}", exc_info=True)
     
     # Fallback to pretrained model
     model_path = os.path.join(WEIGHTS_DIR, "ultralytics", model_name)
     try:
         logger.info(f"Loading {description} from: {model_path}")
         if not os.path.exists(model_path):
-            logger.error(f"Model file {model_path} does not exist")
+            logger.error(f"Model file {model_path} does not exist. Please ensure models are downloaded.")
             return None
 
         model = YOLO(model_path)
         logger.info(f"{description} loaded successfully")
 
         if torch.cuda.is_available():
-            logger.info(f"Moving {description} to CUDA")
-            model.to('cuda')
             try:
+                logger.info(f"Moving {description} to CUDA")
+                model.to('cuda')
                 model.fuse()
                 logger.info(f"{description} on CUDA and fused")
-            except Exception:
-                logger.warning(f"Could not fuse {description}, continuing without fusion")
+            except Exception as e:
+                logger.error(f"Error moving/fusing {description} on CUDA: {e}", exc_info=True)
         return model
     except Exception as e:
-        logger.error(f"Failed to load {description}: {e}", exc_info=True)
+        logger.error(f"Failed to load {description} from '{model_path}': {e}", exc_info=True)
         return None
 
 # Load Models
-yolo11_pose_model = load_model(YOLO11_POSE_MODEL, "YOLO11 Pose Model")
-yolo11_object_model = load_model(YOLO11_OBJECT_MODEL, "YOLO11 Object Model")
-yolov8_object_model = load_model(YOLOV8_OBJECT_MODEL, "YOLOv8 Object Model")
-yolov8_pose_model = load_model(YOLOV8_POSE_MODEL, "YOLOv8 Pose Model")
+try:
+    yolo11_pose_model = load_model(YOLO11_POSE_MODEL, "YOLO11 Pose Model")
+    yolo11_object_model = load_model(YOLO11_OBJECT_MODEL, "YOLO11 Object Model")
+    yolov8_object_model = load_model(YOLOV8_OBJECT_MODEL, "YOLOv8 Object Model")
+    yolov8_pose_model = load_model(YOLOV8_POSE_MODEL, "YOLOv8 Pose Model")
+except Exception as e:
+    logger.critical(f"CRITICAL: An error occurred during initial model loading: {e}", exc_info=True)
+    # Depending on severity, you might want to exit or set models to None
+    yolo11_pose_model = None
+    yolo11_object_model = None
+    yolov8_object_model = None
+    yolov8_pose_model = None
 
 # Drawing Functions
 def draw_poses_on_frame(frame: np.ndarray, poses: List[Dict[str, Any]]) -> np.ndarray:

@@ -26,37 +26,41 @@ import subprocess
 import psutil
 import gc
 
+# Configure logging (moved to top for early availability)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
 # RF-DETR imports
+RF_DETR_AVAILABLE = False
 try:
     from rfdetr import RFDETRBase
     RF_DETR_AVAILABLE = True
-except ImportError:
-    RF_DETR_AVAILABLE = False
-    logging.warning("RF-DETR not available - service will run in fallback mode")
-
+    logger.info("RFDETRBase import successful.")
+except ImportError as e:
+    logger.error(f"RFDETRBase import failed: {e}. RF-DETR service will run in fallback mode.", exc_info=True)
+except Exception as e:
+    logger.critical(f"Unexpected error during RFDETRBase import: {e}", exc_info=True)
+ 
 # Setup for shared config
 try:
     sys.path.append('/app')
     sys.path.append('../shared')
     from shared.config_loader import ConfigLoader, merge_env_overrides
 except ImportError:
-    # Fallback if shared module not available
-    class ConfigLoader:
+    # Fallback if shared module not available - renamed to avoid conflict
+    class FallbackConfigLoaderRFDETR:
         def __init__(self, service_name: str, config_dir: str = "/app/config"):
             pass
         def load_config(self): return {}
         def get_feature_flags(self): return {}
         def is_feature_enabled(self, feature_name: str): return False
         def get_service_info(self): return {"service": "rf-detr", "version": "1.0.0"}
+    ConfigLoader = FallbackConfigLoaderRFDETR # Assign fallback to main ConfigLoader name
     def merge_env_overrides(config): return config
-
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s', 
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
 
 logger.info("--- RF-DETR DETECTION SERVICE STARTED ---")
 
@@ -140,9 +144,19 @@ async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> s
 rf_detr_model = None
 model_info = {"name": "none", "source": "none"}
 
+logger.info("Attempting to load RF-DETR model.")
+
+if torch.cuda.is_available():
+    logger.info(f"CUDA is available. Device count: {torch.cuda.device_count()}")
+    for i in range(torch.cuda.device_count()):
+        logger.info(f"Device {i}: {torch.cuda.get_device_name(i)}")
+    device = 'cuda:0'
+else:
+    logger.warning("CUDA is NOT available. RF-DETR model will run on CPU if loaded.")
+    device = 'cpu'
+
 if RF_DETR_AVAILABLE:
     try:
-        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         logger.info(f"Initializing RF-DETR model on device: {device}")
         
         # Load RF-DETR with FP16 for VRAM efficiency
@@ -159,6 +173,7 @@ if RF_DETR_AVAILABLE:
         
     except Exception as e:
         logger.error(f"RF-DETR model initialization failed: {e}", exc_info=True)
+        rf_detr_model = None # Ensure model is None on failure
 
 if rf_detr_model is None:
     logger.critical("❌ No RF-DETR model could be loaded - service will run in fallback mode")
@@ -360,14 +375,14 @@ async def create_video_from_frames(frames: List[np.ndarray], video_info: dict) -
 
         try:
             for frame in frames:
-                if process.poll() is None:
+                if process.poll() is None and process.stdin and not process.stdin.closed:
                     try:
                         process.stdin.write(frame.tobytes())
-                    except (IOError, BrokenPipeError):
-                        logger.warning("FFmpeg stdin pipe broken, stopping frame writing")
+                    except (IOError, BrokenPipeError, OSError) as e:
+                        logger.warning(f"FFmpeg stdin pipe error: {e}, stopping frame writing")
                         break
                 else:
-                    logger.warning("FFmpeg process terminated early")
+                    logger.warning("FFmpeg process terminated early or stdin unavailable")
                     break
             
             if process.stdin and not process.stdin.closed:

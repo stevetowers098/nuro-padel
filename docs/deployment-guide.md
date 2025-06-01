@@ -5,11 +5,11 @@
 | Service | Port | Command |
 |---------|------|---------|
 | yolo8 | 8001 | `./services/yolo8/deploy.sh` |
-| yolo11 | 8007 | `./services/yolo11/deploy.sh` |
+| yolo11 | 8002 | `./services/yolo11/deploy.sh` |
 | mmpose | 8003 | `./services/mmpose/deploy.sh` |
-| vitpose | 8004 | `./services/vitpose/deploy.sh` |
+| yolo-nas | 8004 | `./services/yolo-nas/deploy.sh` |
 | rf-detr | 8005 | `./services/rf-detr/deploy.sh` |
-| yolo-nas | 8006 | `./services/yolo-nas/deploy.sh` |
+| vitpose | 8006 | `./services/vitpose/deploy.sh` |
 
 ## Deployment Options
 
@@ -37,7 +37,7 @@
 
 ```bash
 # Health check all services
-for port in 8001 8003 8004 8005 8006 8007; do
+for port in 8001 8002 8003 8004 8005 8006; do
   echo "Port $port: $(curl -s http://35.189.53.46:$port/healthz || echo 'DOWN')"
 done
 

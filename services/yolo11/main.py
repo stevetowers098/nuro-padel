@@ -605,3 +605,11 @@ async def process_object_detection(payload: VideoAnalysisURLRequest, model: YOLO
     finally:
         if temp_downloaded_path and os.path.exists(temp_downloaded_path):
             os.unlink(temp_downloaded_path)
+
+if __name__ == "__main__":
+    logger.info("Starting YOLO11 service on port 8002")
+    if yolo11_object_model is None and yolo11_pose_model is None:
+        logger.warning("No models loaded - service starting in fallback mode")
+    else:
+        logger.info("YOLO11 service starting with loaded models")
+    uvicorn.run(app, host="0.0.0.0", port=8002, log_config=None)

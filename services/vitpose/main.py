@@ -135,107 +135,77 @@ async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> s
         logger.error(f"Error uploading to GCS: {e}", exc_info=True)
         return ""
 
-# Model Loading
+# Model Loading - from existing local files only (no downloading)
 vitpose_model = None
 vitpose_inferencer = None
 model_info = {"name": "none", "source": "none"}
 
 if MMPOSE_AVAILABLE:
-    logger.info("Attempting to load ViTPose++ model.")
+    logger.info("Attempting to load ViTPose++ model from existing local files")
     
-    if torch.cuda.is_available():
-        logger.info(f"CUDA is available. Device count: {torch.cuda.device_count()}")
-        for i in range(torch.cuda.device_count()):
-            logger.info(f"Device {i}: {torch.cuda.get_device_name(i)}")
-        device = 'cuda:0'
-    else:
-        logger.warning("CUDA is NOT available. ViTPose++ model will run on CPU if loaded.")
-        device = 'cpu'
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    logger.info(f"Using device: {device}")
 
     try:
-        # Check configuration to see if models are enabled
+        # Check configuration for enabled models
         models_config = service_config.get("models", {})
         vitpose_enabled = models_config.get("vitpose_base", {}).get("enabled", True)
         hrnet_enabled = models_config.get("hrnet_w48", {}).get("enabled", True)
         
         logger.info(f"Model configuration - ViTPose enabled: {vitpose_enabled}, HRNet enabled: {hrnet_enabled}")
         
-        if not vitpose_enabled and not hrnet_enabled:
-            logger.info("🔕 All models disabled in configuration - running in fallback mode")
-        else:
-            logger.info(f"Initializing ViTPose++ model on device: {device}")
-            
-            # Try efficient ViTPose-Base checkpoint for optimal performance
+        # Try loading ViTPose-Base from local checkpoint (if enabled and exists)
+        if vitpose_enabled:
             local_checkpoint = '/app/weights/vitpose/vitpose_base_coco_256x192.pth'
-            
-            # Method 1: Try efficient ViTPose-Base config (only if enabled)
-            if vitpose_enabled and os.path.exists(local_checkpoint):
-                logger.info(f"🔄 Attempting Method 1: Efficient ViTPose-Base checkpoint")
+            if os.path.exists(local_checkpoint):
+                logger.info(f"Loading ViTPose-Base from local checkpoint: {local_checkpoint}")
                 try:
                     config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192.py'
-                    logger.info(f"Loading with config: {config_name}, checkpoint: {local_checkpoint}")
                     vitpose_model = init_model(config_name, local_checkpoint, device=device)
                     vitpose_inferencer = lambda img: inference_topdown(model=vitpose_model, image=img)
                     
-                    # Enable FP16 if CUDA available for VRAM efficiency
+                    # Enable FP16 for VRAM efficiency
                     if torch.cuda.is_available():
                         vitpose_model.half()
                         logger.info("Enabled FP16 precision for VRAM efficiency")
                     
-                    model_info = {"name": "ViTPose-Base", "source": "local_checkpoint", "precision": "fp16" if torch.cuda.is_available() else "fp32", "variant": "Efficient"}
-                    logger.info("✅ Efficient ViTPose-Base model loaded successfully from local checkpoint")
-                except Exception as e_local:
-                    logger.error(f"❌ Failed Method 1 (efficient ViTPose-Base): {e_local}", exc_info=True)
-            elif not vitpose_enabled:
-                logger.info("🔕 ViTPose-Base model disabled in configuration, skipping")
-            
-            # Method 2: Use MMPose model zoo if local fails (only if enabled)
-            if vitpose_enabled and vitpose_model is None:
-                logger.info("🔄 Attempting Method 2: MMPose model zoo download")
-                try:
-                    config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192.py'
-                    logger.info(f"Loading from model zoo: {config_name}")
-                    vitpose_model = init_model(config_name, None, device=device)
-                    vitpose_inferencer = lambda img: inference_topdown(model=vitpose_model, image=img)
-                    
-                    # Enable FP16 if CUDA available
-                    if torch.cuda.is_available():
-                        vitpose_model.half()
-                        logger.info("Enabled FP16 precision for VRAM efficiency")
-                    
-                    model_info = {"name": "ViTPose-Base", "source": "mmpose_zoo", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
-                    logger.info("✅ ViTPose++ model loaded successfully from model zoo")
-                except Exception as e_zoo:
-                    logger.error(f"❌ Failed Method 2 (model zoo): {e_zoo}", exc_info=True)
-            
-            # Method 3: Fallback to HRNet if ViTPose fails (only if enabled)
-            if hrnet_enabled and vitpose_model is None:
-                logger.info("🔄 Attempting Method 3: HRNet fallback")
+                    model_info = {"name": "ViTPose-Base", "source": "local_checkpoint", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
+                    logger.info("✅ ViTPose-Base model loaded successfully from local checkpoint")
+                except Exception as e:
+                    logger.error(f"Failed to load ViTPose-Base: {e}", exc_info=True)
+            else:
+                logger.info(f"ViTPose-Base checkpoint not found at: {local_checkpoint}")
+        
+        # Try HRNet fallback from local files (if enabled and ViTPose failed)
+        if hrnet_enabled and vitpose_model is None:
+            hrnet_checkpoint = '/app/weights/mmpose/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth'
+            if os.path.exists(hrnet_checkpoint):
+                logger.info(f"Loading HRNet-W48 fallback from: {hrnet_checkpoint}")
                 try:
                     config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
-                    logger.info(f"Loading HRNet fallback: {config_name}")
-                    vitpose_model = init_model(config_name, None, device=device)
+                    vitpose_model = init_model(config_name, hrnet_checkpoint, device=device)
                     vitpose_inferencer = lambda img: inference_topdown(model=vitpose_model, image=img)
                     
                     if torch.cuda.is_available():
                         vitpose_model.half()
                         logger.info("Enabled FP16 precision for VRAM efficiency")
                     
-                    model_info = {"name": "HRNet-W48", "source": "mmpose_zoo_fallback", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
-                    logger.info("✅ HRNet model loaded successfully (fallback)")
-                except Exception as e_hrnet:
-                    logger.error(f"❌ Failed Method 3 (HRNet fallback): {e_hrnet}", exc_info=True)
-            elif not hrnet_enabled:
-                logger.info("🔕 HRNet model disabled in configuration, skipping")
- 
-    except Exception as e_init:
-        logger.error(f"ViTPose++ model initialization failed: {e_init}", exc_info=True)
-        vitpose_model = None # Ensure model is None on failure
+                    model_info = {"name": "HRNet-W48", "source": "local_fallback", "precision": "fp16" if torch.cuda.is_available() else "fp32"}
+                    logger.info("✅ HRNet-W48 model loaded successfully from local checkpoint")
+                except Exception as e:
+                    logger.error(f"Failed to load HRNet-W48: {e}", exc_info=True)
+            else:
+                logger.info(f"HRNet-W48 checkpoint not found at: {hrnet_checkpoint}")
+        
+    except Exception as e:
+        logger.error(f"Model initialization failed: {e}", exc_info=True)
+        vitpose_model = None
 
 if vitpose_model is None:
-    logger.critical("❌ No ViTPose++ model could be loaded - service will run in fallback mode")
+    logger.critical("❌ No ViTPose++ model could be loaded from local files - service will run in fallback mode")
 else:
-    logger.info(f"✅ ViTPose++ service ready with {model_info['name']} model")
+    logger.info(f"✅ ViTPose++ service ready with {model_info.get('name', 'unknown')} model")
+    logger.info("🔧 Speed optimizations: FP16 precision, GPU memory cleanup enabled")
 
 def calculate_angle(p1, p2, p3):
     """Calculate angle at p2 formed by p1-p2-p3"""
@@ -254,161 +224,11 @@ def calculate_angle(p1, p2, p3):
     except (ZeroDivisionError, ValueError):
         return 0.0
 
-def calculate_joint_angles(keypoints):
-    """Calculate joint angles for biomechanical analysis"""
-    angles = {}
-    
-    # Define joint angle calculations
-    angle_definitions = {
-        "left_elbow": (["left_shoulder", "left_elbow", "left_wrist"]),
-        "right_elbow": (["right_shoulder", "right_elbow", "right_wrist"]),
-        "left_knee": (["left_hip", "left_knee", "left_ankle"]),
-        "right_knee": (["right_hip", "right_knee", "right_ankle"]),
-        "left_shoulder": (["left_elbow", "left_shoulder", "left_hip"]),
-        "right_shoulder": (["right_elbow", "right_shoulder", "right_hip"]),
-        "hip_angle": (["left_hip", "right_hip", "left_knee"]),
-        "spine_angle": (["left_shoulder", "right_shoulder", "left_hip"])
-    }
-    
-    for angle_name, joint_names in angle_definitions.items():
-        if all(joint in keypoints for joint in joint_names):
-            try:
-                points = [(keypoints[joint]["x"], keypoints[joint]["y"]) for joint in joint_names]
-                angles[angle_name] = calculate_angle(points[0], points[1], points[2])
-            except Exception:
-                angles[angle_name] = 0.0
-    
-    return angles
-
-def assess_balance(angles):
-    """Assess player balance and stability based on joint angles"""
-    if not angles:
-        return {"score": 0.0, "status": "insufficient_data"}
-    
-    balance_score = 70.0  # Base score
-    status = "stable"
-    
-    # Check knee alignment
-    if "left_knee" in angles and "right_knee" in angles:
-        knee_diff = abs(angles["left_knee"] - angles["right_knee"])
-        if knee_diff < 10:
-            balance_score += 15
-        elif knee_diff > 30:
-            balance_score -= 10
-            status = "unstable"
-    
-    # Check hip alignment
-    if "hip_angle" in angles:
-        hip_angle = angles["hip_angle"]
-        if 160 <= hip_angle <= 180:
-            balance_score += 10
-        elif hip_angle < 140 or hip_angle > 200:
-            balance_score -= 15
-            status = "poor_alignment"
-    
-    # Check shoulder symmetry
-    if "left_shoulder" in angles and "right_shoulder" in angles:
-        shoulder_diff = abs(angles["left_shoulder"] - angles["right_shoulder"])
-        if shoulder_diff < 15:
-            balance_score += 5
-        elif shoulder_diff > 40:
-            balance_score -= 5
-    
-    balance_score = max(0.0, min(100.0, balance_score))
-    
-    return {
-        "score": balance_score,
-        "status": status,
-        "metrics": {
-            "knee_alignment": angles.get("left_knee", 0) - angles.get("right_knee", 0),
-            "hip_stability": angles.get("hip_angle", 0),
-            "shoulder_symmetry": abs(angles.get("left_shoulder", 0) - angles.get("right_shoulder", 0))
-        }
-    }
-
-def analyze_biomechanics(keypoints):
-    """Enhanced biomechanical analysis with joint angles and balance assessment"""
-    angles = calculate_joint_angles(keypoints)
-    balance = assess_balance(angles)
-    
-    # Movement efficiency analysis
-    efficiency_score = 75.0
-    if angles:
-        # Optimal ranges for athletic movement
-        optimal_ranges = {
-            "left_knee": (140, 170),
-            "right_knee": (140, 170),
-            "left_elbow": (90, 150),
-            "right_elbow": (90, 150)
-        }
-        
-        efficiency_scores = []
-        for joint, (min_opt, max_opt) in optimal_ranges.items():
-            if joint in angles:
-                angle = angles[joint]
-                if min_opt <= angle <= max_opt:
-                    efficiency_scores.append(100)
-                else:
-                    deviation = min(abs(angle - min_opt), abs(angle - max_opt))
-                    score = max(50, 100 - (deviation * 1.5))
-                    efficiency_scores.append(score)
-        
-        if efficiency_scores:
-            efficiency_score = np.mean(efficiency_scores)
-    
-    # Power generation potential
-    power_score = 60.0
-    if "left_knee" in angles and "right_knee" in angles:
-        avg_knee = (angles["left_knee"] + angles["right_knee"]) / 2
-        if 145 <= avg_knee <= 165:  # Optimal power position
-            power_score += 25
-    
-    if "hip_angle" in angles:
-        if 165 <= angles["hip_angle"] <= 180:  # Good hip extension
-            power_score += 15
-    
-    return {
-        "angles": angles,
-        "balance": balance,
-        "movement_efficiency": min(100.0, efficiency_score),
-        "power_potential": min(100.0, power_score),
-        "stability_metrics": {
-            "overall_stability": balance["score"],
-            "postural_control": min(100.0, (balance["score"] + efficiency_score) / 2),
-            "athletic_readiness": min(100.0, (efficiency_score + power_score) / 2)
-        }
-    }
-
-def calculate_pose_quality_score(keypoints):
-    """Calculate pose quality score based on keypoint visibility and positioning"""
-    if not keypoints:
-        return 0.0
-
-    visible_keypoints = sum(1 for kp in keypoints.values() if kp.get("confidence", 0) > 0.5)
-    base_score = (visible_keypoints / 17) * 100  # 17 total COCO keypoints
-    
-    # Add quality bonuses based on pose completeness
-    quality_bonus = 0
-    
-    # Check if key joints are visible
-    key_joints = ["nose", "left_shoulder", "right_shoulder", "left_hip", "right_hip"]
-    visible_key_joints = sum(1 for joint in key_joints if keypoints.get(joint, {}).get("confidence", 0) > 0.5)
-    quality_bonus += (visible_key_joints / len(key_joints)) * 20
-    
-    return min(100, base_score + quality_bonus)
-
 def analyze_frame_pose(frame_content: np.ndarray, confidence_threshold: float = 0.3) -> Dict[str, Any]:
-    """Analyze pose for a single frame using ViTPose++"""
+    """Simplified ViTPose++ analysis - returns only raw keypoints"""
     if vitpose_model is None:
-        logger.warning("ViTPose++ model not loaded, returning dummy data")
-        return {
-            "keypoints": {},
-            "joint_angles": {},
-            "pose_metrics": {
-                "error_processing_frame": True,
-                "model_status": "not_loaded"
-            }
-        }
+        logger.warning("ViTPose++ model not loaded")
+        return {"keypoints": {}}
 
     keypoint_names = [
         "nose", "left_eye", "right_eye", "left_ear", "right_ear",
@@ -418,22 +238,12 @@ def analyze_frame_pose(frame_content: np.ndarray, confidence_threshold: float = 
     ]
 
     current_keypoints = {}
-    joint_angles = {}
-    pose_metrics = {}
 
     try:
         # Run ViTPose++ inference using inferencer
         if vitpose_inferencer is None:
             logger.warning("ViTPose inferencer not initialized")
-            return {
-                "keypoints": {},
-                "joint_angles": {},
-                "pose_metrics": {
-                    "error_processing_frame": True,
-                    "error_message": "inferencer_not_initialized",
-                    "model_status": "inferencer_failed"
-                }
-            }
+            return {"keypoints": {}}
         
         pose_results = vitpose_inferencer(frame_content)
         
@@ -466,71 +276,19 @@ def analyze_frame_pose(frame_content: np.ndarray, confidence_threshold: float = 
                                 "confidence": confidence
                             }
 
-        # Calculate joint angles
-        angle_definitions = [
-            ("left_elbow", ["left_shoulder", "left_elbow", "left_wrist"]),
-            ("right_elbow", ["right_shoulder", "right_elbow", "right_wrist"]),
-            ("left_knee", ["left_hip", "left_knee", "left_ankle"]),
-            ("right_knee", ["right_hip", "right_knee", "right_ankle"]),
-            ("left_shoulder", ["left_elbow", "left_shoulder", "left_hip"]),
-            ("right_shoulder", ["right_elbow", "right_shoulder", "right_hip"])
-        ]
-
-        for angle_name, joint_names in angle_definitions:
-            if all(joint in current_keypoints for joint in joint_names):
-                points = [(current_keypoints[joint]["x"], current_keypoints[joint]["y"])
-                         for joint in joint_names]
-                joint_angles[angle_name] = calculate_angle(points[0], points[1], points[2])
-
-        # Calculate enhanced biomechanical metrics
-        biomechanical_analysis = analyze_biomechanics(current_keypoints)
-        
-        pose_metrics = {
-            "pose_quality_score": calculate_pose_quality_score(current_keypoints),
-            "visible_keypoints": len(current_keypoints),
-            "total_keypoints": 17,
-            "confidence_threshold": confidence_threshold,
-            "model_used": model_info["name"],
-            "model_precision": model_info.get("precision", "fp32"),
-            "biomechanical_insights": {
-                "movement_efficiency": biomechanical_analysis["movement_efficiency"],
-                "power_potential": biomechanical_analysis["power_potential"],
-                "balance_score": biomechanical_analysis["balance"]["score"],
-                "balance_status": biomechanical_analysis["balance"]["status"],
-                "stability_metrics": biomechanical_analysis["stability_metrics"]
-            }
-        }
-        
-        # Include joint angles in the analysis
-        joint_angles.update(biomechanical_analysis["angles"])
-
     except Exception as e_analyze:
         logger.error(f"Error during ViTPose++ inference: {e_analyze}", exc_info=True)
-        return {
-            "keypoints": {},
-            "joint_angles": {},
-            "pose_metrics": {
-                "error_processing_frame": True,
-                "error_message": str(e_analyze),
-                "model_status": "inference_failed"
-            }
-        }
+        return {"keypoints": {}}
     finally:
         # Clean up GPU memory after inference
         cleanup_gpu_memory()
 
-    return {
-        "keypoints": current_keypoints,
-        "joint_angles": joint_angles,
-        "pose_metrics": pose_metrics
-    }
+    return {"keypoints": current_keypoints}
 
 def draw_pose_on_frame(frame: np.ndarray, analysis: Dict[str, Any]) -> np.ndarray:
-    """Draw pose estimation on frame"""
+    """Draw simplified pose estimation - keypoints and skeleton only"""
     annotated_frame = frame.copy()
     keypoints = analysis.get("keypoints", {})
-    joint_angles = analysis.get("joint_angles", {})
-    metrics = analysis.get("pose_metrics", {})
 
     # Define skeleton connections
     connections = [
@@ -562,24 +320,6 @@ def draw_pose_on_frame(frame: np.ndarray, analysis: Dict[str, Any]) -> np.ndarra
                     (int(p1["x"]), int(p1["y"])),
                     (int(p2["x"]), int(p2["y"])),
                     (0, 255, 0), 2)
-
-    # Draw metrics
-    y_offset = 30
-    for name, val in metrics.items():
-        if isinstance(val, (int, float)):
-            text = f"{name}: {val:.1f}"
-        else:
-            text = f"{name}: {val}"
-        cv2.putText(annotated_frame, text, (10, y_offset),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        y_offset += 20
-
-    # Draw joint angles
-    for angle_name, angle_val in joint_angles.items():
-        text = f"{angle_name}: {angle_val:.1f}°"
-        cv2.putText(annotated_frame, text, (10, y_offset),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-        y_offset += 18
 
     return annotated_frame
 
@@ -790,7 +530,7 @@ async def vitpose_pose_analysis(payload: VideoAnalysisURLRequest, request: Reque
         all_analyses = []
         annotated_frames = []
 
-        logger.info(f"Starting ViTPose++ analysis for {len(frames)} frames using {model_info['name']}")
+        logger.info(f"Starting ViTPose++ analysis for {len(frames)} frames using {model_info.get('name', 'unknown')}")
 
         # Process each frame
         for frame_idx, frame_content in enumerate(frames):
@@ -815,8 +555,7 @@ async def vitpose_pose_analysis(payload: VideoAnalysisURLRequest, request: Reque
                 "model_info": model_info,
                 "processing_summary": {
                     "total_frames": len(frames),
-                    "successful_analyses": len([a for a in all_analyses
-                                              if not a.get("pose_metrics", {}).get("error_processing_frame", False)]),
+                    "successful_analyses": len([a for a in all_analyses if a.get("keypoints", {})]),
                     "total_keypoints": sum(len(a.get("keypoints", {})) for a in all_analyses),
                     "confidence_threshold": payload.confidence
                 }
@@ -855,5 +594,5 @@ if __name__ == "__main__":
     if vitpose_model is None:
         logger.critical("ViTPose++ model could not be loaded - service will be unhealthy")
     else:
-        logger.info(f"ViTPose++ service starting with {model_info['name']} model")
+        logger.info(f"ViTPose++ service starting with {model_info.get('name', 'unknown')} model")
     uvicorn.run(app, host="0.0.0.0", port=8006, log_config=None)

@@ -34,45 +34,86 @@ import shutil
 
 # Super Gradients for YOLO-NAS
 try:
-    from super_gradients.training import models
-    from super_gradients.training import Trainer
+    from super_gradients.training import models as sg_models
+    models = sg_models
     SUPER_GRADIENTS_AVAILABLE = True
 except ImportError:
     SUPER_GRADIENTS_AVAILABLE = False
     logging.warning("Super Gradients not available - service will run in fallback mode")
     
-    # Fallback Trainer class
-    class Trainer:
-        def __init__(self, experiment_name: str):
-            pass
-        def train(self, model, training_params):
-            pass
-        ckpt_dir = "/tmp"
+    # Fallback models module
+    class FallbackModels:
+        @staticmethod
+        def get(model_name: str, **kwargs):
+            return None
+    
+    models = FallbackModels()
 
-# Setup for utils and shared config
-try:
-    from utils.video_utils import get_video_info, extract_frames
-    from utils.model_optimizer import ModelOptimizer
-except ImportError:
-    sys.path.append(os.path.dirname(__file__))
-    from utils.video_utils import get_video_info, extract_frames
-    from utils.model_optimizer import ModelOptimizer
+# Basic video processing utilities (fallback implementations)
+def get_video_info(video_path: str) -> dict:
+    """Basic video info extraction"""
+    import cv2
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+    return {"fps": fps, "frame_count": frame_count, "width": width, "height": height}
 
-# Import shared configuration loader
-try:
-    sys.path.append('/app')
-    sys.path.append('../shared')
-    from shared.config_loader import ConfigLoader, merge_env_overrides
-except ImportError:
-    # Fallback if shared module not available
-    class ConfigLoader:
-        def __init__(self, service_name: str, config_dir: str = "/app/config"):
-            pass
-        def load_config(self): return {}
-        def get_feature_flags(self): return {}
-        def is_feature_enabled(self, feature_name: str): return False
-        def get_service_info(self): return {"service": "yolo_nas", "version": "2.0.0"}
-    def merge_env_overrides(config): return config
+def extract_frames(video_path: str, num_frames_to_extract: int = -1) -> List[np.ndarray]:
+    """Basic frame extraction"""
+    import cv2
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+    frame_count = 0
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+        frame_count += 1
+        if num_frames_to_extract > 0 and frame_count >= num_frames_to_extract:
+            break
+    
+    cap.release()
+    return frames
+
+# Basic model optimizer (simplified for essential optimizations only)
+class ModelOptimizer:
+    def __init__(self, weights_dir: str):
+        self.weights_dir = weights_dir
+    
+    def load_optimized_model(self, model_name: str, pytorch_model):
+        """Return PyTorch model with basic optimizations"""
+        if pytorch_model is not None:
+            return ("pytorch", pytorch_model)
+        return ("none", None)
+    
+    def predict_optimized(self, model_info, batch_data):
+        """Basic prediction fallback"""
+        return None
+
+# Simplified config loader
+class ConfigLoader:
+    def __init__(self, service_name: str, config_dir: str = "/app/config"):
+        self.service_name = service_name
+        
+    def load_config(self):
+        return {"models": {}, "features": {}, "optimization": {}, "performance": {}}
+        
+    def get_feature_flags(self):
+        return {}
+        
+    def is_feature_enabled(self, feature_name: str):
+        return False
+        
+    def get_service_info(self):
+        return {"service": "yolo_nas", "version": "2.0.0"}
+
+def merge_env_overrides(config):
+    return config
 
 # Configure logging
 logging.basicConfig(
@@ -109,37 +150,13 @@ logger.info(f"🔧 SUPER_GRADIENTS_CACHE: {SUPER_GRADIENTS_CACHE}")
 
 logger.info(f"Feature flags: {config_loader.get_feature_flags()}")
 
-# Enhanced configuration
-enhanced_config = service_config.get("enhanced", {"fp16_enabled": True})
-
-# Feature availability flags
-ENHANCED_POSE_AVAILABLE = True
-QUANTIZATION_AVAILABLE = True
-
-# Padel-specific NMS configuration for pose detection
-PADEL_NMS_CONFIG = {
-    "iou_threshold": 0.5,
-    "score_threshold": 0.3,
-    "max_detections": 10,
-    "nms_per_class": True
+# Basic optimization configuration - company recommended
+optimization_config = {
+    "fp16_enabled": True,       # Half precision for speed
+    "batch_size": 8,           # Optimal batch processing
+    "use_cuda": True,          # GPU acceleration
+    "confidence_threshold": 0.3 # Detection threshold
 }
-
-# Fallback manager classes if optimization modules not available
-class QuantizationManager:
-    def __init__(self, weights_dir: str):
-        self.weights_dir = weights_dir
-    def export_fp16_onnx(self, model, model_name: str):
-        return None
-    def get_quantization_info(self):
-        return {"status": "not_available"}
-
-class CustomNMSManager:
-    def get_nms_config(self):
-        return PADEL_NMS_CONFIG
-
-# Initialize managers
-quantization_manager = None
-nms_manager = None
 
 # Pydantic Models
 class VideoAnalysisURLRequest(BaseModel):
@@ -149,16 +166,7 @@ class VideoAnalysisURLRequest(BaseModel):
     confidence: float = 0.3
 
 
-class EnhancedAnalysisRequest(BaseModel):
-    video_url: HttpUrl
-    video: bool = False
-    data: bool = True
-    confidence: float = 0.3
-    enable_enhanced_analysis: bool = True
-    enable_joint_tracking: bool = True
-    enable_pose_quality: bool = True
-    enable_padel_analysis: bool = True
-    enable_batch_format: bool = True
+# Removed EnhancedAnalysisRequest - advanced biomechanics features removed
 
 # Helper Functions
 async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> str:
@@ -299,8 +307,8 @@ if SUPER_GRADIENTS_AVAILABLE:
             
             if yolo_nas_object_model and torch.cuda.is_available():
                 yolo_nas_object_model.to('cuda')
-                # 🚀 MEDIUM PRIORITY: Apply FP16 quantization
-                if enhanced_config.get("fp16_enabled", True):
+                # Apply FP16 quantization for speed optimization
+                if optimization_config.get("fp16_enabled", True):
                     yolo_nas_object_model.half()
                     logger.info("✅ Applied FP16 quantization to object model")
             
@@ -311,11 +319,6 @@ if SUPER_GRADIENTS_AVAILABLE:
                 
                 model_info["object_model"] = f"yolo_nas_s ({backend})"
                 logger.info(f"✅ YOLO-NAS Object model loaded successfully using {backend} backend")
-                
-                # Initialize quantization and NMS managers
-                quantization_manager = QuantizationManager(WEIGHTS_DIR)
-                nms_manager = CustomNMSManager()
-                logger.info("✅ Quantization and NMS managers initialized")
         except Exception as e_object:
             logger.error(f"❌ Failed to load YOLO-NAS object model: {e_object}")
 
@@ -329,59 +332,7 @@ else:
     logger.critical("Super Gradients not available - YOLO-NAS service will run in fallback mode")
     model_info["status"] = "super_gradients_unavailable"
 
-# 🎯 HIGH PRIORITY: Enhanced Model Functions with all advanced features
-def detect_enhanced_poses_with_analysis(frames: List[np.ndarray], enable_analysis: bool = True) -> Dict[str, Any]:
-    """🎯 HIGH PRIORITY: Enhanced pose detection with joint confidence analysis and batch format"""
-    if pose_model_info is None or pose_model_info[1] is None:
-        logger.warning("YOLO-NAS pose model not loaded")
-        return {"poses_per_frame": [[] for _ in frames], "enhanced_analysis": {}}
-    
-    backend, model = pose_model_info
-    all_poses = []
-    enhanced_analysis = {
-        "joint_analysis": [],
-        "pose_quality": [],
-        "padel_specific": [],
-        "batch_predictions": {
-            "num_detections": 0,
-            "pred_boxes": [],
-            "pred_scores": [],
-            "pred_joints": [],
-            "pred_labels": []
-        }
-    }
-    
-    # 🚀 MEDIUM PRIORITY: Apply custom NMS parameters
-    nms_config = nms_manager.get_nms_config() if nms_manager else PADEL_NMS_CONFIG
-    batch_size = 8
-    
-    # Use standard pose detection for now
-    all_poses = detect_high_accuracy_poses(frames)
-    
-    # Enhanced analysis if enabled
-    if enable_analysis:
-        for frame_poses in all_poses:
-            frame_analysis = {
-                "joint_confidence_avg": 0.0,
-                "pose_quality_score": 0.0,
-                "padel_stance_detected": False
-            }
-            
-            if frame_poses:
-                confidences = []
-                for pose in frame_poses:
-                    for kp in pose["keypoints"].values():
-                        confidences.append(kp["confidence"])
-                
-                if confidences:
-                    frame_analysis["joint_confidence_avg"] = float(np.mean(confidences))
-                    frame_analysis["pose_quality_score"] = float(np.mean(confidences))
-            
-            enhanced_analysis["joint_analysis"].append(frame_analysis)
-            enhanced_analysis["pose_quality"].append(frame_analysis["pose_quality_score"])
-            enhanced_analysis["padel_specific"].append(frame_analysis["padel_stance_detected"])
-    
-    return {"poses_per_frame": all_poses, "enhanced_analysis": enhanced_analysis}
+# Model Functions - simplified, no advanced biomechanics
 
 def detect_high_accuracy_poses(frames: List[np.ndarray]) -> List[List[Dict[str, Any]]]:
     """Detect poses using optimized YOLO-NAS pose model"""
@@ -421,11 +372,11 @@ def detect_high_accuracy_poses(frames: List[np.ndarray]) -> List[List[Dict[str, 
                 for result in results:
                     frame_poses = []
 
-                # Extract keypoints for each person
-                if hasattr(result.prediction, 'poses') and len(result.prediction.poses) > 0:
-                    for person_idx in range(len(result.prediction.poses)):
-                        keypoints = {}
-                        pose_data = result.prediction.poses[person_idx]
+                    # Extract keypoints for each person
+                    if hasattr(result.prediction, 'poses') and len(result.prediction.poses) > 0:
+                        for person_idx in range(len(result.prediction.poses)):
+                            keypoints = {}
+                            pose_data = result.prediction.poses[person_idx]
 
                         keypoint_names = [
                             "nose", "left_eye", "right_eye", "left_ear", "right_ear",
@@ -505,27 +456,27 @@ def detect_high_accuracy_objects(frames: List[np.ndarray]) -> List[List[Dict[str
                 for result in results:
                     frame_objects = []
 
-                # Extract bounding boxes and classes
-                if (hasattr(result.prediction, 'bboxes_xyxy') and
-                    hasattr(result.prediction, 'labels') and
-                    hasattr(result.prediction, 'confidence')):
+                    # Extract bounding boxes and classes
+                    if (hasattr(result.prediction, 'bboxes_xyxy') and
+                        hasattr(result.prediction, 'labels') and
+                        hasattr(result.prediction, 'confidence')):
 
-                    bboxes = result.prediction.bboxes_xyxy
-                    labels = result.prediction.labels
-                    confidences = result.prediction.confidence
+                        bboxes = result.prediction.bboxes_xyxy
+                        labels = result.prediction.labels
+                        confidences = result.prediction.confidence
 
-                    for bbox, label, conf in zip(bboxes, labels, confidences):
-                        class_id = int(label)
-                        confidence = float(conf)
+                        for bbox, label, conf in zip(bboxes, labels, confidences):
+                            class_id = int(label)
+                            confidence = float(conf)
 
-                        # Filter for padel-relevant classes and confidence threshold
-                        if class_id in PADEL_CLASSES and confidence > 0.3:
-                            x1, y1, x2, y2 = bbox
-                            frame_objects.append({
-                                "class": PADEL_CLASSES[class_id],
-                                "confidence": confidence,
-                                "bbox": {"x1": float(x1), "y1": float(y1), "x2": float(x2), "y2": float(y2)}
-                            })
+                            # Filter for padel-relevant classes and confidence threshold
+                            if class_id in PADEL_CLASSES and confidence > 0.3:
+                                x1, y1, x2, y2 = bbox
+                                frame_objects.append({
+                                    "class": PADEL_CLASSES[class_id],
+                                    "confidence": confidence,
+                                    "bbox": {"x1": float(x1), "y1": float(y1), "x2": float(x2), "y2": float(y2)}
+                                })
 
                 batch_objects.append(frame_objects)
 
@@ -896,128 +847,12 @@ async def process_object_detection(payload: VideoAnalysisURLRequest):
             os.unlink(temp_downloaded_path)
 
 
-# 🎯 HIGH PRIORITY: Enhanced Analysis Endpoint
-@app.post("/yolo-nas/enhanced-analysis")
-async def enhanced_pose_analysis(payload: EnhancedAnalysisRequest, request: Request):
-    """
-    🎯 HIGH PRIORITY: Enhanced pose analysis with all advanced features
-    
-    Features:
-    - Enhanced Joint Confidence Analysis
-    - Batch Format Output Structure
-    - 17-Keypoint Joint Analysis
-    - Dynamic Pose Quality Scoring
-    - Padel-Specific Analysis
-    """
-    logger.info("Enhanced YOLO-NAS analysis request received")
+# Advanced biomechanics endpoints removed - keeping only basic pose and object detection
 
-    if pose_model_info is None or pose_model_info[1] is None:
-        raise HTTPException(status_code=503, detail="YOLO-NAS pose model not available")
-
-    return await process_enhanced_analysis(payload)
-
-async def process_enhanced_analysis(payload: EnhancedAnalysisRequest):
-    """🎯 HIGH PRIORITY: Process enhanced analysis with all features"""
-    temp_downloaded_path = None
-    try:
-        # Download video
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(str(payload.video_url))
-            response.raise_for_status()
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
-            temp_file.write(response.content)
-            temp_downloaded_path = temp_file.name
-
-        # Extract frames
-        video_info = get_video_info(temp_downloaded_path)
-        frames = extract_frames(temp_downloaded_path, num_frames_to_extract=-1)
-
-        if not frames:
-            raise HTTPException(status_code=400, detail="No frames extracted from video")
-
-        # 🎯 HIGH PRIORITY: Enhanced pose detection with all features
-        if ENHANCED_POSE_AVAILABLE and payload.enable_enhanced_analysis:
-            enhanced_results = detect_enhanced_poses_with_analysis(frames, enable_analysis=True)
-        else:
-            # Fallback to standard detection
-            all_poses = detect_high_accuracy_poses(frames)
-            enhanced_results = {"poses_per_frame": all_poses, "enhanced_analysis": {}}
-
-        # Generate annotated video if requested
-        annotated_frames = []
-        if payload.video:
-            for i, frame in enumerate(frames):
-                if i < len(enhanced_results["poses_per_frame"]):
-                    annotated_frames.append(draw_poses_on_frame(frame, enhanced_results["poses_per_frame"][i]))
-
-        # 🎯 HIGH PRIORITY: Prepare batch format response
-        response_data = {
-            "format": "enhanced_batch",
-            "features_enabled": {
-                "enhanced_joint_confidence": payload.enable_enhanced_analysis,
-                "joint_tracking": payload.enable_joint_tracking,
-                "pose_quality": payload.enable_pose_quality,
-                "padel_analysis": payload.enable_padel_analysis,
-                "batch_format": payload.enable_batch_format
-            },
-            "metadata": {
-                "total_frames": len(frames),
-                "processing_time": video_info.get("duration", 0),
-                "model_info": model_info,
-                "nms_config": PADEL_NMS_CONFIG
-            }
-        }
-
-        if payload.data:
-            response_data["data"] = enhanced_results
-
-        if payload.video and annotated_frames:
-            video_url = await create_video_from_frames(annotated_frames, video_info)
-            response_data["video_url"] = video_url
-
-        return JSONResponse(content=response_data)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Enhanced analysis error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Enhanced analysis error: {str(e)}")
-    finally:
-        if temp_downloaded_path and os.path.exists(temp_downloaded_path):
-            os.unlink(temp_downloaded_path)
-
-# 🚀 MEDIUM PRIORITY: Model Optimization Endpoint
-@app.post("/optimize-models")
-async def optimize_models_for_inference():
-    """🚀 MEDIUM PRIORITY: Apply FP16/INT8 quantization and export optimized models"""
-    if not QUANTIZATION_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Quantization manager not available")
-    
-    try:
-        optimization_results = {}
-        
-        # FP16 optimization for pose model
-        if yolo_nas_pose_model and quantization_manager:
-            fp16_path = quantization_manager.export_fp16_onnx(yolo_nas_pose_model, "yolo_nas_pose_n")
-            if fp16_path:
-                optimization_results["pose_fp16"] = fp16_path
-                
-        # FP16 optimization for object model
-        if yolo_nas_object_model and quantization_manager:
-            fp16_path = quantization_manager.export_fp16_onnx(yolo_nas_object_model, "yolo_nas_s")
-            if fp16_path:
-                optimization_results["object_fp16"] = fp16_path
-        
-        return {
-            "status": "completed",
-            "optimized_models": optimization_results,
-            "quantization_info": quantization_manager.get_quantization_info() if quantization_manager else {"status": "not_available"}
-        }
-        
-    except Exception as e:
-        logger.error(f"Model optimization failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Optimization error: {str(e)}")
-
-# Remove uvicorn.run block for optimized Docker CMD usage
-# This will be replaced by: CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8004"]
+if __name__ == "__main__":
+    logger.info("Starting YOLO-NAS service on port 8004")
+    if pose_model_info is None and object_model_info is None:
+        logger.warning("No models loaded - service starting in fallback mode")
+    else:
+        logger.info("YOLO-NAS service starting with loaded models")
+    uvicorn.run(app, host="0.0.0.0", port=8004, log_config=None)

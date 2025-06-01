@@ -177,25 +177,26 @@ def load_model(model_name: str, description: str) -> Optional[YOLO]:
         except Exception as e:
             logger.warning(f"Failed to load custom model '{custom_model_path}', falling back to pretrained: {e}", exc_info=True)
     
-    # Fallback to pretrained model
+    # Fallback to pretrained model from local weights
     model_path = os.path.join(WEIGHTS_DIR, "ultralytics", model_name)
     try:
         logger.info(f"Loading {description} from: {model_path}")
         if not os.path.exists(model_path):
-            logger.error(f"Model file {model_path} does not exist. Please ensure models are downloaded.")
+            logger.warning(f"Model file {model_path} not found in local weights directory")
             return None
 
         model = YOLO(model_path)
         logger.info(f"{description} loaded successfully")
 
+        # Apply CUDA optimizations
         if torch.cuda.is_available():
             try:
                 logger.info(f"Moving {description} to CUDA")
                 model.to('cuda')
-                model.fuse()
-                logger.info(f"{description} on CUDA and fused")
+                model.fuse()  # Fuse layers for faster inference
+                logger.info(f"✅ {description} optimized: CUDA + model fusing")
             except Exception as e:
-                logger.error(f"Error moving/fusing {description} on CUDA: {e}", exc_info=True)
+                logger.error(f"Error optimizing {description} on CUDA: {e}", exc_info=True)
         return model
     except Exception as e:
         logger.error(f"Failed to load {description} from '{model_path}': {e}", exc_info=True)
@@ -551,7 +552,7 @@ async def process_object_detection(payload: VideoAnalysisURLRequest, model: YOLO
 
         # Apply enhanced ball tracking
         logger.info("Applying enhanced ball tracking...")
-        enhanced_objects_per_frame = smooth_ball_trajectory(all_objects_per_frame, fps=fps)
+        enhanced_objects_per_frame = smooth_ball_trajectory(all_objects_per_frame, fps=int(fps))
 
         # Create annotated frames with enhanced visualization
         if payload.video:
@@ -596,3 +597,11 @@ async def process_object_detection(payload: VideoAnalysisURLRequest, model: YOLO
     finally:
         if temp_downloaded_path and os.path.exists(temp_downloaded_path):
             os.unlink(temp_downloaded_path)
+
+if __name__ == "__main__":
+    logger.info("Starting YOLOv8 service on port 8001")
+    if yolov8_object_model is None and yolov8_pose_model is None:
+        logger.warning("No models loaded - service starting in fallback mode")
+    else:
+        logger.info("YOLOv8 service starting with loaded models")
+    uvicorn.run(app, host="0.0.0.0", port=8001, log_config=None)

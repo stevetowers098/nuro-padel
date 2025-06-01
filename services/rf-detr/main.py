@@ -178,7 +178,7 @@ if RF_DETR_AVAILABLE:
 if rf_detr_model is None:
     logger.critical("❌ No RF-DETR model could be loaded - service will run in fallback mode")
 else:
-    logger.info(f"✅ RF-DETR service ready with {model_info['name']} model")
+    logger.info(f"✅ RF-DETR service ready with {model_info.get('name', 'unknown')} model")
 
 def analyze_frame_detections(frame_content: np.ndarray, confidence_threshold: float = 0.3, resolution: int = 672) -> Dict[str, Any]:
     """Analyze detections for a single frame using RF-DETR"""
@@ -245,7 +245,7 @@ def analyze_frame_detections(frame_content: np.ndarray, confidence_threshold: fl
             "total_detections": len(detections),
             "confidence_threshold": confidence_threshold,
             "resolution_used": resolution,
-            "model_used": model_info["name"],
+            "model_used": model_info.get("name", "unknown"),
             "model_precision": model_info.get("precision", "fp32")
         }
 
@@ -494,7 +494,7 @@ async def rf_detr_detection_analysis(payload: VideoAnalysisURLRequest, request: 
         all_analyses = []
         annotated_frames = []
 
-        logger.info(f"Starting RF-DETR analysis for {len(frames)} frames using {model_info['name']}")
+        logger.info(f"Starting RF-DETR analysis for {len(frames)} frames using {model_info.get('name', 'unknown')}")
 
         # Process each frame
         for frame_idx, frame_content in enumerate(frames):
@@ -561,5 +561,5 @@ if __name__ == "__main__":
     if rf_detr_model is None:
         logger.critical("RF-DETR model could not be loaded - service will be unhealthy")
     else:
-        logger.info(f"RF-DETR service starting with {model_info['name']} model")
+        logger.info(f"RF-DETR service starting with {model_info.get('name', 'unknown')} model")
     uvicorn.run(app, host="0.0.0.0", port=8005, log_config=None)

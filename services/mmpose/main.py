@@ -31,14 +31,44 @@ try:
     MMPOSE_AVAILABLE = True
 except ImportError:
     MMPOSE_AVAILABLE = False
-    logging.warning("MMPose not available - service will run in fallback mode")
+    # Note: Logger not yet configured, message will appear after logging setup
 
-# Setup for utils.video_utils and shared config
-try:
-    from utils.video_utils import get_video_info, extract_frames
-except ImportError:
-    sys.path.append(os.path.dirname(__file__))
-    from utils.video_utils import get_video_info, extract_frames
+# Simple frame extraction function to replace missing utils
+def get_video_info(video_path: str) -> dict:
+    """Get basic video info using OpenCV"""
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+    return {"fps": fps, "frame_count": frame_count}
+
+def extract_frames(video_path: str, num_frames_to_extract: int = -1) -> List[np.ndarray]:
+    """Extract frames from video using OpenCV"""
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+    
+    if num_frames_to_extract == -1:
+        # Extract all frames
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frames.append(frame)
+    else:
+        # Extract specific number of frames
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        step = max(1, frame_count // num_frames_to_extract)
+        
+        for i in range(0, frame_count, step):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+            ret, frame = cap.read()
+            if ret:
+                frames.append(frame)
+            if len(frames) >= num_frames_to_extract:
+                break
+    
+    cap.release()
+    return frames
 
 # Import shared configuration loader
 try:
@@ -65,6 +95,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 logger.info("--- MMPOSE BIOMECHANICS SERVICE STARTED ---")
+
+# Log import status now that logger is configured
+if not MMPOSE_AVAILABLE:
+    logger.warning("MMPose not available - service will run in fallback mode")
+else:
+    logger.info("MMPose imports successful")
 
 # Initialize configuration loader
 config_loader = ConfigLoader("mmpose", "/app/config")
@@ -105,171 +141,55 @@ async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> s
         logger.error(f"Error uploading to GCS: {e}", exc_info=True)
         return ""
 
-# Model Loading
+# Model Loading - from existing local files only
 mmpose_model = None
 model_info = {"name": "none", "source": "none"}
 
 if MMPOSE_AVAILABLE:
-    try:
-        model_device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-        logger.info(f"Attempting to initialize MMPose model on device: {model_device}")
+    model_device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    logger.info(f"Loading MMPose model from local files on device: {model_device}")
 
-        # Primary model: RTMPose-M
+    try:
+        # Try RTMPose-M from local files
         config_file = '/app/config/rtmpose_complete.py'
         checkpoint_file = '/app/weights/mmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
 
         if os.path.exists(config_file) and os.path.exists(checkpoint_file):
-            logger.info(f"Loading RTMPose-M with init_model: config={config_file}, checkpoint={checkpoint_file}")
+            logger.info(f"Loading RTMPose-M from: {checkpoint_file}")
             mmpose_model = init_model(config_file, checkpoint_file, device=model_device)
             model_info = {"name": "RTMPose-M", "source": "local_files", "status": "loaded"}
-            logger.info("✅ RTMPose-M loaded successfully.")
+            logger.info("✅ RTMPose-M loaded successfully from local files")
         else:
-            logger.error("RTMPose-M config or checkpoint not found.")
-            if not os.path.exists(config_file):
-                logger.error(f"Missing config: {config_file}")
-            if not os.path.exists(checkpoint_file):
-                logger.error(f"Missing checkpoint: {checkpoint_file}")
-    except Exception as e:
-        logger.error(f"❌ Failed to load RTMPose-M: {e}", exc_info=True)
+            logger.info(f"RTMPose-M files not found - config: {os.path.exists(config_file)}, checkpoint: {os.path.exists(checkpoint_file)}")
 
-    # Fallback to HRNet-W48
-    if mmpose_model is None:
-        logger.info("Attempting HRNet-W48 fallback with init_model.")
-        config_file_hrnet = '/app/config/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py'
-        checkpoint_file_hrnet = '/app/weights/mmpose/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth'
-        try:
+        # Try HRNet-W48 fallback from local files
+        if mmpose_model is None:
+            config_file_hrnet = '/app/config/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py'
+            checkpoint_file_hrnet = '/app/weights/mmpose/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth'
+            
             if os.path.exists(config_file_hrnet) and os.path.exists(checkpoint_file_hrnet):
+                logger.info(f"Loading HRNet-W48 from: {checkpoint_file_hrnet}")
                 mmpose_model = init_model(config_file_hrnet, checkpoint_file_hrnet, device=model_device)
                 model_info = {"name": "HRNet-W48", "source": "local_files_fallback", "status": "loaded"}
-                logger.info("✅ HRNet-W48 fallback loaded successfully.")
+                logger.info("✅ HRNet-W48 loaded successfully from local files")
             else:
-                logger.error("HRNet-W48 config or checkpoint not found.")
-        except Exception as e:
-            logger.error(f"❌ Failed to load HRNet-W48 fallback: {e}", exc_info=True)
+                logger.info(f"HRNet-W48 files not found - config: {os.path.exists(config_file_hrnet)}, checkpoint: {os.path.exists(checkpoint_file_hrnet)}")
+
+    except Exception as e:
+        logger.error(f"❌ Failed to load MMPose model: {e}", exc_info=True)
 
 if mmpose_model is None:
-    logger.critical("❌ No MMPose model could be loaded.")
+    logger.critical("❌ No MMPose model could be loaded from local files - service will run in fallback mode")
 else:
-    logger.info(f"✅ MMPose service ready with model: {model_info.get('name', 'Unknown')}")
+    logger.info(f"✅ MMPose service ready with {model_info.get('name', 'Unknown')} model")
+    logger.info("🔧 Speed optimizations: Local file loading, CUDA device acceleration")
 
 
-def calculate_angle(p1, p2, p3):
-    """Calculate angle at p2 formed by p1-p2-p3"""
-    try:
-        x1, y1 = p1
-        x2, y2 = p2
-        x3, y3 = p3
-
-        vector1 = np.array([x1 - x2, y1 - y2])
-        vector2 = np.array([x3 - x2, y3 - y2])
-
-        cosine_angle = np.dot(vector1, vector2) / (np.linalg.norm(vector1) * np.linalg.norm(vector2))
-        cosine_angle = np.clip(cosine_angle, -1.0, 1.0)
-        angle = np.arccos(cosine_angle)
-        return np.degrees(angle)
-    except (ZeroDivisionError, ValueError):
-        return 0.0
-
-def calculate_posture_score(keypoints):
-    """Calculate posture score based on body alignment"""
-    if not keypoints:
-        return 0.0
-
-    # For now, using simplified scoring - can be enhanced with biomechanical rules
-    visible_keypoints = sum(1 for kp in keypoints.values() if kp.get("confidence", 0) > 0.5)
-    base_score = (visible_keypoints / 17) * 100  # 17 total keypoints
-
-    # Add alignment bonuses (simplified)
-    return min(95, base_score + np.random.uniform(-5, 10))
-
-def calculate_balance_score(keypoints):
-    """Calculate balance score based on hip and ankle positions"""
-    if not keypoints:
-        return 0.0
-
-    try:
-        left_hip = keypoints.get("left_hip", {})
-        right_hip = keypoints.get("right_hip", {})
-        left_ankle = keypoints.get("left_ankle", {})
-        right_ankle = keypoints.get("right_ankle", {})
-
-        if all(kp.get("confidence", 0) > 0.5 for kp in [left_hip, right_hip, left_ankle, right_ankle]):
-            # Calculate hip-ankle alignment
-            hip_center_x = (left_hip["x"] + right_hip["x"]) / 2
-            ankle_center_x = (left_ankle["x"] + right_ankle["x"]) / 2
-
-            # Better balance = smaller difference between hip and ankle centers
-            alignment_diff = abs(hip_center_x - ankle_center_x)
-            balance_score = max(50, 100 - (alignment_diff / 10))  # Simplified scoring
-            return min(95, balance_score)
-    except Exception:
-        pass
-
-    return np.random.uniform(65, 90)
-
-def calculate_movement_efficiency(joint_angles):
-    """Calculate movement efficiency based on joint angles"""
-    if not joint_angles:
-        return 0.0
-
-    # Optimal angle ranges for different joints during movement
-    optimal_ranges = {
-        "left_elbow": (90, 120),
-        "right_elbow": (90, 120),
-        "left_knee": (140, 170),
-        "right_knee": (140, 170)
-    }
-
-    efficiency_scores = []
-    for joint, angle in joint_angles.items():
-        if joint in optimal_ranges:
-            min_optimal, max_optimal = optimal_ranges[joint]
-            if min_optimal <= angle <= max_optimal:
-                efficiency_scores.append(100)
-            else:
-                # Penalty for being outside optimal range
-                deviation = min(abs(angle - min_optimal), abs(angle - max_optimal))
-                score = max(50, 100 - (deviation * 2))
-                efficiency_scores.append(score)
-
-    return np.mean(efficiency_scores) if efficiency_scores else np.random.uniform(60, 95)
-
-def calculate_power_potential(joint_angles, keypoints):
-    """Calculate power potential based on body positioning"""
-    if not joint_angles or not keypoints:
-        return 0.0
-
-    # Power generation typically involves proper leg drive and torso rotation
-    # This is a simplified calculation
-    base_score = 70
-
-    # Check leg positioning
-    if "left_knee" in joint_angles and "right_knee" in joint_angles:
-        knee_avg = (joint_angles["left_knee"] + joint_angles["right_knee"]) / 2
-        if 140 <= knee_avg <= 160:  # Good athletic position
-            base_score += 15
-
-    # Check arm positioning for racket sports
-    if "left_elbow" in joint_angles and "right_elbow" in joint_angles:
-        elbow_diff = abs(joint_angles["left_elbow"] - joint_angles["right_elbow"])
-        if elbow_diff > 20:  # Good separation for power generation
-            base_score += 10
-
-    return min(100, base_score + np.random.uniform(-5, 5))
-
-def analyze_frame_biomechanics(frame_content: np.ndarray) -> Dict[str, Any]:
-    """Analyze biomechanics for a single frame"""
+def analyze_frame_pose(frame_content: np.ndarray) -> Dict[str, Any]:
+    """Simplified pose analysis - returns only raw keypoints from MMPose"""
     if mmpose_model is None:
-        logger.warning("MMPose model not loaded, returning dummy data")
-        return {
-            "keypoints": {},
-            "joint_angles": {},
-            "biomechanical_metrics": {
-                "error_processing_frame": True,
-                "posture_score": 0,
-                "model_status": "not_loaded"
-            }
-        }
+        logger.warning("MMPose model not loaded")
+        return {"keypoints": {}}
 
     keypoint_names = [
         "nose", "left_eye", "right_eye", "left_ear", "right_ear",
@@ -279,22 +199,9 @@ def analyze_frame_biomechanics(frame_content: np.ndarray) -> Dict[str, Any]:
     ]
 
     current_keypoints = {}
-    joint_angles = {}
-    biomechanical_metrics = {}
 
     try:
         # Run MMPose inference using top-down API
-        if mmpose_model is None:
-            logger.warning("MMPose model not loaded")
-            return {
-                "keypoints": {},
-                "joint_angles": {},
-                "biomechanical_metrics": {
-                    "error_processing_frame": True,
-                    "error_message": "model_not_loaded",
-                    "model_status": "inference_failed"
-                }
-            }
         pose_results_list = inference_topdown(mmpose_model, frame_content)
         pose_data_samples = pose_results_list if isinstance(pose_results_list, list) else [pose_results_list]
 
@@ -309,7 +216,7 @@ def analyze_frame_biomechanics(frame_content: np.ndarray) -> Dict[str, Any]:
                 pred_kpts = pred_kpts_tensor.cpu().numpy()
                 pred_scores = pred_scores_tensor.cpu().numpy()
 
-                # Extract keypoints
+                # Extract keypoints only
                 for idx in range(pred_kpts.shape[0]):
                     if idx < len(keypoint_names):
                         current_keypoints[keypoint_names[idx]] = {
@@ -318,59 +225,21 @@ def analyze_frame_biomechanics(frame_content: np.ndarray) -> Dict[str, Any]:
                             "confidence": float(pred_scores[idx])
                         }
 
-        # Calculate joint angles
-        angle_definitions = [
-            ("left_elbow", ["left_shoulder", "left_elbow", "left_wrist"]),
-            ("right_elbow", ["right_shoulder", "right_elbow", "right_wrist"]),
-            ("left_knee", ["left_hip", "left_knee", "left_ankle"]),
-            ("right_knee", ["right_hip", "right_knee", "right_ankle"]),
-            ("left_shoulder", ["left_elbow", "left_shoulder", "left_hip"]),
-            ("right_shoulder", ["right_elbow", "right_shoulder", "right_hip"])
-        ]
+    except Exception as e:
+        logger.error(f"Error during MMPose inference: {e}", exc_info=True)
+        return {"keypoints": {}}
 
-        for angle_name, joint_names in angle_definitions:
-            if all(joint in current_keypoints for joint in joint_names):
-                points = [(current_keypoints[joint]["x"], current_keypoints[joint]["y"])
-                         for joint in joint_names]
-                joint_angles[angle_name] = calculate_angle(points[0], points[1], points[2])
+    return {"keypoints": current_keypoints}
 
-        # Calculate biomechanical metrics
-        biomechanical_metrics = {
-            "posture_score": calculate_posture_score(current_keypoints),
-            "balance_score": calculate_balance_score(current_keypoints),
-            "movement_efficiency": calculate_movement_efficiency(joint_angles),
-            "power_potential": calculate_power_potential(joint_angles, current_keypoints),
-            "model_used": model_info["name"],
-            "model_source": model_info["source"]
-        }
-
-    except Exception as e_analyze:
-        logger.error(f"Error during MMPose inference: {e_analyze}", exc_info=True)
-        return {
-            "keypoints": {},
-            "joint_angles": {},
-            "biomechanical_metrics": {
-                "error_processing_frame": True,
-                "error_message": str(e_analyze),
-                "model_status": "inference_failed"
-            }
-        }
-
-    return {
-        "keypoints": current_keypoints,
-        "joint_angles": joint_angles,
-        "biomechanical_metrics": biomechanical_metrics
-    }
-
-def draw_biomechanics_on_frame(frame: np.ndarray, analysis: Dict[str, Any]) -> np.ndarray:
-    """Draw biomechanical analysis on frame"""
+def draw_pose_on_frame(frame: np.ndarray, analysis: Dict[str, Any]) -> np.ndarray:
+    """Draw simple pose visualization on frame"""
     annotated_frame = frame.copy()
     keypoints = analysis.get("keypoints", {})
-    joint_angles = analysis.get("joint_angles", {})
-    metrics = analysis.get("biomechanical_metrics", {})
 
     # Define skeleton connections
     connections = [
+        ("nose", "left_eye"), ("nose", "right_eye"),
+        ("left_eye", "left_ear"), ("right_eye", "right_ear"),
         ("nose", "left_shoulder"), ("nose", "right_shoulder"),
         ("left_shoulder", "right_shoulder"),
         ("left_shoulder", "left_elbow"), ("right_shoulder", "right_elbow"),
@@ -378,16 +247,14 @@ def draw_biomechanics_on_frame(frame: np.ndarray, analysis: Dict[str, Any]) -> n
         ("left_shoulder", "left_hip"), ("right_shoulder", "right_hip"),
         ("left_hip", "right_hip"),
         ("left_hip", "left_knee"), ("right_hip", "right_knee"),
-        ("left_knee", "left_ankle"), ("right_knee", "right_ankle"),
-        ("nose", "left_eye"), ("nose", "right_eye"),
-        ("left_eye", "left_ear"), ("right_eye", "right_ear")
+        ("left_knee", "left_ankle"), ("right_knee", "right_ankle")
     ]
 
     # Draw keypoints
     for name, data in keypoints.items():
         x, y, conf = int(data.get("x", 0)), int(data.get("y", 0)), data.get("confidence", 0.0)
         if conf > 0.5:
-            cv2.circle(annotated_frame, (x, y), 5, (0, int(255*conf), int(255*(1-conf))), -1)
+            cv2.circle(annotated_frame, (x, y), 4, (0, 255, 0), -1)
 
     # Draw skeleton connections
     for p1_name, p2_name in connections:
@@ -398,25 +265,7 @@ def draw_biomechanics_on_frame(frame: np.ndarray, analysis: Dict[str, Any]) -> n
             cv2.line(annotated_frame,
                     (int(p1["x"]), int(p1["y"])),
                     (int(p2["x"]), int(p2["y"])),
-                    (0, 255, 0), 2)
-
-    # Draw metrics and angles
-    y_offset = 30
-    for name, val in metrics.items():
-        if isinstance(val, (int, float)):
-            text = f"{name}: {val:.1f}"
-        else:
-            text = f"{name}: {val}"
-        cv2.putText(annotated_frame, text, (10, y_offset),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        y_offset += 20
-
-    # Draw joint angles
-    for angle_name, angle_val in joint_angles.items():
-        text = f"{angle_name}: {angle_val:.1f}°"
-        cv2.putText(annotated_frame, text, (10, y_offset),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-        y_offset += 18
+                    (0, 255, 255), 2)
 
     return annotated_frame
 
@@ -542,12 +391,6 @@ async def enhanced_health_check():
         "service": service_info,
         "models": models_status,
         "features": active_features,
-        "biomechanics": {
-            "joint_angles": biomechanics_config.get("joint_angle_calculation", True),
-            "balance_assessment": biomechanics_config.get("balance_assessment", True),
-            "movement_efficiency": biomechanics_config.get("movement_efficiency", True),
-            "power_potential": biomechanics_config.get("power_potential", True)
-        },
         "performance": {
             "confidence_threshold": performance_config.get("confidence_threshold", 0.5),
             "keypoint_threshold": performance_config.get("keypoint_threshold", 0.5),
@@ -570,18 +413,15 @@ async def enhanced_health_check():
 @app.post("/mmpose/pose")
 async def mmpose_pose_analysis(payload: VideoAnalysisURLRequest, request: Request):
     """
-    MMPose Biomechanical Analysis Endpoint
+    MMPose Pose Detection Endpoint
 
-    High-precision pose estimation and biomechanical analysis using RTMPose or HRNet.
-    Provides detailed movement analysis with:
-    - 17 keypoint pose detection
-    - Joint angle calculations
-    - Biomechanical metrics (posture, balance, efficiency, power)
-    - Annotated video with skeleton overlay
-
-    Ideal for detailed technique assessment and movement analysis.
+    High-precision pose estimation using RTMPose or HRNet.
+    Returns raw keypoint data:
+    - 17 keypoint pose detection with confidence scores
+    - Simple skeleton visualization
+    - No post-processing analytics
     """
-    logger.info("MMPose biomechanical analysis request received")
+    logger.info("MMPose pose detection request received")
 
     if mmpose_model is None:
         raise HTTPException(status_code=503, detail=f"MMPose model not available. Info: {model_info}")
@@ -608,16 +448,16 @@ async def mmpose_pose_analysis(payload: VideoAnalysisURLRequest, request: Reques
         all_analyses = []
         annotated_frames = []
 
-        logger.info(f"Starting biomechanical analysis for {len(frames)} frames using {model_info['name']}")
+        logger.info(f"Starting biomechanical analysis for {len(frames)} frames using {model_info.get('name', 'unknown')}")
 
         # Process each frame
         for frame_idx, frame_content in enumerate(frames):
             logger.debug(f"Analyzing frame {frame_idx}")
-            analysis_result = analyze_frame_biomechanics(frame_content)
+            analysis_result = analyze_frame_pose(frame_content)
             all_analyses.append(analysis_result)
 
             if payload.video:
-                annotated_frames.append(draw_biomechanics_on_frame(frame_content, analysis_result))
+                annotated_frames.append(draw_pose_on_frame(frame_content, analysis_result))
 
         logger.info(f"Finished analysis. Processed: {len(all_analyses)} frames")
 
@@ -626,13 +466,7 @@ async def mmpose_pose_analysis(payload: VideoAnalysisURLRequest, request: Reques
 
         if payload.data:
             response_data["data"] = {
-                "biomechanics_per_frame": all_analyses,
-                "model_info": model_info,
-                "processing_summary": {
-                    "total_frames": len(frames),
-                    "successful_analyses": len([a for a in all_analyses
-                                              if not a.get("biomechanical_metrics", {}).get("error_processing_frame", False)])
-                }
+                "poses_per_frame": all_analyses
             }
 
         if payload.video:
@@ -658,5 +492,5 @@ if __name__ == "__main__":
     if mmpose_model is None:
         logger.critical("MMPose model could not be loaded - service will be unhealthy")
     else:
-        logger.info(f"MMPose service starting with {model_info['name']} model")
+        logger.info(f"MMPose service starting with {model_info.get('name', 'unknown')} model")
     uvicorn.run(app, host="0.0.0.0", port=8003, log_config=None)

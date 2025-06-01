@@ -361,6 +361,7 @@ gcloud compute ssh padel-ai --zone=australia-southeast1-a
 
 # Or using IP directly (check VM_HOST secret for current IP)
 ssh Towers@$VM_HOST
+ssh padel-ai  # Shortcut alias for VM SSH configured in SSH config
 
 # Check services on VM
 docker ps

@@ -545,14 +545,9 @@ deploy_vm() {
     # Make deploy script executable
     ssh "$VM_HOST" "chmod +x $VM_PATH/scripts/deploy.sh"
     
-    # Pull latest images from registry on VM
-    log "Pulling latest images from registry on VM..."
-    ssh "$VM_HOST" "cd $VM_PATH && echo 'Note: Docker registry login may be required for private images'"
-    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/yolo-combined:latest || echo 'Failed to pull yolo-combined'"
-    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/mmpose:latest || echo 'Failed to pull mmpose'"
-    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/yolo-nas:latest || echo 'Failed to pull yolo-nas'"
-    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/rf-detr:latest || echo 'Failed to pull rf-detr'"
-    ssh "$VM_HOST" "cd $VM_PATH && docker pull ${REGISTRY}/vitpose:latest || echo 'Failed to pull vitpose'"
+    # Build and deploy services on VM using local context
+    log "Building and deploying services on VM with local build context..."
+    ssh "$VM_HOST" "cd $VM_PATH && ./scripts/deploy.sh --all"
     
     # Use smart deployment on VM (only update changed services)
     log "Starting smart deployment on VM..."

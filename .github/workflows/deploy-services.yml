@@ -4,7 +4,6 @@ on:
     branches: [docker-containers, main]
     paths:
       - 'services/yolo11/**'
-      - '.github/workflows/deploy-services.yml'
 
 env:
   REGISTRY: ghcr.io
@@ -104,7 +103,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
       
       - name: 📦 Build and push YOLO8 image
         uses: docker/build-push-action@v5
@@ -190,7 +189,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
       
       - name: 📦 Build and push YOLO11 image
         uses: docker/build-push-action@v5
@@ -233,7 +232,7 @@ jobs:
           echo "✅ Built and pushed: ${{ env.IMAGE_PREFIX }}/yolo11:latest"
 
       - name: 🔌 SSH Deploy YOLO11
-        run: ssh padel-ai "cd /opt/padel-docker && docker-compose pull yolo11 && docker-compose up -d yolo11"
+        run: ssh padel-ai "cd /opt/padel-docker && ./services/yolo11/deploy.sh"
 
       - name: ✅ YOLO11 Deployment Completed
         run: echo "✅ **YOLO11 DEPLOYMENT COMPLETED**"

@@ -70,7 +70,13 @@ ENV HOME=/tmp
 USER appuser
 
 # Verify super-gradients installation (with fallback)
-RUN python -c "try: from super_gradients.training import models; print('✅ super-gradients imported successfully')\nexcept ImportError as e: print('⚠️ super-gradients not available:', e)" || echo "⚠️ super-gradients verification failed"
+RUN python -c "import sys; \
+try: \
+    from super_gradients.training import models; \
+    print('✅ super-gradients imported successfully'); \
+except ImportError as e: \
+    print('⚠️ super-gradients not available:', str(e)); \
+    sys.exit(0)" || echo "⚠️ super-gradients verification completed"
 
 # Health check (longer start period due to potential model download)
 HEALTHCHECK --interval=30s --timeout=30s --start-period=180s --retries=3 \

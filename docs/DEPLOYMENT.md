@@ -101,7 +101,7 @@ curl http://35.189.53.46:8080/         # Load Balancer
 **Key Dependencies** (UPDATED May 30, 2025):
 
 ```txt
-torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
+torch==2.0.1 --index-url https://download.pytorch.org/whl/cu121
 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu121
 ultralytics>=8.3.0,<8.4.0     # ✅ FIXED: YOLO11 compatibility (was 8.2.97)
 google-cloud-storage==2.18.0  # Updated version

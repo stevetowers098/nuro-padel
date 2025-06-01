@@ -49,11 +49,9 @@ services:
 
   # === YOLO11 Service (Latest Generation Detection) ===
   yolo11:
-    build:
--      context: services/yolo11
--      dockerfile: Dockerfile
-+      context: .
-+      dockerfile: services/yolo11/Dockerfile
+      build:
+      context: .
+      dockerfile: services/yolo11/Dockerfile
     image: ghcr.io/stevetowers098/nuro-padel/yolo11:latest
     container_name: nuro-padel-yolo11
     gpus: all

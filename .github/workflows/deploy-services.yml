@@ -137,16 +137,17 @@ jobs:
           echo "   - Ensure model weights are accessible or fallback mode works"
           exit 1
       
-      - name: 🚀 Deploy YOLO8 to VM
+      - name: 🚀 Deploy YOLO8 to VM - Start
         run: |
-          echo "🚀 **YOLO8 DEPLOYMENT READY**"
+          echo "🚀 **YOLO8 DEPLOYMENT START**"
           echo "================================="
           echo "✅ Built and pushed: ${{ env.IMAGE_PREFIX }}/yolo8:latest"
-          echo "📋 Next steps:"
-          echo "   1. Image is available in registry"
-          echo "   2. VM deployment currently disabled (SSH commented out)"
-          echo "   3. To deploy manually: ssh padel-ai 'cd /opt/padel-docker && docker-compose pull yolo8 && docker-compose up -d yolo8'"
-          # ssh padel-ai "cd /opt/padel-docker && docker-compose pull yolo8 && docker-compose up -d yolo8"
+
+      - name: 🔌 SSH Deploy YOLO8
+        run: ssh padel-ai "cd /opt/padel-docker && docker-compose pull yolo8 && docker-compose up -d yolo8"
+
+      - name: ✅ YOLO8 Deployment Completed
+        run: echo "✅ **YOLO8 DEPLOYMENT COMPLETED**"
 
   deploy-yolo11:
     needs: detect-changes
@@ -222,16 +223,17 @@ jobs:
           echo "   - Ensure model weights are accessible or fallback mode works"
           exit 1
       
-      - name: 🚀 Deploy YOLO11 to VM
+      - name: 🚀 Deploy YOLO11 to VM - Start
         run: |
-          echo "🚀 **YOLO11 DEPLOYMENT READY**"
+          echo "🚀 **YOLO11 DEPLOYMENT START**"
           echo "================================="
           echo "✅ Built and pushed: ${{ env.IMAGE_PREFIX }}/yolo11:latest"
-          echo "📋 Next steps:"
-          echo "   1. Image is available in registry"
-          echo "   2. VM deployment currently disabled (SSH commented out)"
-          echo "   3. To deploy manually: ssh padel-ai 'cd /opt/padel-docker && docker-compose pull yolo11 && docker-compose up -d yolo11'"
-          # ssh padel-ai "cd /opt/padel-docker && docker-compose pull yolo11 && docker-compose up -d yolo11"
+
+      - name: 🔌 SSH Deploy YOLO11
+        run: ssh padel-ai "cd /opt/padel-docker && docker-compose pull yolo11 && docker-compose up -d yolo11"
+
+      - name: ✅ YOLO11 Deployment Completed
+        run: echo "✅ **YOLO11 DEPLOYMENT COMPLETED**"
 
   deploy-mmpose:
     needs: detect-changes
@@ -309,16 +311,17 @@ jobs:
           echo "   - Ensure RTMPose/HRNet weights are accessible or fallback mode works"
           exit 1
       
-      - name: 🚀 Deploy MMPose to VM
+      - name: 🚀 Deploy MMPose to VM - Start
         run: |
-          echo "🚀 **MMPOSE DEPLOYMENT READY**"
+          echo "🚀 **MMPOSE DEPLOYMENT START**"
           echo "================================="
           echo "✅ Built and pushed: ${{ env.IMAGE_PREFIX }}/mmpose:latest"
-          echo "📋 Next steps:"
-          echo "   1. Image is available in registry"
-          echo "   2. VM deployment currently disabled (SSH commented out)"
-          echo "   3. To deploy manually: ssh padel-ai 'cd /opt/padel-docker && docker-compose pull mmpose && docker-compose up -d mmpose'"
-          # ssh padel-ai "cd /opt/padel-docker && docker-compose pull mmpose && docker-compose up -d mmpose"
+
+      - name: 🔌 SSH Deploy MMPose
+        run: ssh padel-ai "cd /opt/padel-docker && docker-compose pull mmpose && docker-compose up -d mmpose"
+
+      - name: ✅ MMPose Deployment Completed
+        run: echo "✅ **MMPOSE DEPLOYMENT COMPLETED**"
 
   deploy-yolo-nas:
     needs: detect-changes
@@ -396,16 +399,17 @@ jobs:
           echo "   - Ensure model weights are accessible or fallback mode works"
           exit 1
       
-      - name: 🚀 Deploy YOLO-NAS to VM
+      - name: 🚀 Deploy YOLO-NAS to VM - Start
         run: |
-          echo "🚀 **YOLO-NAS DEPLOYMENT READY**"
+          echo "🚀 **YOLO-NAS DEPLOYMENT START**"
           echo "================================="
           echo "✅ Built and pushed: ${{ env.IMAGE_PREFIX }}/yolo-nas:latest"
-          echo "📋 Next steps:"
-          echo "   1. Image is available in registry"
-          echo "   2. VM deployment currently disabled (SSH commented out)"
-          echo "   3. To deploy manually: ssh padel-ai 'cd /opt/padel-docker && docker-compose pull yolo-nas && docker-compose up -d yolo-nas'"
-          # ssh padel-ai "cd /opt/padel-docker && docker-compose pull yolo-nas && docker-compose up -d yolo-nas"
+
+      - name: 🔌 SSH Deploy YOLO-NAS
+        run: ssh padel-ai "cd /opt/padel-docker && docker-compose pull yolo-nas && docker-compose up -d yolo-nas"
+
+      - name: ✅ YOLO-NAS Deployment Completed
+        run: echo "✅ **YOLO-NAS DEPLOYMENT COMPLETED**"
 
   deploy-vitpose:
     needs: detect-changes
@@ -486,16 +490,17 @@ jobs:
           echo "   - Ensure ViTPose/HRNet weights are accessible or fallback mode works"
           exit 1
       
-      - name: 🚀 Deploy ViTPose to VM
+      - name: 🚀 Deploy ViTPose to VM - Start
         run: |
-          echo "🚀 **VITPOSE++ DEPLOYMENT READY**"
+          echo "🚀 **VITPOSE DEPLOYMENT START**"
           echo "================================="
           echo "✅ Built and pushed: ${{ env.IMAGE_PREFIX }}/vitpose:latest"
-          echo "📋 Next steps:"
-          echo "   1. Image is available in registry"
-          echo "   2. VM deployment currently disabled (SSH commented out)"
-          echo "   3. To deploy manually: ssh padel-ai 'cd /opt/padel-docker && docker-compose pull vitpose && docker-compose up -d vitpose'"
-          # ssh padel-ai "cd /opt/padel-docker && docker-compose pull vitpose && docker-compose up -d vitpose"
+
+      - name: 🔌 SSH Deploy ViTPose
+        run: ssh padel-ai "cd /opt/padel-docker && docker-compose pull vitpose && docker-compose up -d vitpose"
+
+      - name: ✅ ViTPose Deployment Completed
+        run: echo "✅ **VITPOSE DEPLOYMENT COMPLETED**"
 
   deploy-rf-detr:
     needs: detect-changes
@@ -576,16 +581,17 @@ jobs:
           echo "   - Ensure RF-DETR weights are accessible or fallback mode works"
           exit 1
       
-      - name: 🚀 Deploy RF-DETR to VM
+      - name: 🚀 Deploy RF-DETR to VM - Start
         run: |
-          echo "🚀 **RF-DETR DEPLOYMENT READY**"
+          echo "🚀 **RF-DETR DEPLOYMENT START**"
           echo "================================="
           echo "✅ Built and pushed: ${{ env.IMAGE_PREFIX }}/rf-detr:latest"
-          echo "📋 Next steps:"
-          echo "   1. Image is available in registry"
-          echo "   2. VM deployment currently disabled (SSH commented out)"
-          echo "   3. To deploy manually: ssh padel-ai 'cd /opt/padel-docker && docker-compose pull rf-detr && docker-compose up -d rf-detr'"
-          # ssh padel-ai "cd /opt/padel-docker && docker-compose pull rf-detr && docker-compose up -d rf-detr"
+
+      - name: 🔌 SSH Deploy RF-DETR
+        run: ssh padel-ai "cd /opt/padel-docker && docker-compose pull rf-detr && docker-compose up -d rf-detr"
+
+      - name: ✅ RF-DETR Deployment Completed
+        run: echo "✅ **RF-DETR DEPLOYMENT COMPLETED**"
 
   deploy-nginx:
     needs: detect-changes
@@ -594,9 +600,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Deploy Nginx configuration
+      - name: Deploy Nginx configuration - Start
         run: |
-          echo "🚀 Deploying Nginx configuration..."
+          echo "🚀 **NGINX DEPLOYMENT START**"
+          echo "================================="
           echo "📄 Updated files: deployment/nginx.conf, deployment/docker-compose.yml"
-          echo "⚠️  Manual deployment required - SSH to VM and run: docker-compose up -d nginx"
-          # ssh padel-ai "cd /opt/padel-docker && docker-compose up -d nginx"
+
+      - name: 🔌 SSH Deploy Nginx
+        run: ssh padel-ai "cd /opt/padel-docker && docker-compose up -d nginx"
+
+      - name: ✅ Nginx Deployment Completed
+        run: echo "✅ **NGINX DEPLOYMENT COMPLETED**"

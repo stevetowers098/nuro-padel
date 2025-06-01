@@ -2,6 +2,8 @@
 # Consolidated from stage1 and stage2 files
 
 # Core PyTorch with CUDA 12.1 support
+# Pin rich to be compatible with openxlab
+rich~=13.4.2
 torch==2.1.2
 torchvision==0.16.2
 torchaudio==2.1.2

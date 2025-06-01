@@ -542,8 +542,8 @@ deploy_vm() {
     
     # Deploy services on VM with explicit project directory (local build contexts)
     log "Building and deploying services on VM with local build context..."
-    ssh -i "$SSH_KEY" "$VM_HOST" "docker-compose -f $VM_PATH/deployment/docker-compose.yml --project-directory $VM_PATH up -d --build && \
-                        docker-compose -f $VM_PATH/deployment/docker-compose.yml --project-directory $VM_PATH up -d --remove-orphans"
+    ssh -i "$SSH_KEY" "$VM_HOST" "docker compose -f $VM_PATH/deployment/docker-compose.yml --project-directory $VM_PATH up -d --build && \
+                        docker compose -f $VM_PATH/deployment/docker-compose.yml --project-directory $VM_PATH up -d --remove-orphans"
     
     # Wait for services to start
     log "Waiting for services to become healthy on VM..."

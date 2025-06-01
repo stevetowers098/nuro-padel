@@ -8,7 +8,7 @@ echo "🚀 Deploying ${SERVICE_NAME} service independently..."
 
 # Build and push image
 echo "📦 Building ${SERVICE_NAME} image..."
-docker build -t ${IMAGE_NAME}:latest .
+docker build -t ${IMAGE_NAME}:latest -f Dockerfile .
 
 echo "📤 Pushing ${SERVICE_NAME} image..."
 docker push ${IMAGE_NAME}:latest
@@ -32,7 +32,7 @@ ssh padel-ai << EOF
     docker run -d \
         --name nuro-padel-${SERVICE_NAME} \
         --restart unless-stopped \
-        -p ${SERVICE_PORT}:8000 \
+        -p ${SERVICE_PORT}:8007 \
         --gpus all \
         -e CUDA_VISIBLE_DEVICES=0 \
         -e PYTHONUNBUFFERED=1 \

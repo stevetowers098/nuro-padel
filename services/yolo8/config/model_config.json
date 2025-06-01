@@ -1,0 +1,33 @@
+{
+  "service": "yolo8",
+  "version": "1.0.0",
+  "models": {
+    "yolov8_object": {
+      "file": "yolov8n.pt",
+      "version": "v8.2.0",
+      "enabled": true,
+      "fallback": null
+    },
+    "yolov8_pose": {
+      "file": "yolov8n-pose.pt", 
+      "version": "v8.2.0",
+      "enabled": true,
+      "fallback": null
+    }
+  },
+  "features": {
+    "enhanced_ball_tracking": {
+      "enabled": true,
+      "description": "Kalman filtering for ball trajectory"
+    },
+    "batch_processing": {
+      "enabled": true,
+      "description": "Process multiple frames in batches"
+    }
+  },
+  "performance": {
+    "batch_size": 8,
+    "confidence_threshold": 0.3,
+    "max_concurrent_requests": 3
+  }
+}

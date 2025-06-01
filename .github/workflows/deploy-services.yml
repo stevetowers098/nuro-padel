@@ -1,0 +1,107 @@
+name: Smart Service Deployment
+on:
+  push:
+    branches: [docker-containers, main]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      yolo8: ${{ steps.changes.outputs.yolo8 }}
+      yolo11: ${{ steps.changes.outputs.yolo11 }}
+      mmpose: ${{ steps.changes.outputs.mmpose }}
+      yolo-nas: ${{ steps.changes.outputs.yolo-nas }}
+      vitpose: ${{ steps.changes.outputs.vitpose }}
+      rf-detr: ${{ steps.changes.outputs.rf-detr }}
+      nginx: ${{ steps.changes.outputs.nginx }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            yolo8:
+              - 'services/yolo8/**'
+            yolo11:
+              - 'services/yolo11/**'
+            mmpose:
+              - 'services/mmpose/**'
+            yolo-nas:
+              - 'services/yolo-nas/**'
+            vitpose:
+              - 'services/vitpose/**'
+            rf-detr:
+              - 'services/rf-detr/**'
+            nginx:
+              - 'deployment/nginx.conf'
+              - 'deployment/docker-compose.yml'
+
+  deploy-yolo8:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.yolo8 == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy YOLO8
+        run: |
+          echo "🚀 Deploying YOLO8 service independently..."
+          # ssh padel-ai "cd /opt/padel-docker && ./scripts/deploy-single.sh yolo8"
+
+  deploy-yolo11:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.yolo11 == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy YOLO11
+        run: |
+          echo "🚀 Deploying YOLO11 service independently..."
+          # ssh padel-ai "cd /opt/padel-docker && ./scripts/deploy-single.sh yolo11"
+
+  deploy-mmpose:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.mmpose == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy MMPose
+        run: |
+          echo "🚀 Deploying MMPose service independently..."
+          # ssh padel-ai "cd /opt/padel-docker && ./scripts/deploy-single.sh mmpose"
+
+  deploy-yolo-nas:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.yolo-nas == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy YOLO-NAS
+        run: |
+          echo "🚀 Deploying YOLO-NAS service independently..."
+          # ssh padel-ai "cd /opt/padel-docker && ./scripts/deploy-single.sh yolo-nas"
+
+  deploy-vitpose:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.vitpose == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy ViTPose
+        run: |
+          echo "🚀 Deploying ViTPose service independently..."
+          # ssh padel-ai "cd /opt/padel-docker && ./scripts/deploy-single.sh vitpose"
+
+  deploy-rf-detr:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.rf-detr == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy RF-DETR
+        run: |
+          echo "🚀 Deploying RF-DETR service independently..."
+          # ssh padel-ai "cd /opt/padel-docker && ./scripts/deploy-single.sh rf-detr"
+
+  deploy-nginx:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.nginx == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Nginx
+        run: |
+          echo "🚀 Deploying Nginx configuration..."
+          # ssh padel-ai "cd /opt/padel-docker && ./scripts/deploy-single.sh nginx"

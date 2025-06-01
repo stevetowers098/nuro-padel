@@ -115,7 +115,7 @@ if MMPOSE_AVAILABLE:
         logger.info(f"Attempting to initialize MMPose model on device: {model_device}")
 
         # Primary model: RTMPose-M
-        config_file = '/app/configs/rtmpose_complete.py'
+        config_file = '/app/config/rtmpose_complete.py'
         checkpoint_file = '/app/weights/mmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
 
         if os.path.exists(config_file) and os.path.exists(checkpoint_file):
@@ -135,7 +135,7 @@ if MMPOSE_AVAILABLE:
     # Fallback to HRNet-W48
     if mmpose_model is None:
         logger.info("Attempting HRNet-W48 fallback with init_model.")
-        config_file_hrnet = '/app/configs/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py'
+        config_file_hrnet = '/app/config/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py'
         checkpoint_file_hrnet = '/app/weights/mmpose/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth'
         try:
             if os.path.exists(config_file_hrnet) and os.path.exists(checkpoint_file_hrnet):

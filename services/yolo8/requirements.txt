@@ -1,0 +1,30 @@
+# === WEB FRAMEWORK ===
+fastapi>=0.111.0
+uvicorn[standard]==0.24.0
+pydantic>=2.5.0,<3.0.0
+
+# === HTTP & ASYNC ===
+httpx>=0.27.0
+requests==2.31.0
+
+# === COMPUTER VISION & ML ===
+torch==2.1.2
+torchvision==0.16.2
+ultralytics>=8.3.11,<8.4.0
+opencv-python-headless==4.10.0.84  # Headless for servers
+
+# === DATA & PROCESSING ===
+numpy>=1.21.0,<2.0  # Critical constraint for compatibility
+scipy>=1.11.4
+Pillow>=10.1.0
+
+# === CLOUD & STORAGE ===
+google-cloud-storage==2.10.0
+protobuf>=3.19.5,<4.0.0  # Critical for GCS compatibility
+
+# === UTILITIES ===
+pyyaml>=6.0.1
+
+# === PERFORMANCE & MONITORING ===
+psutil>=5.9.0  # For memory monitoring
+aiofiles>=23.0.0  # For async file operations

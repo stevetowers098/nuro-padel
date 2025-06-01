@@ -1,0 +1,38 @@
+{
+  "service": "yolo11",
+  "version": "1.0.0",
+  "models": {
+    "yolo11_object": {
+      "file": "yolo11n.pt",
+      "version": "v11.0.0",
+      "enabled": true,
+      "fallback": "yolov8n.pt"
+    },
+    "yolo11_pose": {
+      "file": "yolo11n-pose.pt",
+      "version": "v11.0.0", 
+      "enabled": true,
+      "fallback": "yolov8n-pose.pt"
+    }
+  },
+  "features": {
+    "enhanced_ball_tracking": {
+      "enabled": true,
+      "description": "Advanced Kalman filtering for ball trajectory"
+    },
+    "memory_optimization": {
+      "enabled": true,
+      "description": "PyTorch memory fraction optimization"
+    },
+    "protobuf_compatibility": {
+      "enabled": true,
+      "description": "GCS upload compatibility fixes"
+    }
+  },
+  "performance": {
+    "batch_size": 8,
+    "confidence_threshold": 0.3,
+    "max_concurrent_requests": 3,
+    "memory_fraction": 0.8
+  }
+}

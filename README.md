@@ -10,13 +10,14 @@
 ./scripts/deploy.sh --vm
 ```
 
-## 🏗️ Services Architecture
+## 🏗️ Services Architecture - Service Isolation
 
 | Service | Port | Technology | Purpose |
 |---------|------|------------|---------|
-| [**YOLO Combined**](services/yolo-combined/) | 8001 | YOLO11/v8 + TrackNet | Enhanced ball tracking & pose detection + Training |
+| [**YOLO8**](services/yolo8/) | 8002 | YOLOv8 | Independent object & pose detection |
+| [**YOLO11**](services/yolo11/) | 8007 | YOLO11 | Latest generation detection |
 | [**MMPose**](services/mmpose/) | 8003 | MMPose Framework | Advanced biomechanical analysis |
-| [**YOLO-NAS**](services/yolo-nas/) | 8004 | Super-Gradients | High-accuracy object detection + Training |
+| [**YOLO-NAS**](services/yolo-nas/) | 8004 | Super-Gradients | High-accuracy object detection |
 | [**RF-DETR**](services/rf-detr/) | 8005 | Transformer + FP16 | Transformer-based detection |
 | [**ViTPose++**](services/vitpose/) | 8006 | Vision Transformer | Joint angle & pose analysis |
 | **Load Balancer** | 8080 | Nginx | API Gateway & routing |
@@ -50,16 +51,16 @@
 
 ### Pose Detection
 
+- **YOLO8 Pose**: `POST /yolo8/pose`
 - **YOLO11 Pose**: `POST /yolo11/pose`
-- **YOLOv8 Pose**: `POST /yolov8/pose`  
 - **MMPose**: `POST /mmpose/pose`
 - **YOLO-NAS**: `POST /yolo-nas/pose`
 - **ViTPose++**: `POST /vitpose/analyze`
 
 ### Object Detection
 
+- **YOLO8 Object**: `POST /yolo8/object`
 - **YOLO11 Object**: `POST /yolo11/object`
-- **YOLOv8 Object**: `POST /yolov8/object`
 - **YOLO-NAS**: `POST /yolo-nas/object`
 - **RF-DETR**: `POST /rf-detr/analyze`
 
@@ -105,7 +106,8 @@ curl http://35.189.53.46:8080/healthz
 
 ## 🔗 Service Documentation
 
-- [**YOLO Combined Service**](services/yolo-combined/README.md) - Enhanced ball tracking
+- [**YOLO8 Service**](services/yolo8/README.md) - Independent YOLOv8 detection
+- [**YOLO11 Service**](services/yolo11/README.md) - Latest generation detection
 - [**MMPose Service**](services/mmpose/README.md) - Biomechanical analysis
 - [**YOLO-NAS Service**](services/yolo-nas/README.md) - High-accuracy detection
 - [**RF-DETR Service**](services/rf-detr/README.md) - Transformer detection

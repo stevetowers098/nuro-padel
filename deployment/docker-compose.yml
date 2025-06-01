@@ -4,22 +4,20 @@
 version: '3.8'
 
 services:
-  # === YOLO Combined Service (YOLO11 + YOLOv8) ===
-  yolo-combined:
+  # === YOLO8 Service (Independent YOLOv8 Detection) ===
+  yolo8:
     build:
-      context: ../services/yolo-combined
+      context: ../services/yolo8
       dockerfile: Dockerfile
-    image: ghcr.io/stevetowers098/nuro-padel/yolo-combined:latest
-    container_name: nuro-padel-yolo-combined
-# runtime: nvidia (removed; using gpus: all for Compose V2)
+    image: ghcr.io/stevetowers098/nuro-padel/yolo8:latest
+    container_name: nuro-padel-yolo8
     gpus: all
     restart: unless-stopped
     user: "1000:1000"
     ports:
-      - "8001:8001"
+      - "8002:8002"
     volumes:
       - ../weights:/app/weights:ro
-      - ../services/yolo-combined/config:/app/config:ro
       - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
@@ -32,10 +30,7 @@ services:
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
       - NVIDIA_VISIBLE_DEVICES=all
-      # Model configuration overrides (examples)
-      # - YOLO11_POSE_ENABLED=true
-      # - FEATURE_ENHANCED_BALL_TRACKING_ENABLED=true
-      # - CONFIDENCE_THRESHOLD=0.3
+      - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     deploy:
       resources:
         reservations:
@@ -44,7 +39,50 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:8002/healthz"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+    networks:
+      - nuro-padel-network
+
+  # === YOLO11 Service (Latest Generation Detection) ===
+  yolo11:
+    build:
+      context: ../services/yolo11
+      dockerfile: Dockerfile
+    image: ghcr.io/stevetowers098/nuro-padel/yolo11:latest
+    container_name: nuro-padel-yolo11
+    gpus: all
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "8007:8007"
+    volumes:
+      - ../weights:/app/weights:ro
+      - ../services/shared:/app/shared:ro
+      - /tmp:/tmp
+    environment:
+      - PYTHONUNBUFFERED=1
+      - YOLO_OFFLINE=1
+      - ULTRALYTICS_OFFLINE=1
+      - HOME=/tmp
+      - TMPDIR=/tmp
+      - ONLINE=False
+      - YOLO_TELEMETRY=False
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/healthz"]
       interval: 30s
       timeout: 30s
       retries: 3
@@ -59,7 +97,6 @@ services:
       dockerfile: Dockerfile
     image: ghcr.io/stevetowers098/nuro-padel/mmpose:latest
     container_name: nuro-padel-mmpose
-# runtime: nvidia (removed; using gpus: all for Compose V2)
     gpus: all
     restart: unless-stopped
     user: "1000:1000"
@@ -82,10 +119,7 @@ services:
       - YOLO_TELEMETRY=False
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
       - NVIDIA_VISIBLE_DEVICES=all
-      # Model configuration overrides (examples)
-      # - RTMPOSE_M_ENABLED=true
-      # - FEATURE_BIOMECHANICAL_ANALYSIS_ENABLED=true
-      # - FEATURE_3D_POSE_ESTIMATION_ENABLED=false
+      - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     deploy:
       resources:
         reservations:
@@ -274,12 +308,8 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - yolo-combined
-      - mmpose
-      - yolo-nas
-      - rf-detr
-      - vitpose
+    # Removed hard dependencies to prevent cascading failures
+    # Services can start independently
     networks:
       - nuro-padel-network
 

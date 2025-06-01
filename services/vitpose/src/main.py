@@ -29,7 +29,7 @@ import math
 
 # MMPose ViTPose++ imports
 try:
-    from mmpose.apis import init_model, MMPoseInferencer
+    from mmpose.apis import init_model, inference_topdown
     from mmpose.utils import register_all_modules
     register_all_modules()
     MMPOSE_AVAILABLE = True
@@ -161,7 +161,7 @@ if MMPOSE_AVAILABLE:
                     config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192.py'
                     logger.info(f"Loading with config: {config_name}, checkpoint: {local_checkpoint}")
                     vitpose_model = init_model(config_name, local_checkpoint, device=device)
-                    vitpose_inferencer = MMPoseInferencer(model=vitpose_model)
+                    vitpose_inferencer = lambda img: inference_topdown(model=vitpose_model, image=img)
                     
                     # Enable FP16 if CUDA available for VRAM efficiency
                     if torch.cuda.is_available():
@@ -182,7 +182,7 @@ if MMPOSE_AVAILABLE:
                     config_name = 'td-hm_ViTPose-base_8xb64-210e_coco-256x192.py'
                     logger.info(f"Loading from model zoo: {config_name}")
                     vitpose_model = init_model(config_name, None, device=device)
-                    vitpose_inferencer = MMPoseInferencer(model=vitpose_model)
+                    vitpose_inferencer = lambda img: inference_topdown(model=vitpose_model, image=img)
                     
                     # Enable FP16 if CUDA available
                     if torch.cuda.is_available():
@@ -201,7 +201,7 @@ if MMPOSE_AVAILABLE:
                     config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
                     logger.info(f"Loading HRNet fallback: {config_name}")
                     vitpose_model = init_model(config_name, None, device=device)
-                    vitpose_inferencer = MMPoseInferencer(model=vitpose_model)
+                    vitpose_inferencer = lambda img: inference_topdown(model=vitpose_model, image=img)
                     
                     if torch.cuda.is_available():
                         vitpose_model.half()

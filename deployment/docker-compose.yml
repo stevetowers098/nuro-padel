@@ -7,19 +7,20 @@ services:
   # === YOLO Combined Service (YOLO11 + YOLOv8) ===
   yolo-combined:
     build:
-      context: ./services/yolo-combined
+      context: ../services/yolo-combined
       dockerfile: Dockerfile
-    image: nuro-padel-yolo-combined:latest
+    image: ghcr.io/stevetowers098/nuro-padel/yolo-combined:latest
     container_name: nuro-padel-yolo-combined
     runtime: nvidia
+    gpus: all
     restart: unless-stopped
     user: "1000:1000"
     ports:
       - "8001:8001"
     volumes:
       - ../weights:/app/weights:ro
-      - ./services/yolo-combined/config:/app/config:ro
-      - ./services/shared:/app/shared:ro
+      - ../services/yolo-combined/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -54,20 +55,21 @@ services:
   # === MMPose Biomechanics Service ===
   mmpose:
     build:
-      context: ./services/mmpose
+      context: ../services/mmpose
       dockerfile: Dockerfile
-    image: nuro-padel-mmpose:latest
+    image: ghcr.io/stevetowers098/nuro-padel/mmpose:latest
     container_name: nuro-padel-mmpose
     runtime: nvidia
+    gpus: all
     restart: unless-stopped
     user: "1000:1000"
     ports:
       - "8003:8003"
     volumes:
       - ../weights:/app/weights:ro
-      - ./services/mmpose/configs:/app/configs:ro
-      - ./services/mmpose/config:/app/config:ro
-      - ./services/shared:/app/shared:ro
+      - ../services/mmpose/configs:/app/configs:ro
+      - ../services/mmpose/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -103,19 +105,20 @@ services:
   # === YOLO-NAS High-Accuracy Service ===
   yolo-nas:
     build:
-      context: ./services/yolo-nas
+      context: ../services/yolo-nas
       dockerfile: Dockerfile
-    image: nuro-padel-yolo-nas:latest
+    image: ghcr.io/stevetowers098/nuro-padel/yolo-nas:latest
     container_name: nuro-padel-yolo-nas
     runtime: nvidia
+    gpus: all
     restart: unless-stopped
     user: root
     ports:
       - "8004:8004"
     volumes:
       - ../weights:/app/weights:ro
-      - ./services/yolo-nas/config:/app/config:ro
-      - ./services/shared:/app/shared:ro
+      - ../services/yolo-nas/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -160,19 +163,20 @@ services:
   # === RF-DETR Detection Service ===
   rf-detr:
     build:
-      context: ./services/rf-detr
+      context: ../services/rf-detr
       dockerfile: Dockerfile
-    image: nuro-padel-rf-detr:latest
+    image: ghcr.io/stevetowers098/nuro-padel/rf-detr:latest
     container_name: nuro-padel-rf-detr
     runtime: nvidia
+    gpus: all
     restart: unless-stopped
     user: "1000:1000"
     ports:
       - "8005:8005"
     volumes:
       - ../weights:/app/weights:ro
-      - ./services/rf-detr/config:/app/config:ro
-      - ./services/shared:/app/shared:ro
+      - ../services/rf-detr/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -207,19 +211,20 @@ services:
   # === ViTPose++ Advanced Pose Service ===
   vitpose:
     build:
-      context: ./services/vitpose
+      context: ../services/vitpose
       dockerfile: Dockerfile
-    image: nuro-padel-vitpose:latest
+    image: ghcr.io/stevetowers098/nuro-padel/vitpose:latest
     container_name: nuro-padel-vitpose
     runtime: nvidia
+    gpus: all
     restart: unless-stopped
     user: "1000:1000"
     ports:
       - "8006:8006"
     volumes:
       - ../weights:/app/weights:ro
-      - ./services/vitpose/config:/app/config:ro
-      - ./services/shared:/app/shared:ro
+      - ../services/vitpose/config:/app/config:ro
+      - ../services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1

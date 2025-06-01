@@ -19,6 +19,7 @@ REGISTRY="ghcr.io/stevetowers098/nuro-padel"  # Updated for registry support
 COMPOSE_FILE="deployment/docker-compose.yml"  # Use the fixed compose file
 VM_HOST="towers@35.189.53.46"
 VM_PATH="/opt/padel-docker"
+SSH_KEY="$HOME/.ssh/padel-ai-new-key"
 
 # Logging function
 log() {
@@ -526,40 +527,31 @@ deploy_vm() {
     log "Deploying to VM: ${VM_HOST}"
     
     # Create VM directory if it doesn't exist
-    ssh "$VM_HOST" "mkdir -p $VM_PATH"
+    ssh -i "$SSH_KEY" "$VM_HOST" "mkdir -p $VM_PATH"
     
     # Clean previous deployment safely (only project files)
-    ssh "$VM_HOST" "cd $VM_PATH && find . -maxdepth 1 -name '*.md' -o -name '*.yml' -o -name '*.sh' -o -name '*.conf' -o -name '*-service' | xargs rm -rf 2>/dev/null || true"
+    ssh -i "$SSH_KEY" "$VM_HOST" "cd $VM_PATH && find . -maxdepth 1 -name '*.md' -o -name '*.yml' -o -name '*.sh' -o -name '*.conf' -o -name '*-service' | xargs rm -rf 2>/dev/null || true"
     
-    # Sync all project files to VM (simplified and comprehensive)
-    rsync -avz \
-        --exclude='*.git*' \
-        --exclude='__pycache__' \
-        --exclude='*.pyc' \
-        --exclude='node_modules' \
-        --exclude='.pytest_cache' \
-        --exclude='.vscode' \
-        --exclude='*.log' \
-        ./ "$VM_HOST:$VM_PATH/"
+    # Copy all project files to VM using scp -r (excluding Git artifacts)
+    log "Copying project files to VM: $VM_HOST:$VM_PATH"
+    scp -i "$SSH_KEY" -r ./deployment deployment/docker-compose.yml scripts services weights docs \
+            "$VM_HOST:$VM_PATH/"
     
     # Make deploy script executable
-    ssh "$VM_HOST" "chmod +x $VM_PATH/scripts/deploy.sh"
+    ssh -i "$SSH_KEY" "$VM_HOST" "chmod +x $VM_PATH/scripts/deploy.sh"
     
-    # Build and deploy services on VM using local context
+    # Deploy services on VM with explicit project directory (local build contexts)
     log "Building and deploying services on VM with local build context..."
-    ssh "$VM_HOST" "cd $VM_PATH && ./scripts/deploy.sh --all"
-    
-    # Use smart deployment on VM (only update changed services)
-    log "Starting smart deployment on VM..."
-    ssh "$VM_HOST" "cd $VM_PATH && ./scripts/deploy.sh --deploy"
+    ssh -i "$SSH_KEY" "$VM_HOST" "docker-compose -f $VM_PATH/deployment/docker-compose.yml --project-directory $VM_PATH up -d --build && \
+                        docker-compose -f $VM_PATH/deployment/docker-compose.yml --project-directory $VM_PATH up -d --remove-orphans"
     
     # Wait for services to start
     log "Waiting for services to become healthy on VM..."
-    ssh "$VM_HOST" "cd $VM_PATH/deployment && sleep 60"
+    ssh -i "$SSH_KEY" "$VM_HOST" "cd $VM_PATH/deployment && sleep 60"
     
     # Verify deployment
     log "Verifying VM deployment..."
-    ssh "$VM_HOST" "cd $VM_PATH/deployment && docker-compose ps"
+    ssh -i "$SSH_KEY" "$VM_HOST" "cd $VM_PATH/deployment && docker-compose ps"
     
     success "VM deployment completed - containers are now running"
 }

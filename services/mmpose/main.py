@@ -27,7 +27,7 @@ import subprocess
 
 # MMPose v1.x API imports
 try:
-    from mmpose.apis import init_model, inference_topdown
+    from mmpose.apis import init_model, inference_topdown  # type: ignore
     MMPOSE_AVAILABLE = True
 except ImportError:
     MMPOSE_AVAILABLE = False
@@ -44,7 +44,7 @@ except ImportError:
 try:
     sys.path.append('/app')
     sys.path.append('../shared')
-    from shared.config_loader import ConfigLoader, merge_env_overrides
+    from shared.config_loader import ConfigLoader, merge_env_overrides  # type: ignore
 except ImportError:
     # Fallback if shared module not available
     class ConfigLoader:
@@ -112,88 +112,46 @@ model_info = {"name": "none", "source": "none"}
 if MMPOSE_AVAILABLE:
     try:
         model_device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-        logger.info(f"Initializing MMPose model on device: {model_device}")
+        logger.info(f"Attempting to initialize MMPose model on device: {model_device}")
 
-        # Try Method 1: Use local standalone config with local checkpoint
-        local_checkpoint = '/app/weights/mmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
-        local_config = '/app/configs/rtmpose_complete.py'
-        
-        # Debug: List available weight files
-        weights_dir = '/app/weights'
-        if os.path.exists(weights_dir):
-            weight_files = [f for f in os.listdir(weights_dir) if f.endswith(('.pth', '.pt'))]
-            logger.info(f"Available weight files in {weights_dir}: {weight_files}")
+        # Primary model: RTMPose-M
+        config_file = '/app/configs/rtmpose_complete.py'
+        checkpoint_file = '/app/weights/mmpose/rtmpose-m_simcc-aic-coco_pt-aic-coco_420e-256x192-63eb25f7_20230126.pth'
+
+        if os.path.exists(config_file) and os.path.exists(checkpoint_file):
+            logger.info(f"Loading RTMPose-M with init_model: config={config_file}, checkpoint={checkpoint_file}")
+            mmpose_model = init_model(config_file, checkpoint_file, device=model_device)
+            model_info = {"name": "RTMPose-M", "source": "local_files", "status": "loaded"}
+            logger.info("✅ RTMPose-M loaded successfully.")
         else:
-            logger.warning(f"Weights directory {weights_dir} does not exist")
-            
-        # Debug: Check config file
-        if os.path.exists(local_config):
-            logger.info(f"✅ Found local standalone config: {local_config}")
-        else:
-            logger.warning(f"❌ Local config not found: {local_config}")
+            logger.error("RTMPose-M config or checkpoint not found.")
+            if not os.path.exists(config_file):
+                logger.error(f"Missing config: {config_file}")
+            if not os.path.exists(checkpoint_file):
+                logger.error(f"Missing checkpoint: {checkpoint_file}")
+    except Exception as e:
+        logger.error(f"❌ Failed to load RTMPose-M: {e}", exc_info=True)
 
-        # Try local config + local checkpoint first
-        if os.path.exists(local_config) and os.path.exists(local_checkpoint):
-            logger.info(f"🔄 Attempting Method 1: Local config + local checkpoint")
-            try:
-                logger.info(f"Loading with config: {local_config}, checkpoint: {local_checkpoint}")
-                mmpose_inferencer = MMPoseInferencer(config=local_config, checkpoint=local_checkpoint, device=model_device)
-                mmpose_model = mmpose_inferencer.model
-                model_info = {"name": "RTMPose-M", "source": "local_config_checkpoint"}
-                logger.info("✅ RTMPose-M model loaded successfully from local config + checkpoint")
-            except Exception as e_local_config:
-                logger.error(f"❌ Failed Method 1 (local config + checkpoint): {e_local_config}")
-                logger.error(f"Error type: {type(e_local_config).__name__}")
-        
-        # Try Method 1b: Use OpenMMLab config with local checkpoint
-        if mmpose_model is None and os.path.exists(local_checkpoint):
-            logger.info(f"🔄 Attempting Method 1b: OpenMMLab config + local checkpoint")
-            try:
-                config_name = 'rtmpose-m_8xb256-420e_aic-coco-256x192'
-                logger.info(f"Loading with OpenMMLab config: {config_name}, checkpoint: {local_checkpoint}")
-                mmpose_inferencer = MMPoseInferencer(config=config_name, checkpoint=local_checkpoint, device=model_device)
-                mmpose_model = mmpose_inferencer.model
-                model_info = {"name": "RTMPose-M", "source": "openmmlab_config_local_checkpoint"}
-                logger.info("✅ RTMPose-M model loaded successfully from OpenMMLab config + local checkpoint")
-            except Exception as e_local:
-                logger.error(f"❌ Failed Method 1b (OpenMMLab config + local checkpoint): {e_local}")
-                logger.error(f"Error type: {type(e_local).__name__}")
-
-        # Method 2: Use OpenMMLab model zoo if local fails
-        if mmpose_model is None:
-            logger.info("🔄 Attempting to load RTMPose-M from OpenMMLab model zoo...")
-            try:
-                config_name = 'rtmpose-m_8xb256-420e_aic-coco-256x192'
-                logger.info(f"Trying OpenMMLab config: {config_name}")
-                mmpose_inferencer = MMPoseInferencer(config=config_name, checkpoint=None, device=model_device)
-                mmpose_model = mmpose_inferencer.model
-                model_info = {"name": "RTMPose-M", "source": "openmmlab_zoo"}
-                logger.info("✅ RTMPose-M model loaded successfully from OpenMMLab zoo")
-            except Exception as e_zoo:
-                logger.error(f"❌ Failed to load from OpenMMLab zoo: {e_zoo}")
-                logger.error(f"Error type: {type(e_zoo).__name__}")
-
-        # Method 3: Fallback to HRNet-W48
-        if mmpose_model is None:
-            logger.info("🔄 Attempting fallback to HRNet-W48...")
-            try:
-                config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
-                logger.info(f"Trying HRNet config: {config_name}")
-                mmpose_inferencer = MMPoseInferencer(config=config_name, checkpoint=None, device=model_device)
-                mmpose_model = mmpose_inferencer.model
-                model_info = {"name": "HRNet-W48", "source": "openmmlab_zoo"}
-                logger.info("✅ HRNet-W48 model loaded successfully (fallback)")
-            except Exception as e_hrnet:
-                logger.error(f"❌ Failed to load HRNet-W48: {e_hrnet}")
-                logger.error(f"Error type: {type(e_hrnet).__name__}")
-
-    except Exception as e_init:
-        logger.error(f"Model initialization failed: {e_init}", exc_info=True)
+    # Fallback to HRNet-W48
+    if mmpose_model is None:
+        logger.info("Attempting HRNet-W48 fallback with init_model.")
+        config_file_hrnet = '/app/configs/td-hm_hrnet-w48_8xb32-210e_coco-256x192.py'
+        checkpoint_file_hrnet = '/app/weights/mmpose/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth'
+        try:
+            if os.path.exists(config_file_hrnet) and os.path.exists(checkpoint_file_hrnet):
+                mmpose_model = init_model(config_file_hrnet, checkpoint_file_hrnet, device=model_device)
+                model_info = {"name": "HRNet-W48", "source": "local_files_fallback", "status": "loaded"}
+                logger.info("✅ HRNet-W48 fallback loaded successfully.")
+            else:
+                logger.error("HRNet-W48 config or checkpoint not found.")
+        except Exception as e:
+            logger.error(f"❌ Failed to load HRNet-W48 fallback: {e}", exc_info=True)
 
 if mmpose_model is None:
-    logger.critical("❌ No MMPose model could be loaded - service will run in fallback mode")
+    logger.critical("❌ No MMPose model could be loaded.")
 else:
-    logger.info(f"✅ MMPose service ready with {model_info['name']} model")
+    logger.info(f"✅ MMPose service ready with model: {model_info.get('name', 'Unknown')}")
+
 
 def calculate_angle(p1, p2, p3):
     """Calculate angle at p2 formed by p1-p2-p3"""

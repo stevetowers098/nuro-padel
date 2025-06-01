@@ -668,11 +668,8 @@ jobs:
               curl -o nginx.conf https://raw.githubusercontent.com/stevetowers098/nuro-padel/${{ github.ref_name }}/deployment/nginx.conf
             fi
             
-            echo "🔄 Pulling latest images..."
-            docker-compose pull || echo "⚠️  Some image pulls failed, continuing with existing images"
-            
-            echo "🚀 Starting services..."
-            docker-compose up -d
+            echo "🔄 Building and deploying services on VM (using local build contexts)..."
+            docker-compose up -d --build --remove-orphans
             
             echo "⏳ Waiting for services to start..."
             sleep 30

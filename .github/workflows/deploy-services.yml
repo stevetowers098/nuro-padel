@@ -2,6 +2,9 @@ name: Smart Service Deployment
 on:
   push:
     branches: [docker-containers, main]
+    paths:
+      - 'services/yolo11/**'
+      - '.github/workflows/deploy-services.yml'
 
 env:
   REGISTRY: ghcr.io

@@ -11,6 +11,9 @@ echo "📦 Building ${SERVICE_NAME} image..."
 docker build -t ${IMAGE_NAME}:latest -f Dockerfile .
 
 echo "📤 Pushing ${SERVICE_NAME} image..."
+# Authenticate to GitHub Container Registry before push
+echo "🔑 Logging into GHCR..."
+echo "${GHCR_TOKEN}" | docker login ghcr.io -u stevetowers098 --password-stdin
 docker push ${IMAGE_NAME}:latest
 
 # Deploy on VM via SSH  

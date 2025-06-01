@@ -49,7 +49,6 @@ services:
 
   # === YOLO11 Service (Latest Generation Detection) ===
   yolo11:
-:start_line:51
     build:
 -      context: services/yolo11
 -      dockerfile: Dockerfile

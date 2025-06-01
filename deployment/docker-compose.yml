@@ -49,9 +49,9 @@ services:
 
   # === YOLO11 Service (Latest Generation Detection) ===
   yolo11:
-      build:
-      context: .
-      dockerfile: services/yolo11/Dockerfile
+    build:
+      context: services/yolo11
+      dockerfile: Dockerfile
     image: ghcr.io/stevetowers098/nuro-padel/yolo11:latest
     container_name: nuro-padel-yolo11
     gpus: all
@@ -61,6 +61,7 @@ services:
       - "8007:8007"
     volumes:
       - weights:/app/weights:ro
+      - services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1

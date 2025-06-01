@@ -7,7 +7,7 @@ services:
   # === YOLO8 Service (Independent YOLOv8 Detection) ===
   yolo8:
     build:
-      context: ../services/yolo8
+      context: services/yolo8
       dockerfile: Dockerfile
     image: ghcr.io/stevetowers098/nuro-padel/yolo8:latest
     container_name: nuro-padel-yolo8
@@ -17,8 +17,8 @@ services:
     ports:
       - "8002:8002"
     volumes:
-      - ../weights:/app/weights:ro
-      - ../services/shared:/app/shared:ro
+      - weights:/app/weights:ro
+      - services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -49,9 +49,12 @@ services:
 
   # === YOLO11 Service (Latest Generation Detection) ===
   yolo11:
+:start_line:51
     build:
-      context: ../services/yolo11
-      dockerfile: Dockerfile
+-      context: services/yolo11
+-      dockerfile: Dockerfile
++      context: .
++      dockerfile: services/yolo11/Dockerfile
     image: ghcr.io/stevetowers098/nuro-padel/yolo11:latest
     container_name: nuro-padel-yolo11
     gpus: all
@@ -60,8 +63,7 @@ services:
     ports:
       - "8007:8007"
     volumes:
-      - ../weights:/app/weights:ro
-      - ../services/shared:/app/shared:ro
+      - weights:/app/weights:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -93,7 +95,7 @@ services:
   # === MMPose Biomechanics Service ===
   mmpose:
     build:
-      context: ../services/mmpose
+      context: services/mmpose
       dockerfile: Dockerfile
     image: ghcr.io/stevetowers098/nuro-padel/mmpose:latest
     container_name: nuro-padel-mmpose
@@ -103,10 +105,10 @@ services:
     ports:
       - "8003:8003"
     volumes:
-      - ../weights:/app/weights:ro
-      - ../services/mmpose/configs:/app/configs:ro
-      - ../services/mmpose/config:/app/config:ro
-      - ../services/shared:/app/shared:ro
+      - weights:/app/weights:ro
+      - services/mmpose/configs:/app/configs:ro
+      - services/mmpose/config:/app/config:ro
+      - services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -139,7 +141,7 @@ services:
   # === YOLO-NAS High-Accuracy Service ===
   yolo-nas:
     build:
-      context: ../services/yolo-nas
+      context: services/yolo-nas
       dockerfile: Dockerfile
     image: ghcr.io/stevetowers098/nuro-padel/yolo-nas:latest
     container_name: nuro-padel-yolo-nas
@@ -150,9 +152,9 @@ services:
     ports:
       - "8004:8004"
     volumes:
-      - ../weights:/app/weights:ro
-      - ../services/yolo-nas/config:/app/config:ro
-      - ../services/shared:/app/shared:ro
+      - weights:/app/weights:ro
+      - services/yolo-nas/config:/app/config:ro
+      - services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -197,7 +199,7 @@ services:
   # === RF-DETR Detection Service ===
   rf-detr:
     build:
-      context: ../services/rf-detr
+      context: services/rf-detr
       dockerfile: Dockerfile
     image: ghcr.io/stevetowers098/nuro-padel/rf-detr:latest
     container_name: nuro-padel-rf-detr
@@ -208,9 +210,9 @@ services:
     ports:
       - "8005:8005"
     volumes:
-      - ../weights:/app/weights:ro
-      - ../services/rf-detr/config:/app/config:ro
-      - ../services/shared:/app/shared:ro
+      - weights:/app/weights:ro
+      - services/rf-detr/config:/app/config:ro
+      - services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -245,7 +247,7 @@ services:
   # === ViTPose++ Advanced Pose Service ===
   vitpose:
     build:
-      context: ../services/vitpose
+      context: services/vitpose
       dockerfile: Dockerfile
     image: ghcr.io/stevetowers098/nuro-padel/vitpose:latest
     container_name: nuro-padel-vitpose
@@ -256,9 +258,9 @@ services:
     ports:
       - "8006:8006"
     volumes:
-      - ../weights:/app/weights:ro
-      - ../services/vitpose/config:/app/config:ro
-      - ../services/shared:/app/shared:ro
+      - weights:/app/weights:ro
+      - services/vitpose/config:/app/config:ro
+      - services/shared:/app/shared:ro
       - /tmp:/tmp
     environment:
       - PYTHONUNBUFFERED=1
@@ -322,5 +324,5 @@ networks:
         - subnet: 172.30.0.0/16
 
 volumes:
-  weights-data:
+  weights:
     driver: local

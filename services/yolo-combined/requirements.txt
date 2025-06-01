@@ -2,9 +2,9 @@
 # Fixed versions based on production testing - 29-5-25
 
 # --- Core ML/DL with CUDA Support (pinned together) ---
-torch==2.0.1 --index-url https://download.pytorch.org/whl/cu121
-torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu121
-torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu121
+torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
+torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
+torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121
 
 # --- YOLO Models ---
 ultralytics>=8.3.0,<8.4.0

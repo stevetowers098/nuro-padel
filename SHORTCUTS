@@ -2,5 +2,9 @@
 gcloud compute instances start padel-ai --zone=australia-southeast1-a
 
 ## **SSH INTO THE VM:
-ssh -i ~/.ssh/padel-ai-key Towers@35.189.53.46
+ssh padel-ai
 
+## **DELETE MODELS FOLDER:
+sudo rm -rf /opt/padel-docker/weights/*
+
+## **RUN MODELS SCRIPT:

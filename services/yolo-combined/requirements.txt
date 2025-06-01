@@ -7,7 +7,7 @@ torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121
 
 # --- YOLO Models ---
-ultralytics>=8.3.0,<8.4.0
+ultralytics==8.1.0
 
 # --- FastAPI Stack (required for API) ---
 fastapi==0.111.0

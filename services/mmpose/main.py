@@ -27,7 +27,7 @@ import subprocess
 
 # MMPose v1.x API imports
 try:
-    from mmpose.apis import init_model, MMPoseInferencer
+    from mmpose.apis import init_model, inference_topdown
     MMPOSE_AVAILABLE = True
 except ImportError:
     MMPOSE_AVAILABLE = False
@@ -107,7 +107,6 @@ async def upload_to_gcs(video_path: str, object_name: Optional[str] = None) -> s
 
 # Model Loading
 mmpose_model = None
-mmpose_inferencer = None
 model_info = {"name": "none", "source": "none"}
 
 if MMPOSE_AVAILABLE:
@@ -138,8 +137,8 @@ if MMPOSE_AVAILABLE:
             logger.info(f"🔄 Attempting Method 1: Local config + local checkpoint")
             try:
                 logger.info(f"Loading with config: {local_config}, checkpoint: {local_checkpoint}")
-                mmpose_model = init_model(local_config, local_checkpoint, device=model_device)
-                mmpose_inferencer = MMPoseInferencer(model=mmpose_model)
+                mmpose_inferencer = MMPoseInferencer(config=local_config, checkpoint=local_checkpoint, device=model_device)
+                mmpose_model = mmpose_inferencer.model
                 model_info = {"name": "RTMPose-M", "source": "local_config_checkpoint"}
                 logger.info("✅ RTMPose-M model loaded successfully from local config + checkpoint")
             except Exception as e_local_config:
@@ -152,8 +151,8 @@ if MMPOSE_AVAILABLE:
             try:
                 config_name = 'rtmpose-m_8xb256-420e_aic-coco-256x192'
                 logger.info(f"Loading with OpenMMLab config: {config_name}, checkpoint: {local_checkpoint}")
-                mmpose_model = init_model(config_name, local_checkpoint, device=model_device)
-                mmpose_inferencer = MMPoseInferencer(model=mmpose_model)
+                mmpose_inferencer = MMPoseInferencer(config=config_name, checkpoint=local_checkpoint, device=model_device)
+                mmpose_model = mmpose_inferencer.model
                 model_info = {"name": "RTMPose-M", "source": "openmmlab_config_local_checkpoint"}
                 logger.info("✅ RTMPose-M model loaded successfully from OpenMMLab config + local checkpoint")
             except Exception as e_local:
@@ -166,8 +165,8 @@ if MMPOSE_AVAILABLE:
             try:
                 config_name = 'rtmpose-m_8xb256-420e_aic-coco-256x192'
                 logger.info(f"Trying OpenMMLab config: {config_name}")
-                mmpose_model = init_model(config_name, None, device=model_device)
-                mmpose_inferencer = MMPoseInferencer(model=mmpose_model)
+                mmpose_inferencer = MMPoseInferencer(config=config_name, checkpoint=None, device=model_device)
+                mmpose_model = mmpose_inferencer.model
                 model_info = {"name": "RTMPose-M", "source": "openmmlab_zoo"}
                 logger.info("✅ RTMPose-M model loaded successfully from OpenMMLab zoo")
             except Exception as e_zoo:
@@ -180,8 +179,8 @@ if MMPOSE_AVAILABLE:
             try:
                 config_name = 'td-hm_hrnet-w48_8xb32-210e_coco-256x192'
                 logger.info(f"Trying HRNet config: {config_name}")
-                mmpose_model = init_model(config_name, None, device=model_device)
-                mmpose_inferencer = MMPoseInferencer(model=mmpose_model)
+                mmpose_inferencer = MMPoseInferencer(config=config_name, checkpoint=None, device=model_device)
+                mmpose_model = mmpose_inferencer.model
                 model_info = {"name": "HRNet-W48", "source": "openmmlab_zoo"}
                 logger.info("✅ HRNet-W48 model loaded successfully (fallback)")
             except Exception as e_hrnet:
@@ -326,27 +325,20 @@ def analyze_frame_biomechanics(frame_content: np.ndarray) -> Dict[str, Any]:
     biomechanical_metrics = {}
 
     try:
-        # Run MMPose inference using inferencer
-        if mmpose_inferencer is None:
-            logger.warning("MMPose inferencer not initialized")
+        # Run MMPose inference using top-down API
+        if mmpose_model is None:
+            logger.warning("MMPose model not loaded")
             return {
                 "keypoints": {},
                 "joint_angles": {},
                 "biomechanical_metrics": {
                     "error_processing_frame": True,
-                    "error_message": "inferencer_not_initialized",
-                    "model_status": "inferencer_failed"
+                    "error_message": "model_not_loaded",
+                    "model_status": "inference_failed"
                 }
             }
-        
-        pose_results = mmpose_inferencer(frame_content)
-        
-        if pose_results and 'predictions' in pose_results:
-            pose_data_samples = pose_results['predictions']
-        elif pose_results:
-            pose_data_samples = [pose_results]
-        else:
-            pose_data_samples = []
+        pose_results_list = inference_topdown(mmpose_model, frame_content)
+        pose_data_samples = pose_results_list if isinstance(pose_results_list, list) else [pose_results_list]
 
         if pose_data_samples:
             data_sample = pose_data_samples[0]

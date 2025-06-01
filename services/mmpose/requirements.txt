@@ -19,7 +19,8 @@ xtcocotools>=1.14
 
 # --- MMPose Stack (install via mim in Dockerfile) ---
 openmim>=0.3.0
-mmpose>=1.0.0
+mmengine==0.9.0
+mmpose==1.0.0
 
 # --- Computer Vision ---
 opencv-python-headless==4.10.0.84

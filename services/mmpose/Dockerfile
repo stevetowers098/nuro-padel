@@ -45,7 +45,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools==60.2.0 wheel && \
     pip install --no-cache-dir pycocotools && \
     pip install --no-cache-dir --no-deps --force-reinstall xtcocotools && \
     pip install --no-cache-dir openmim && \
-    mim install mmengine && \
+    mim install "mmengine==0.9.0" && \
     mim install "mmcv==2.1.0" && \
     mim install "mmdet>=3.0.0,<3.3.0" && \
     mim install "mmpose>=1.0.0" && \
